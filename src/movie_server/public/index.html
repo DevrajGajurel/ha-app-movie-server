@@ -466,19 +466,15 @@
     }
 
     .card-download-status {
-      margin-top: 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.65rem;
-      background: rgba(255, 255, 255, 0.03);
-      font-size: 0.75rem;
+      margin-top: 0.5rem;
+      font-size: 0.7rem;
       color: var(--muted);
     }
 
-    .card-download-status strong {
+    .card-download-status .download-active-label {
       display: block;
+      margin-bottom: 0.3rem;
       color: var(--text);
-      margin-bottom: 0.35rem;
     }
 
     .download-progress {
@@ -486,7 +482,11 @@
       background: var(--bg);
       border-radius: 999px;
       overflow: hidden;
-      margin-top: 0.45rem;
+    }
+
+    .download-progress.thin {
+      height: 4px;
+      margin-top: 0.25rem;
     }
 
     .download-progress span {
@@ -497,19 +497,78 @@
       transition: width 0.2s;
     }
 
-    .card-download-status.completed {
-      border-color: rgba(74, 222, 128, 0.5);
+    .download-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: 999px;
+      border: none;
+      cursor: default;
+      flex-shrink: 0;
     }
 
-    .card-download-status.failed {
-      border-color: rgba(255, 107, 107, 0.5);
+    .download-badge svg {
+      width: 1rem;
+      height: 1rem;
+      display: block;
     }
 
-    .download-path {
-      margin-top: 0.35rem;
+    .download-badge.downloaded {
+      position: absolute;
+      bottom: 0.5rem;
+      left: 0.5rem;
+      background: rgba(74, 222, 128, 0.95);
+      color: #0f1117;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    .download-badge.failed {
+      background: rgba(255, 107, 107, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(255, 107, 107, 0.4);
+    }
+
+    .download-tooltip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 12rem;
+      max-width: 18rem;
+      padding: 0.45rem 0.6rem;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.68rem;
+      line-height: 1.35;
       word-break: break-all;
-      font-size: 0.7rem;
-      color: var(--success);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s, visibility 0.15s;
+      z-index: 5;
+    }
+
+    .download-tooltip::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: var(--border);
+    }
+
+    .download-badge:hover .download-tooltip,
+    .download-badge:focus .download-tooltip,
+    .download-badge:focus-within .download-tooltip {
+      opacity: 1;
+      visibility: visible;
     }
   </style>
 </head>
@@ -839,7 +898,7 @@
 
         return `
         <article class="card">
-          <div class="poster">${poster}${qualityBadges}</div>
+          <div class="poster">${poster}${qualityBadges}${renderDownloadedBadge(displayTitle)}</div>
           <div class="card-body">
             <h2>${escapeHtml(displayTitle)}</h2>
             ${m.title && m.title !== displayTitle ? `<div class="scraped-title">${escapeHtml(m.title)}</div>` : ""}
@@ -890,9 +949,7 @@
         }
         return "Downloading…";
       }
-      if (job.status === "completed") {
-        return job.filePath ? `Saved: ${job.filePath}` : "Saved";
-      }
+      if (job.status === "completed") return "Saved";
       if (job.status === "failed") return `Failed: ${job.error}`;
       return job.status;
     }
@@ -907,23 +964,47 @@
       return downloadJobs.find((job) => job.movieTitle === title) || null;
     }
 
+    function renderDownloadedBadge(title) {
+      const job = latestJobForMovie(title);
+      if (!job || job.status !== "completed") return "";
+
+      const tip = job.filePath || "Downloaded";
+      return `
+        <span class="download-badge downloaded" tabindex="0" aria-label="Downloaded">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+          <span class="download-tooltip">${escapeHtml(tip)}</span>
+        </span>
+      `;
+    }
+
     function renderCardDownloadStatus(title) {
       const job = latestJobForMovie(title);
-      if (!job) return "";
+      if (!job || job.status === "completed") return "";
 
       const progress = jobProgress(job);
-      const statusClass = job.status === "completed" ? " completed" : job.status === "failed" ? " failed" : "";
-      const progressBar =
-        job.status === "downloading" || job.status === "queued"
-          ? `<div class="download-progress" style="--progress: ${progress}%"><span></span></div>`
-          : "";
+
+      if (job.status === "failed") {
+        const tip = job.error || "Download failed";
+        return `
+          <div class="card-download-status">
+            <span class="download-badge failed" tabindex="0" aria-label="Download failed">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 9v4"/>
+                <path d="M12 17h.01"/>
+                <circle cx="12" cy="12" r="9"/>
+              </svg>
+              <span class="download-tooltip">${escapeHtml(tip)}</span>
+            </span>
+          </div>
+        `;
+      }
 
       return `
-        <div class="card-download-status${statusClass}">
-          <strong>${escapeHtml(formatJobStatus(job))}</strong>
-          <div>${escapeHtml(job.label || "Server download")}</div>
-          ${job.filePath ? `<div class="download-path">${escapeHtml(job.filePath)}</div>` : ""}
-          ${progressBar}
+        <div class="card-download-status">
+          <span class="download-active-label">${escapeHtml(formatJobStatus(job))}</span>
+          <div class="download-progress thin" style="--progress: ${progress}%"><span></span></div>
         </div>
       `;
     }

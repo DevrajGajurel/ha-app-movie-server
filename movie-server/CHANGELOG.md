@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.6
+
+- Show a compact downloaded checkmark on movie cards; hover to see the saved file path.
+- Keep slim progress bar for active downloads and a small icon for failures.
+
 ## 1.0.5
 
 - Set default source URL to `https://filmyfly.luxe/` for new installs.
