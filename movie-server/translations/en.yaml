@@ -13,10 +13,10 @@ configuration:
     description: Folder inside the container for downloads (e.g. /media/Plex_Media)
   initial_pages:
     name: Initial pages
-    description: Pages loaded immediately before background loading (default 2)
+    description: "Pages loaded first before background loading. Default: 2"
   hd_keywords:
     name: HD keywords
-    description: Comma-separated title keywords for the HD badge
+    description: "Comma-separated HD badge keywords. Default: 720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray"
   k4_keywords:
     name: 4K keywords
-    description: Comma-separated title keywords for the 4K badge
+    description: "Comma-separated 4K badge keywords. Default: 2160p,4k,4K,UHD"

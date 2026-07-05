@@ -14,11 +14,11 @@ Run the Movie Server dashboard inside Home Assistant with Ingress (sidebar panel
 
 ## Advanced options (hidden by default)
 
-On the **Configuration** tab, open **Show unused optional configuration options** to change:
+On the **Configuration** tab, open **Show unused optional configuration options** to change these. Leave blank to use defaults:
 
-- `initial_pages` — pages loaded first (default `2`)
-- `hd_keywords` — HD badge keywords
-- `k4_keywords` — 4K badge keywords
+- `initial_pages` — `2`
+- `hd_keywords` — `720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray`
+- `k4_keywords` — `2160p,4k,4K,UHD`
 
 ## Notes
 

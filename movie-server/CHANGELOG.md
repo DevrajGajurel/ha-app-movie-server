@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7
+
+- Document and enforce defaults for optional advanced options when left blank in HA config.
+- Defaults: `initial_pages=2`, HD/4K keyword lists unchanged.
+
 ## 1.0.6
 
 - Show a compact downloaded checkmark on movie cards; hover to see the saved file path.

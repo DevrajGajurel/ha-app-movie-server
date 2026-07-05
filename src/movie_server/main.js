@@ -18,8 +18,10 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MAX_PAGES_LIMIT = 100;
-const HD_KEYWORDS = parseKeywordList(process.env.HD_KEYWORDS);
-const K4_KEYWORDS = parseKeywordList(process.env.K4_KEYWORDS);
+const DEFAULT_HD_KEYWORDS = "720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray";
+const DEFAULT_K4_KEYWORDS = "2160p,4k,4K,UHD";
+const HD_KEYWORDS = parseKeywordList(process.env.HD_KEYWORDS || DEFAULT_HD_KEYWORDS);
+const K4_KEYWORDS = parseKeywordList(process.env.K4_KEYWORDS || DEFAULT_K4_KEYWORDS);
 
 let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);

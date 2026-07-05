@@ -7,13 +7,17 @@ TMDB_API_KEY="$(bashio::config 'tmdb_api_key')"
 DOWNLOAD_DIR="$(bashio::config 'download_dir')"
 
 INITIAL_PAGES="$(bashio::config 'initial_pages')"
-INITIAL_PAGES="${INITIAL_PAGES:-2}"
+if [ -z "${INITIAL_PAGES}" ]; then INITIAL_PAGES=2; fi
 
 HD_KEYWORDS="$(bashio::config 'hd_keywords')"
-HD_KEYWORDS="${HD_KEYWORDS:-720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray}"
+if [ -z "${HD_KEYWORDS}" ]; then
+  HD_KEYWORDS="720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray"
+fi
 
 K4_KEYWORDS="$(bashio::config 'k4_keywords')"
-K4_KEYWORDS="${K4_KEYWORDS:-2160p,4k,4K,UHD}"
+if [ -z "${K4_KEYWORDS}" ]; then
+  K4_KEYWORDS="2160p,4k,4K,UHD"
+fi
 
 cat > /app/.env <<EOF
 MAIN_URL=${MAIN_URL}
