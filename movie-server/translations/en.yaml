@@ -11,6 +11,12 @@ configuration:
   download_dir:
     name: Download folder
     description: Folder inside the container for downloads (e.g. /media/Plex_Media)
+  emby_url:
+    name: Emby server URL
+    description: "Emby base URL (e.g. http://192.168.1.10:8096). Leave blank to disable."
+  emby_api_key:
+    name: Emby API key
+    description: API key from Emby Dashboard → Advanced → API Keys
   initial_pages:
     name: Initial pages
     description: "Pages loaded first before background loading. Default: 2"
@@ -20,3 +26,6 @@ configuration:
   k4_keywords:
     name: 4K keywords
     description: "Comma-separated 4K badge keywords. Default: 2160p,4k,4K,UHD"
+  emby_path_prefix:
+    name: Emby path prefix
+    description: "Optional path prefix Emby uses for downloads (if different from download_dir)"

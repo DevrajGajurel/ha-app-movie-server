@@ -95,6 +95,24 @@ copy .env.example .env
 | `GET` | `/api/downloads?url=...` | Quality download options |
 | `POST` | `/api/downloads/save` | Start background download |
 | `GET` | `/api/downloads/jobs` | Download job status |
+| `GET` | `/api/downloads/library` | Scanned downloaded movies |
+| `GET` | `/api/emby/status` | Whether Emby refresh is configured |
+| `POST` | `/api/emby/refresh` | Trigger full Emby library scan |
+
+## Emby library refresh
+
+Set in add-on **Configuration** (optional):
+
+| Option | Example |
+|--------|---------|
+| `emby_url` | `http://192.168.1.10:8096` |
+| `emby_api_key` | From Emby → Dashboard → Advanced → API Keys |
+
+When configured:
+- **After each download** — Movie Server notifies Emby of the new file (falls back to full scan if needed)
+- **Manual refresh** — `POST /api/emby/refresh`
+
+If Emby sees a different filesystem path than `download_dir`, set optional `emby_path_prefix` under advanced options.
 
 ## License
 

@@ -23,6 +23,16 @@ if [ -z "${K4_KEYWORDS}" ]; then
   K4_KEYWORDS="2160p,4k,4K,UHD"
 fi
 
+EMBY_URL="$(bashio::config 'emby_url')"
+EMBY_URL="${EMBY_URL#"${EMBY_URL%%[![:space:]]*}"}"
+EMBY_URL="${EMBY_URL%"${EMBY_URL##*[![:space:]]}"}"
+
+EMBY_API_KEY="$(bashio::config 'emby_api_key')"
+
+EMBY_PATH_PREFIX="$(bashio::config 'emby_path_prefix')"
+EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX#"${EMBY_PATH_PREFIX%%[![:space:]]*}"}"
+EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX%"${EMBY_PATH_PREFIX##*[![:space:]]}"}"
+
 cat > /app/.env <<EOF
 MAIN_URL=${MAIN_URL}
 PORT=3001
@@ -32,6 +42,9 @@ TMDB_API_KEY=${TMDB_API_KEY}
 DOWNLOAD_DIR=${DOWNLOAD_DIR}
 HD_KEYWORDS=${HD_KEYWORDS}
 K4_KEYWORDS=${K4_KEYWORDS}
+EMBY_URL=${EMBY_URL}
+EMBY_API_KEY=${EMBY_API_KEY}
+EMBY_PATH_PREFIX=${EMBY_PATH_PREFIX}
 EOF
 
 cd /app || exit 1

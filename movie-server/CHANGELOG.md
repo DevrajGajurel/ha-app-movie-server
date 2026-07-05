@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- Add Emby integration with optional `emby_url` and `emby_api_key` in add-on configuration.
+- `POST /api/emby/refresh` triggers a full library scan; downloads auto-notify Emby when configured.
+
 ## 1.1.1
 
 - Add HD (and 4K) quality filter dropdown plus an HD only preset chip.

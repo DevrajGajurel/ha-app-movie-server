@@ -114,6 +114,13 @@ async function runDownload(job) {
     });
 
     console.log(`[download] saved job #${job.id} -> ${filePath}`);
+
+    try {
+      const { refreshAfterDownload } = require("./emby");
+      await refreshAfterDownload(filePath);
+    } catch (err) {
+      console.warn(`[download] Emby refresh failed: ${err.message}`);
+    }
   } catch (err) {
     job.status = "failed";
     job.error = err.message;

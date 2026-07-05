@@ -14,6 +14,7 @@ const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
 const { parseKeywordList, tagQuality } = require("./quality");
 const { startDownload, getJob, listJobs, initDownloadDir, getDownloadDir, scanLibrary } = require("./fileDownloads");
+const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -271,7 +272,7 @@ const server = http.createServer(async (req, res) => {
   const url = req.url?.split("?")[0] ?? "/";
 
   if (url === "/api/config" && req.method === "GET") {
-    sendJson(res, 200, { mainUrl, maxPages, initialPages });
+    sendJson(res, 200, { mainUrl, maxPages, initialPages, embyConfigured: isEmbyConfigured() });
     return;
   }
 
@@ -366,6 +367,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === "/api/emby/status" && req.method === "GET") {
+    sendJson(res, 200, { configured: isEmbyConfigured() });
+    return;
+  }
+
+  if (url === "/api/emby/refresh" && req.method === "POST") {
+    try {
+      const result = await refreshLibrary();
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
   if (url === "/api/downloads" && req.method === "GET") {
     try {
       const pageUrl = new URL(req.url, "http://localhost").searchParams.get("url");
@@ -406,4 +422,5 @@ server.listen(PORT, () => {
   console.log(`Downloads: ${getDownloadDir()}`);
   console.log(`HD tags:   ${HD_KEYWORDS.join(", ")}`);
   console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
+  console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
 });
