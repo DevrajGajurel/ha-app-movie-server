@@ -27,95 +27,6 @@
       line-height: 1.5;
     }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 1.25rem 1.5rem;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    header h1 {
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
-
-    .meta {
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-top: 0.15rem;
-    }
-
-    .source-row {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      margin-top: 0.15rem;
-      max-width: min(100%, 640px);
-    }
-
-    .source-label {
-      font-size: 0.75rem;
-      color: var(--muted);
-      flex-shrink: 0;
-    }
-
-    .source-value {
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    .source-url {
-      font-size: 0.8rem;
-      color: var(--muted);
-      word-break: break-all;
-      flex: 1;
-    }
-
-    .icon-btn {
-      background: transparent;
-      color: var(--muted);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 0.3rem 0.45rem;
-      line-height: 0;
-      flex-shrink: 0;
-    }
-
-    .icon-btn:hover:not(:disabled) {
-      background: var(--border);
-      color: var(--text);
-    }
-
-    .icon-btn svg {
-      width: 14px;
-      height: 14px;
-      display: block;
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-shrink: 0;
-    }
-
-    .badge {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.6rem;
-      border-radius: 999px;
-      background: var(--border);
-      color: var(--muted);
-    }
-
-    .badge.ok { color: var(--success); background: rgba(74, 222, 128, 0.12); }
-    .badge.err { color: var(--danger); background: rgba(255, 107, 107, 0.12); }
-
     button {
       background: var(--accent);
       color: #fff;
@@ -136,7 +47,7 @@
     .filters {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 1rem 1.5rem 0;
+      padding: 1.25rem 1.5rem 0;
     }
 
     .filters[hidden] { display: none; }
@@ -167,6 +78,11 @@
 
     .filters-row input { flex: 1; min-width: 160px; }
     .filters-row select { min-width: 130px; }
+
+    #refresh {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
 
     .filters-row input:focus,
     .filters-row select:focus {
@@ -591,35 +507,6 @@
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Movie Server</h1>
-      <div class="source-row">
-        <span class="source-url" id="source">Loading source…</span>
-        <button class="icon-btn" id="edit-url" type="button" title="Edit main URL" aria-label="Edit main URL">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="source-row">
-        <span class="source-label">Pages:</span>
-        <span class="source-value" id="max-pages">1</span>
-        <button class="icon-btn" id="edit-pages" type="button" title="Edit max pages" aria-label="Edit max pages">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-    <div class="actions">
-      <span class="badge" id="status">—</span>
-      <button id="refresh" type="button">Refresh</button>
-    </div>
-  </header>
-
   <section class="filters" id="filters" hidden>
     <div class="filters-panel">
       <div class="filters-row">
@@ -642,6 +529,7 @@
           <option value="all">All years</option>
           <option value="recent">Recent (2 yrs)</option>
         </select>
+        <button id="refresh" type="button">Refresh</button>
       </div>
       <div class="filter-chips">
         <button class="chip" type="button" data-preset="recent">Recent releases</button>
@@ -662,49 +550,6 @@
     Metadata from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>
   </footer>
 
-  <div class="modal-backdrop" id="url-modal" hidden>
-    <div class="modal" role="dialog" aria-labelledby="modal-title">
-      <h2 id="modal-title">Edit main URL</h2>
-      <div id="modal-edit">
-        <input id="url-input" type="url" placeholder="https://example.com" autocomplete="url" />
-        <div class="modal-actions">
-          <button class="btn-secondary" id="modal-cancel" type="button">Cancel</button>
-          <button id="modal-next" type="button">Continue</button>
-        </div>
-      </div>
-      <div id="modal-confirm" hidden>
-        <p>Change main URL to:</p>
-        <p id="confirm-url"></p>
-        <div class="modal-actions">
-          <button class="btn-secondary" id="confirm-back" type="button">Back</button>
-          <button class="btn-danger" id="confirm-save" type="button">Confirm</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-backdrop" id="pages-modal" hidden>
-    <div class="modal" role="dialog" aria-labelledby="pages-modal-title">
-      <h2 id="pages-modal-title">Edit max pages</h2>
-      <div id="pages-modal-edit">
-        <input id="pages-input" type="number" min="1" max="100" step="1" placeholder="1" />
-        <p>Fetches page 1 through N using <code>?page=N</code> on the main URL.</p>
-        <div class="modal-actions">
-          <button class="btn-secondary" id="pages-modal-cancel" type="button">Cancel</button>
-          <button id="pages-modal-next" type="button">Continue</button>
-        </div>
-      </div>
-      <div id="pages-modal-confirm" hidden>
-        <p>Fetch pages 1 through:</p>
-        <p id="confirm-pages"></p>
-        <div class="modal-actions">
-          <button class="btn-secondary" id="pages-confirm-back" type="button">Back</button>
-          <button class="btn-danger" id="pages-confirm-save" type="button">Confirm</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="modal-backdrop" id="download-modal" hidden>
     <div class="modal" role="dialog" aria-labelledby="download-modal-title">
       <h2 id="download-modal-title">Download options</h2>
@@ -717,26 +562,9 @@
 
   <script>
     const content = document.getElementById("content");
-    const sourceEl = document.getElementById("source");
-    const statusEl = document.getElementById("status");
     const refreshBtn = document.getElementById("refresh");
     const footer = document.getElementById("footer");
-    const editUrlBtn = document.getElementById("edit-url");
-    const urlModal = document.getElementById("url-modal");
-    const urlInput = document.getElementById("url-input");
-    const modalEdit = document.getElementById("modal-edit");
-    const modalConfirm = document.getElementById("modal-confirm");
-    const confirmUrlEl = document.getElementById("confirm-url");
-    const modalTitle = document.getElementById("modal-title");
-    const maxPagesEl = document.getElementById("max-pages");
-    const pagesModal = document.getElementById("pages-modal");
-    const pagesInput = document.getElementById("pages-input");
-    const pagesModalEdit = document.getElementById("pages-modal-edit");
-    const pagesModalConfirm = document.getElementById("pages-modal-confirm");
-    const pagesModalTitle = document.getElementById("pages-modal-title");
-    const confirmPagesEl = document.getElementById("confirm-pages");
-    let pendingUrl = "";
-    let pendingPages = 1;
+    const filtersEl = document.getElementById("filters");
     let allMovies = [];
     let tmdbEnabledFlag = false;
     let loadGeneration = 0;
@@ -744,7 +572,6 @@
     let totalMaxPages = 1;
     let initialPagesCount = 2;
 
-    const filtersEl = document.getElementById("filters");
     const searchInput = document.getElementById("search-input");
     const sortSelect = document.getElementById("sort-select");
     const typeFilter = document.getElementById("type-filter");
@@ -761,107 +588,6 @@
 
     function apiUrl(path) {
       return `api/${path.replace(/^\//, "")}`;
-    }
-
-    function setSourceText(url) {
-      sourceEl.textContent = url || "—";
-    }
-
-    function setMaxPagesText(pages) {
-      maxPagesEl.textContent = String(pages || 1);
-    }
-
-    function openUrlModal() {
-      urlInput.value = sourceEl.textContent === "—" ? "" : sourceEl.textContent;
-      modalEdit.hidden = false;
-      modalConfirm.hidden = true;
-      modalTitle.textContent = "Edit main URL";
-      urlModal.hidden = false;
-      urlInput.focus();
-    }
-
-    function closeUrlModal() {
-      urlModal.hidden = true;
-      pendingUrl = "";
-    }
-
-    function showConfirmStep(url) {
-      pendingUrl = url;
-      confirmUrlEl.textContent = url;
-      modalEdit.hidden = true;
-      modalConfirm.hidden = false;
-      modalTitle.textContent = "Confirm change";
-    }
-
-    async function saveMainUrl(url) {
-      const res = await fetch(apiUrl("config"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mainUrl: url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      setSourceText(data.mainUrl);
-      closeUrlModal();
-      await load();
-    }
-
-    async function loadConfig() {
-      try {
-        const res = await fetch(apiUrl("config"));
-        const data = await res.json();
-        if (res.ok) {
-          setSourceText(data.mainUrl);
-          setMaxPagesText(data.maxPages);
-          totalMaxPages = data.maxPages;
-          initialPagesCount = data.initialPages || 2;
-        }
-      } catch {
-        // keep existing display
-      }
-    }
-
-    function openPagesModal() {
-      pagesInput.value = maxPagesEl.textContent === "—" ? "1" : maxPagesEl.textContent;
-      pagesModalEdit.hidden = false;
-      pagesModalConfirm.hidden = true;
-      pagesModalTitle.textContent = "Edit max pages";
-      pagesModal.hidden = false;
-      pagesInput.focus();
-    }
-
-    function closePagesModal() {
-      pagesModal.hidden = true;
-      pendingPages = 1;
-    }
-
-    function showPagesConfirmStep(pages) {
-      pendingPages = pages;
-      confirmPagesEl.textContent = String(pages);
-      pagesModalEdit.hidden = true;
-      pagesModalConfirm.hidden = false;
-      pagesModalTitle.textContent = "Confirm change";
-    }
-
-    async function saveMaxPages(pages) {
-      const oldMax = Number.parseInt(maxPagesEl.textContent, 10) || 1;
-      const res = await fetch(apiUrl("config"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxPages: pages }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      totalMaxPages = data.maxPages;
-      setMaxPagesText(data.maxPages);
-      closePagesModal();
-
-      if (data.maxPages > oldMax && allMovies.length > 0) {
-        loadRemainingPages(loadGeneration, oldMax + 1, data.maxPages);
-        return;
-      }
-
-      await load();
     }
 
     async function fetchPageRange(from, to) {
@@ -881,22 +607,10 @@
       }
     }
 
-    function updateStatus(done = false) {
-      const tmdbNote = tmdbEnabledFlag ? " · TMDB on" : " · TMDB off";
-      const loading = !done && loadedThroughPage < totalMaxPages;
-      const pagesNote = totalMaxPages > 1 ? ` · pages ${loadedThroughPage}/${totalMaxPages}` : "";
-      const loadingNote = loading ? " · loading more…" : "";
-      setStatus(
-        `${allMovies.length} movie${allMovies.length === 1 ? "" : "s"}${pagesNote}${loadingNote}${tmdbNote}`,
-        loading ? "" : "ok"
-      );
-    }
-
     async function loadRemainingPages(gen, fromPage, toPage) {
       for (let page = fromPage; page <= toPage; page++) {
         if (gen !== loadGeneration) return;
 
-        updateStatus(false);
         try {
           const data = await fetchPageRange(page, page);
           if (gen !== loadGeneration) return;
@@ -906,7 +620,6 @@
           tmdbEnabledFlag = data.tmdbEnabled;
           filtersEl.hidden = allMovies.length === 0;
           populateFilterOptions(allMovies);
-          updateStatus(page === toPage);
           applyFiltersAndRender();
         } catch (err) {
           console.error(err);
@@ -1056,26 +769,22 @@
       document.querySelector(`.chip[data-preset="${preset}"]`)?.classList.add("active");
       applyFiltersAndRender();
     }
-    function setStatus(text, type) {
-      statusEl.textContent = text;
-      statusEl.className = "badge" + (type ? " " + type : "");
-    }
-
     function renderEmptySearch(searchTerm) {
-      const currentPages = loadedThroughPage || Number.parseInt(maxPagesEl.textContent, 10) || 1;
-      const nextPages = Math.min((Number.parseInt(maxPagesEl.textContent, 10) || 1) + 3, 100);
-      const canSearchDeeper = nextPages > totalMaxPages;
+      const canLoadMore = loadedThroughPage < totalMaxPages;
+      const pagesHint = canLoadMore
+        ? "Load more pages to search a wider listing."
+        : "Increase max_pages in the Home Assistant add-on configuration to fetch more listings.";
 
       content.className = "state empty";
       content.innerHTML = `
         <div>No results found for <strong>${escapeHtml(searchTerm)}</strong>.</div>
         <p class="empty-hint">
-          This search checked ${currentPages} loaded page${currentPages === 1 ? "" : "s"}.
-          Try searching deeper to fetch more pages from the source.
+          Searched ${loadedThroughPage} loaded page${loadedThroughPage === 1 ? "" : "s"}.
+          ${pagesHint}
         </p>
         <div class="empty-actions">
-          <button id="search-deeper" type="button" ${canSearchDeeper ? "" : "disabled"}>
-            Search ${nextPages} pages
+          <button id="search-deeper" type="button" ${canLoadMore ? "" : "disabled"}>
+            Load more pages
           </button>
           <button class="btn-secondary" id="clear-search" type="button">Clear search</button>
         </div>
@@ -1084,14 +793,12 @@
       document.getElementById("search-deeper")?.addEventListener("click", async () => {
         const btn = document.getElementById("search-deeper");
         btn.disabled = true;
-        btn.textContent = "Searching deeper…";
-        try {
-          await saveMaxPages(nextPages);
-        } catch (err) {
-          alert(err.message);
-          btn.disabled = false;
-          btn.textContent = `Search ${nextPages} pages`;
-        }
+        btn.textContent = "Loading…";
+        const gen = loadGeneration;
+        const from = loadedThroughPage + 1;
+        const to = Math.min(loadedThroughPage + 3, totalMaxPages);
+        await loadRemainingPages(gen, from, to);
+        applyFiltersAndRender();
       });
 
       document.getElementById("clear-search")?.addEventListener("click", () => {
@@ -1105,7 +812,7 @@
 
       if (!movies.length) {
         content.className = "state empty";
-        content.textContent = "No movies found. Check MAIN_URL and page selectors.";
+        content.textContent = "No movies found. Check the add-on source URL configuration.";
         return;
       }
 
@@ -1386,7 +1093,8 @@
       allMovies = [];
       loadedThroughPage = 0;
       filtersEl.hidden = true;
-      setStatus("Loading…", "");
+      content.className = "state";
+      content.textContent = "Loading movies…";
 
       try {
         const configRes = await fetch(apiUrl("config"));
@@ -1395,8 +1103,6 @@
 
         totalMaxPages = config.maxPages;
         initialPagesCount = config.initialPages || 2;
-        setSourceText(config.mainUrl);
-        setMaxPagesText(config.maxPages);
 
         const firstTo = Math.min(initialPagesCount, totalMaxPages);
         const data = await fetchPageRange(1, firstTo);
@@ -1408,7 +1114,6 @@
         filtersEl.hidden = allMovies.length === 0;
         populateFilterOptions(allMovies);
         await refreshDownloadJobs({ rerender: false });
-        updateStatus(loadedThroughPage >= totalMaxPages);
         applyFiltersAndRender();
         refreshBtn.disabled = false;
 
@@ -1416,8 +1121,6 @@
           loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages);
         }
       } catch (err) {
-        setSourceText("—");
-        setStatus("Error", "err");
         content.className = "state error";
         content.textContent = err.message;
         refreshBtn.disabled = false;
@@ -1425,75 +1128,6 @@
     }
 
     refreshBtn.addEventListener("click", load);
-    editUrlBtn.addEventListener("click", openUrlModal);
-    document.getElementById("modal-cancel").addEventListener("click", closeUrlModal);
-    document.getElementById("confirm-back").addEventListener("click", () => {
-      modalConfirm.hidden = true;
-      modalEdit.hidden = false;
-      modalTitle.textContent = "Edit main URL";
-      urlInput.value = pendingUrl;
-      urlInput.focus();
-    });
-    document.getElementById("modal-next").addEventListener("click", () => {
-      const url = urlInput.value.trim();
-      if (!url) {
-        alert("Please enter a URL.");
-        return;
-      }
-      try {
-        new URL(url);
-      } catch {
-        alert("Please enter a valid URL (include https://).");
-        return;
-      }
-      showConfirmStep(url);
-    });
-    document.getElementById("confirm-save").addEventListener("click", async () => {
-      const btn = document.getElementById("confirm-save");
-      btn.disabled = true;
-      try {
-        await saveMainUrl(pendingUrl);
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    urlModal.addEventListener("click", (e) => {
-      if (e.target === urlModal) closeUrlModal();
-    });
-
-    document.getElementById("edit-pages").addEventListener("click", openPagesModal);
-    document.getElementById("pages-modal-cancel").addEventListener("click", closePagesModal);
-    document.getElementById("pages-confirm-back").addEventListener("click", () => {
-      pagesModalConfirm.hidden = true;
-      pagesModalEdit.hidden = false;
-      pagesModalTitle.textContent = "Edit max pages";
-      pagesInput.value = String(pendingPages);
-      pagesInput.focus();
-    });
-    document.getElementById("pages-modal-next").addEventListener("click", () => {
-      const pages = Number.parseInt(pagesInput.value, 10);
-      if (!Number.isFinite(pages) || pages < 1 || pages > 100) {
-        alert("Please enter a number between 1 and 100.");
-        return;
-      }
-      showPagesConfirmStep(pages);
-    });
-    document.getElementById("pages-confirm-save").addEventListener("click", async () => {
-      const btn = document.getElementById("pages-confirm-save");
-      btn.disabled = true;
-      try {
-        await saveMaxPages(pendingPages);
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    pagesModal.addEventListener("click", (e) => {
-      if (e.target === pagesModal) closePagesModal();
-    });
 
     content.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-download-link]");
@@ -1549,7 +1183,6 @@
       chip.addEventListener("click", () => applyPreset(chip.dataset.preset));
     });
 
-    loadConfig();
     load();
   </script>
 </body>

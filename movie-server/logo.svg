@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Movie Server">
-  <rect width="128" height="128" rx="24" fill="#1a1a2e"/>
-  <path d="M36 40h56a8 8 0 0 1 8 8v32a8 8 0 0 1-8 8H36a8 8 0 0 1-8-8V48a8 8 0 0 1 8-8z" fill="#e94560"/>
-  <path d="M58 52l24 12-24 12V52z" fill="#fff"/>
-</svg>
