@@ -882,13 +882,43 @@
     const downloadModal = document.getElementById("download-modal");
     const downloadModalTitle = document.getElementById("download-modal-title");
     const downloadModalContent = document.getElementById("download-modal-content");
-    let downloadModalState = { title: "", options: [], movieTitle: "" };
+    let downloadModalState = { title: "", options: [], movieTitle: "", tmdbId: null };
     const jobPollers = new Map();
     let downloadJobs = [];
     let downloadJobsPoller = null;
+    let downloadedTmdbIds = new Set();
+    let downloadedTitles = new Set();
 
     function apiUrl(path) {
       return `api/${path.replace(/^\//, "")}`;
+    }
+
+    function normalizeTitle(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/\(tmdb-\d+\)/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    }
+
+    async function refreshDownloadLibrary() {
+      try {
+        const res = await fetch(apiUrl("downloads/library"));
+        const data = await res.json();
+        if (!res.ok) return;
+        downloadedTmdbIds = new Set((data.tmdbIds || []).map(String));
+        downloadedTitles = new Set(data.titles || []);
+      } catch {
+        // Ignore transient failures; downloads still work.
+      }
+    }
+
+    function isAlreadyDownloaded(movie) {
+      const t = movie?.tmdb;
+      if (t?.tmdbId && downloadedTmdbIds.has(String(t.tmdbId))) return true;
+      const title = t?.tmdbTitle || movie?.title || "";
+      const norm = normalizeTitle(title);
+      return norm ? downloadedTitles.has(norm) : false;
     }
 
     async function fetchPageRange(from, to) {
@@ -1133,7 +1163,7 @@
 
         return `
         <article class="card">
-          <div class="poster">${poster}${qualityBadges}${renderDownloadedBadge(displayTitle)}</div>
+          <div class="poster">${poster}${qualityBadges}${renderDownloadedBadge(m, displayTitle)}</div>
           <div class="card-body">
             <h2>${escapeHtml(displayTitle)}</h2>
             ${m.title && m.title !== displayTitle ? `<div class="scraped-title">${escapeHtml(m.title)}</div>` : ""}
@@ -1147,7 +1177,7 @@
               ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
             ` : (tmdbEnabled ? `<p class="overview">No TMDB match</p>` : "")}
             <div class="links">
-              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}">Download</a>
+              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">Download</a>
               ${t?.tmdbUrl ? `<a class="card-action-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
             </div>
             ${renderCardDownloadStatus(displayTitle)}
@@ -1170,7 +1200,7 @@
 
     function closeDownloadModal() {
       downloadModal.hidden = true;
-      downloadModalState = { title: "", options: [], movieTitle: "" };
+      downloadModalState = { title: "", options: [], movieTitle: "", tmdbId: null };
       for (const timer of jobPollers.values()) clearInterval(timer);
       jobPollers.clear();
     }
@@ -1199,11 +1229,13 @@
       return downloadJobs.find((job) => job.movieTitle === title) || null;
     }
 
-    function renderDownloadedBadge(title) {
+    function renderDownloadedBadge(movie, title) {
       const job = latestJobForMovie(title);
-      if (!job || job.status !== "completed") return "";
+      const jobDone = job && job.status === "completed";
+      const libraryDone = isAlreadyDownloaded(movie);
+      if (!jobDone && !libraryDone) return "";
 
-      const tip = job.filePath || "Downloaded";
+      const tip = (jobDone && job.filePath) || "Already downloaded";
       return `
         <span class="download-badge downloaded" tabindex="0" aria-label="Downloaded" title="${escapeAttr(tip)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1267,7 +1299,7 @@
       }
     }
 
-    function startJobPolling(jobId, button, label) {
+    function startJobPolling(jobId, button, label, onComplete) {
       if (jobPollers.has(jobId)) clearInterval(jobPollers.get(jobId));
 
       const timer = setInterval(async () => {
@@ -1284,6 +1316,7 @@
             button.disabled = true;
             clearInterval(timer);
             jobPollers.delete(jobId);
+            if (typeof onComplete === "function") onComplete();
           } else if (job.status === "failed") {
             button.classList.add("failed");
             button.disabled = false;
@@ -1301,21 +1334,23 @@
     }
 
     async function startServerDownload(button) {
-      const { url, label, movieTitle } = button.dataset;
+      const { url, label, movieTitle, tmdbId } = button.dataset;
       button.disabled = true;
       button.textContent = `${label} — Starting…`;
 
       const res = await fetch(apiUrl("downloads/save"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, label, movieTitle }),
+        body: JSON.stringify({ url, label, movieTitle, tmdbId: tmdbId || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
 
       button.textContent = `${label} — Queued…`;
       await refreshDownloadJobs();
-      startJobPolling(data.job.id, button, label);
+      startJobPolling(data.job.id, button, label, () => {
+        refreshDownloadLibrary().then(() => applyFiltersAndRender());
+      });
     }
 
     function renderQualityOptions(options) {
@@ -1333,7 +1368,7 @@
       `;
     }
 
-    function renderDirectOptions(options, parentLabel, movieTitle) {
+    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId) {
       return `
         <button type="button" class="btn-secondary download-back">← Back</button>
         ${parentLabel ? `<p class="empty-hint">${escapeHtml(parentLabel)}</p>` : ""}
@@ -1347,6 +1382,7 @@
                 data-url="${escapeAttr(option.href)}"
                 data-label="${escapeAttr(option.label)}"
                 data-movie-title="${escapeAttr(movieTitle || "")}"
+                data-tmdb-id="${escapeAttr(tmdbId ? String(tmdbId) : "")}"
               >
                 ${escapeHtml(option.label)}
               </button>
@@ -1377,11 +1413,12 @@
       downloadModalContent.innerHTML = renderDirectOptions(
         data.options,
         parentLabel,
-        downloadModalState.movieTitle
+        downloadModalState.movieTitle,
+        downloadModalState.tmdbId
       );
     }
 
-    async function openDownloadModal(pageUrl, title) {
+    async function openDownloadModal(pageUrl, title, tmdbId) {
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
       downloadModalContent.textContent = "Loading download options…";
@@ -1405,6 +1442,7 @@
           title: title || "Download options",
           options: data.options,
           movieTitle: title || "",
+          tmdbId: tmdbId || null,
         };
         downloadModalContent.innerHTML = renderQualityOptions(data.options);
       } catch (err) {
@@ -1439,6 +1477,7 @@
         tmdbEnabledFlag = data.tmdbEnabled;
         filtersEl.hidden = allMovies.length === 0;
         populateFilterOptions(allMovies);
+        await refreshDownloadLibrary();
         await refreshDownloadJobs({ rerender: false });
         applyFiltersAndRender();
         refreshBtn.disabled = false;
@@ -1459,7 +1498,7 @@
       const btn = e.target.closest("[data-download-link]");
       if (!btn) return;
       e.preventDefault();
-      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle);
+      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle, btn.dataset.tmdbId || null);
     });
 
     document.getElementById("download-modal-close").addEventListener("click", closeDownloadModal);

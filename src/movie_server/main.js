@@ -13,7 +13,7 @@ const http = require("http");
 const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
 const { parseKeywordList, tagQuality } = require("./quality");
-const { startDownload, getJob, listJobs, initDownloadDir, getDownloadDir } = require("./fileDownloads");
+const { startDownload, getJob, listJobs, initDownloadDir, getDownloadDir, scanLibrary } = require("./fileDownloads");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -335,6 +335,7 @@ const server = http.createServer(async (req, res) => {
       const downloadUrl = String(body.url || "").trim();
       const label = String(body.label || "Download").trim();
       const movieTitle = body.movieTitle ? String(body.movieTitle).trim() : null;
+      const tmdbId = body.tmdbId ? String(body.tmdbId).trim() : null;
 
       if (!downloadUrl) {
         sendJson(res, 400, { error: "url is required" });
@@ -342,7 +343,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       new URL(downloadUrl);
-      const job = startDownload({ url: downloadUrl, label, movieTitle });
+      const job = startDownload({ url: downloadUrl, label, movieTitle, tmdbId });
       sendJson(res, 202, { message: "Download started", job });
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
@@ -353,6 +354,15 @@ const server = http.createServer(async (req, res) => {
 
   if (url === "/api/downloads/jobs" && req.method === "GET") {
     sendJson(res, 200, { downloadDir: getDownloadDir(), jobs: listJobs() });
+    return;
+  }
+
+  if (url === "/api/downloads/library" && req.method === "GET") {
+    try {
+      sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
     return;
   }
 

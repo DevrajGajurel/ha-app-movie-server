@@ -3,6 +3,7 @@ const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 
+const MARKER_FILE = ".movieserver.json";
 const jobs = [];
 let jobId = 0;
 
@@ -18,11 +19,32 @@ function sanitizeName(value) {
     .slice(0, 180);
 }
 
-function ensureDir(movieTitle) {
+function normalizeTitle(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\(tmdb-\d+\)/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function folderNameFor(movieTitle, tmdbId) {
+  const base = sanitizeName(movieTitle || "download");
+  return tmdbId ? `${base} (tmdb-${tmdbId})` : base;
+}
+
+function ensureDir(movieTitle, tmdbId) {
   const base = path.resolve(getDownloadDir());
-  const dir = movieTitle ? path.join(base, sanitizeName(movieTitle)) : base;
+  const dir = movieTitle || tmdbId ? path.join(base, folderNameFor(movieTitle, tmdbId)) : base;
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function writeMarker(dir, data) {
+  try {
+    fs.writeFileSync(path.join(dir, MARKER_FILE), JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.warn(`[download] could not write marker in ${dir}: ${err.message}`);
+  }
 }
 
 function pickFilename(contentDisposition, finalUrl, label) {
@@ -58,7 +80,7 @@ async function runDownload(job) {
       throw new Error(`Download failed: ${response.status}`);
     }
 
-    const dir = ensureDir(job.movieTitle);
+    const dir = ensureDir(job.movieTitle, job.tmdbId);
     const filename = pickFilename(
       response.headers.get("content-disposition"),
       response.url,
@@ -82,6 +104,15 @@ async function runDownload(job) {
 
     job.status = "completed";
     job.finishedAt = new Date().toISOString();
+
+    writeMarker(dir, {
+      tmdbId: job.tmdbId || null,
+      movieTitle: job.movieTitle || null,
+      label: job.label || null,
+      file: path.basename(filePath),
+      savedAt: job.finishedAt,
+    });
+
     console.log(`[download] saved job #${job.id} -> ${filePath}`);
   } catch (err) {
     job.status = "failed";
@@ -91,12 +122,13 @@ async function runDownload(job) {
   }
 }
 
-function startDownload({ url, label, movieTitle }) {
+function startDownload({ url, label, movieTitle, tmdbId }) {
   const job = {
     id: ++jobId,
     url,
     label,
     movieTitle: movieTitle || null,
+    tmdbId: tmdbId ? String(tmdbId) : null,
     status: "queued",
     receivedBytes: 0,
     totalBytes: 0,
@@ -128,10 +160,82 @@ function initDownloadDir() {
   console.log(`[download] folder ready: ${dir}`);
 }
 
+function hasMediaFiles(dir) {
+  try {
+    return fs.readdirSync(dir).some((name) => {
+      if (name === MARKER_FILE) return false;
+      const full = path.join(dir, name);
+      try {
+        return fs.statSync(full).isFile();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+function scanLibrary() {
+  const base = path.resolve(getDownloadDir());
+  const tmdbIds = new Set();
+  const titles = new Set();
+  const items = [];
+
+  let entries;
+  try {
+    entries = fs.readdirSync(base, { withFileTypes: true });
+  } catch {
+    return { tmdbIds: [], titles: [], items: [] };
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(base, entry.name);
+    if (!hasMediaFiles(dir)) continue;
+
+    let tmdbId = null;
+    let title = entry.name;
+
+    const marker = path.join(dir, MARKER_FILE);
+    if (fs.existsSync(marker)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(marker, "utf8"));
+        if (data.tmdbId) tmdbId = String(data.tmdbId);
+        if (data.movieTitle) title = data.movieTitle;
+      } catch {
+        // fall back to folder name parsing
+      }
+    }
+
+    if (!tmdbId) {
+      const match = /\(tmdb-(\d+)\)/i.exec(entry.name);
+      if (match) tmdbId = match[1];
+    }
+
+    const cleanTitle = entry.name.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim();
+    if (cleanTitle) title = title === entry.name ? cleanTitle : title;
+
+    if (tmdbId) tmdbIds.add(String(tmdbId));
+    const norm = normalizeTitle(cleanTitle || title);
+    if (norm) titles.add(norm);
+
+    items.push({ folder: entry.name, tmdbId, title });
+  }
+
+  return {
+    tmdbIds: [...tmdbIds],
+    titles: [...titles],
+    items,
+  };
+}
+
 module.exports = {
   getDownloadDir,
   startDownload,
   getJob,
   listJobs,
   initDownloadDir,
+  scanLibrary,
+  normalizeTitle,
 };

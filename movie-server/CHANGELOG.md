@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Persist downloaded status across restarts by scanning the download folder.
+- Save downloads into `Title (tmdb-<id>)` folders with a `.movieserver.json` marker for reliable matching.
+- Show the downloaded checkmark for previously downloaded movies detected in the folder (by TMDB ID or title).
+
 ## 1.0.9
 
 - Improve mobile layout with horizontal movie cards, touch-friendly buttons, and a bottom-sheet download modal.
