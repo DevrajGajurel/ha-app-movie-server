@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9
+
+- Improve mobile layout with horizontal movie cards, touch-friendly buttons, and a bottom-sheet download modal.
+- Filters stack in a 2-column grid with horizontally scrollable preset chips.
+
 ## 1.0.8
 
 - Fix HD/4K badges missing in Home Assistant when optional keyword config is blank or overridden by empty env vars.
