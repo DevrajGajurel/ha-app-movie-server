@@ -1,0 +1,10 @@
+{
+  "domain": "movie_server",
+  "name": "Movie Server",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/DevrajGajurel/ha-app-movie-server",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "1.0.0"
+}

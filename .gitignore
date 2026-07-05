@@ -1,2 +1,4 @@
-﻿node_modules
-*.env
+node_modules/
+src/movie_server/node_modules/
+downloads/
+.env

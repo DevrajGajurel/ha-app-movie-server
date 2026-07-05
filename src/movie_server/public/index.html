@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Movie Server</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2f3d;
+      --text: #e8eaef;
+      --muted: #8b93a7;
+      --accent: #6c8cff;
+      --accent-hover: #8aa4ff;
+      --danger: #ff6b6b;
+      --success: #4ade80;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+
+    .source-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.15rem;
+      max-width: min(100%, 640px);
+    }
+
+    .source-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .source-value {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .source-url {
+      font-size: 0.8rem;
+      color: var(--muted);
+      word-break: break-all;
+      flex: 1;
+    }
+
+    .icon-btn {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem 0.45rem;
+      line-height: 0;
+      flex-shrink: 0;
+    }
+
+    .icon-btn:hover:not(:disabled) {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    .icon-btn svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: var(--border);
+      color: var(--muted);
+    }
+
+    .badge.ok { color: var(--success); background: rgba(74, 222, 128, 0.12); }
+    .badge.err { color: var(--danger); background: rgba(255, 107, 107, 0.12); }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+
+    .filters {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem 1.5rem 0;
+    }
+
+    .filters[hidden] { display: none; }
+
+    .filters-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .filters-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: center;
+    }
+
+    .filters-row input,
+    .filters-row select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      font-size: 0.8rem;
+    }
+
+    .filters-row input { flex: 1; min-width: 160px; }
+    .filters-row select { min-width: 130px; }
+
+    .filters-row input:focus,
+    .filters-row select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+    }
+
+    .chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 0.3rem 0.7rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .chip:hover,
+    .chip.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(108, 140, 255, 0.1);
+    }
+
+    .filter-count {
+      margin-top: 0.65rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .empty-actions {
+      margin-top: 1rem;
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .empty-hint {
+      max-width: 520px;
+      margin: 0.5rem auto 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .genre-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .genre-tag {
+      font-size: 0.65rem;
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(108, 140, 255, 0.12);
+      color: var(--accent);
+    }
+
+    .state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+    }
+
+    .state.error { color: var(--danger); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+
+    .card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .poster {
+      aspect-ratio: 2 / 3;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-align: center;
+      padding: 0.5rem;
+      position: relative;
+    }
+
+    .quality-badges {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      align-items: flex-end;
+    }
+
+    .quality-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .quality-badge.hd {
+      background: rgba(74, 222, 128, 0.9);
+      color: #0f1117;
+    }
+
+    .quality-badge.k4 {
+      background: rgba(251, 191, 36, 0.95);
+      color: #0f1117;
+    }
+
+    .poster img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .card-body { padding: 0.85rem; }
+
+    .card h2 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .scraped-title {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .rating {
+      color: #fbbf24;
+      font-weight: 600;
+    }
+
+    .type-badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--muted);
+    }
+
+    .type-badge.tv {
+      color: #a78bfa;
+      background: rgba(167, 139, 250, 0.12);
+    }
+
+    .overview {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .links {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .card a {
+      color: var(--accent);
+      font-size: 0.75rem;
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .card a:hover { text-decoration: underline; }
+
+    .empty { color: var(--muted); font-size: 0.9rem; }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 1rem;
+    }
+
+    footer a { color: var(--accent); }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 100;
+    }
+
+    .modal-backdrop[hidden] { display: none; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      width: min(100%, 480px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .modal h2 {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .modal p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      word-break: break-all;
+    }
+
+    .modal p code {
+      color: var(--text);
+      font-size: 0.8rem;
+    }
+
+    .modal input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.6rem 0.75rem;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+
+    .modal input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--border);
+    }
+
+    .btn-danger {
+      background: var(--danger);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #ff8585;
+    }
+
+    .download-link {
+      cursor: pointer;
+    }
+    .download-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .download-option {
+      display: block;
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: border-color 0.15s;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    button.download-option {
+      font-family: inherit;
+    }
+
+    .download-back {
+      margin-bottom: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .download-option:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+
+    .download-option span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+      word-break: break-all;
+    }
+
+    button.download-option:disabled {
+      opacity: 0.7;
+      cursor: default;
+    }
+
+    .download-option.saved {
+      border-color: var(--success);
+    }
+
+    .download-option.failed {
+      border-color: var(--danger);
+    }
+
+    .download-save-hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .card-download-status {
+      margin-top: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem;
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .card-download-status strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+
+    .download-progress {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 0.45rem;
+    }
+
+    .download-progress span {
+      display: block;
+      height: 100%;
+      width: var(--progress, 0%);
+      background: var(--accent);
+      transition: width 0.2s;
+    }
+
+    .card-download-status.completed {
+      border-color: rgba(74, 222, 128, 0.5);
+    }
+
+    .card-download-status.failed {
+      border-color: rgba(255, 107, 107, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Movie Server</h1>
+      <div class="source-row">
+        <span class="source-url" id="source">Loading source…</span>
+        <button class="icon-btn" id="edit-url" type="button" title="Edit main URL" aria-label="Edit main URL">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="source-row">
+        <span class="source-label">Pages:</span>
+        <span class="source-value" id="max-pages">1</span>
+        <button class="icon-btn" id="edit-pages" type="button" title="Edit max pages" aria-label="Edit max pages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="actions">
+      <span class="badge" id="status">—</span>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <section class="filters" id="filters" hidden>
+    <div class="filters-panel">
+      <div class="filters-row">
+        <input id="search-input" type="search" placeholder="Search titles…" />
+        <select id="sort-select" aria-label="Sort by">
+          <option value="release-desc">Newest first</option>
+          <option value="release-asc">Oldest first</option>
+          <option value="rating-desc">Top rated</option>
+          <option value="title-asc">Title A–Z</option>
+        </select>
+        <select id="type-filter" aria-label="Filter by type">
+          <option value="all">All types</option>
+          <option value="movie">Movies</option>
+          <option value="tv">TV Series</option>
+        </select>
+        <select id="genre-filter" aria-label="Filter by genre">
+          <option value="all">All genres</option>
+        </select>
+        <select id="year-filter" aria-label="Filter by year">
+          <option value="all">All years</option>
+          <option value="recent">Recent (2 yrs)</option>
+        </select>
+      </div>
+      <div class="filter-chips">
+        <button class="chip" type="button" data-preset="recent">Recent releases</button>
+        <button class="chip" type="button" data-preset="top-rated">Top rated (7+)</button>
+        <button class="chip" type="button" data-preset="movies">Movies only</button>
+        <button class="chip" type="button" data-preset="tv">TV only</button>
+        <button class="chip" type="button" data-preset="reset">Reset filters</button>
+      </div>
+      <p class="filter-count" id="filter-count"></p>
+    </div>
+  </section>
+
+  <main>
+    <div id="content" class="state"></div>
+  </main>
+
+  <footer id="footer" hidden>
+    Metadata from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>
+  </footer>
+
+  <div class="modal-backdrop" id="url-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="modal-title">
+      <h2 id="modal-title">Edit main URL</h2>
+      <div id="modal-edit">
+        <input id="url-input" type="url" placeholder="https://example.com" autocomplete="url" />
+        <div class="modal-actions">
+          <button class="btn-secondary" id="modal-cancel" type="button">Cancel</button>
+          <button id="modal-next" type="button">Continue</button>
+        </div>
+      </div>
+      <div id="modal-confirm" hidden>
+        <p>Change main URL to:</p>
+        <p id="confirm-url"></p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="confirm-back" type="button">Back</button>
+          <button class="btn-danger" id="confirm-save" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="pages-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="pages-modal-title">
+      <h2 id="pages-modal-title">Edit max pages</h2>
+      <div id="pages-modal-edit">
+        <input id="pages-input" type="number" min="1" max="100" step="1" placeholder="1" />
+        <p>Fetches page 1 through N using <code>?page=N</code> on the main URL.</p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="pages-modal-cancel" type="button">Cancel</button>
+          <button id="pages-modal-next" type="button">Continue</button>
+        </div>
+      </div>
+      <div id="pages-modal-confirm" hidden>
+        <p>Fetch pages 1 through:</p>
+        <p id="confirm-pages"></p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="pages-confirm-back" type="button">Back</button>
+          <button class="btn-danger" id="pages-confirm-save" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="download-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="download-modal-title">
+      <h2 id="download-modal-title">Download options</h2>
+      <div id="download-modal-content" class="download-state">Loading…</div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="download-modal-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const content = document.getElementById("content");
+    const sourceEl = document.getElementById("source");
+    const statusEl = document.getElementById("status");
+    const refreshBtn = document.getElementById("refresh");
+    const footer = document.getElementById("footer");
+    const editUrlBtn = document.getElementById("edit-url");
+    const urlModal = document.getElementById("url-modal");
+    const urlInput = document.getElementById("url-input");
+    const modalEdit = document.getElementById("modal-edit");
+    const modalConfirm = document.getElementById("modal-confirm");
+    const confirmUrlEl = document.getElementById("confirm-url");
+    const modalTitle = document.getElementById("modal-title");
+    const maxPagesEl = document.getElementById("max-pages");
+    const pagesModal = document.getElementById("pages-modal");
+    const pagesInput = document.getElementById("pages-input");
+    const pagesModalEdit = document.getElementById("pages-modal-edit");
+    const pagesModalConfirm = document.getElementById("pages-modal-confirm");
+    const pagesModalTitle = document.getElementById("pages-modal-title");
+    const confirmPagesEl = document.getElementById("confirm-pages");
+    let pendingUrl = "";
+    let pendingPages = 1;
+    let allMovies = [];
+    let tmdbEnabledFlag = false;
+    let loadGeneration = 0;
+    let loadedThroughPage = 0;
+    let totalMaxPages = 1;
+    let initialPagesCount = 2;
+
+    const filtersEl = document.getElementById("filters");
+    const searchInput = document.getElementById("search-input");
+    const sortSelect = document.getElementById("sort-select");
+    const typeFilter = document.getElementById("type-filter");
+    const genreFilter = document.getElementById("genre-filter");
+    const yearFilter = document.getElementById("year-filter");
+    const filterCountEl = document.getElementById("filter-count");
+    const downloadModal = document.getElementById("download-modal");
+    const downloadModalTitle = document.getElementById("download-modal-title");
+    const downloadModalContent = document.getElementById("download-modal-content");
+    let downloadModalState = { title: "", options: [], movieTitle: "" };
+    const jobPollers = new Map();
+    let downloadJobs = [];
+    let downloadJobsPoller = null;
+
+    function apiUrl(path) {
+      return `api/${path.replace(/^\//, "")}`;
+    }
+
+    function setSourceText(url) {
+      sourceEl.textContent = url || "—";
+    }
+
+    function setMaxPagesText(pages) {
+      maxPagesEl.textContent = String(pages || 1);
+    }
+
+    function openUrlModal() {
+      urlInput.value = sourceEl.textContent === "—" ? "" : sourceEl.textContent;
+      modalEdit.hidden = false;
+      modalConfirm.hidden = true;
+      modalTitle.textContent = "Edit main URL";
+      urlModal.hidden = false;
+      urlInput.focus();
+    }
+
+    function closeUrlModal() {
+      urlModal.hidden = true;
+      pendingUrl = "";
+    }
+
+    function showConfirmStep(url) {
+      pendingUrl = url;
+      confirmUrlEl.textContent = url;
+      modalEdit.hidden = true;
+      modalConfirm.hidden = false;
+      modalTitle.textContent = "Confirm change";
+    }
+
+    async function saveMainUrl(url) {
+      const res = await fetch(apiUrl("config"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mainUrl: url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setSourceText(data.mainUrl);
+      closeUrlModal();
+      await load();
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch(apiUrl("config"));
+        const data = await res.json();
+        if (res.ok) {
+          setSourceText(data.mainUrl);
+          setMaxPagesText(data.maxPages);
+          totalMaxPages = data.maxPages;
+          initialPagesCount = data.initialPages || 2;
+        }
+      } catch {
+        // keep existing display
+      }
+    }
+
+    function openPagesModal() {
+      pagesInput.value = maxPagesEl.textContent === "—" ? "1" : maxPagesEl.textContent;
+      pagesModalEdit.hidden = false;
+      pagesModalConfirm.hidden = true;
+      pagesModalTitle.textContent = "Edit max pages";
+      pagesModal.hidden = false;
+      pagesInput.focus();
+    }
+
+    function closePagesModal() {
+      pagesModal.hidden = true;
+      pendingPages = 1;
+    }
+
+    function showPagesConfirmStep(pages) {
+      pendingPages = pages;
+      confirmPagesEl.textContent = String(pages);
+      pagesModalEdit.hidden = true;
+      pagesModalConfirm.hidden = false;
+      pagesModalTitle.textContent = "Confirm change";
+    }
+
+    async function saveMaxPages(pages) {
+      const oldMax = Number.parseInt(maxPagesEl.textContent, 10) || 1;
+      const res = await fetch(apiUrl("config"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxPages: pages }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      totalMaxPages = data.maxPages;
+      setMaxPagesText(data.maxPages);
+      closePagesModal();
+
+      if (data.maxPages > oldMax && allMovies.length > 0) {
+        loadRemainingPages(loadGeneration, oldMax + 1, data.maxPages);
+        return;
+      }
+
+      await load();
+    }
+
+    async function fetchPageRange(from, to) {
+      const res = await fetch(apiUrl(`movies?from=${from}&to=${to}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function mergeMovies(incoming) {
+      const seen = new Set(allMovies.map((movie) => movie.link));
+      for (const movie of incoming) {
+        if (!seen.has(movie.link)) {
+          seen.add(movie.link);
+          allMovies.push(movie);
+        }
+      }
+    }
+
+    function updateStatus(done = false) {
+      const tmdbNote = tmdbEnabledFlag ? " · TMDB on" : " · TMDB off";
+      const loading = !done && loadedThroughPage < totalMaxPages;
+      const pagesNote = totalMaxPages > 1 ? ` · pages ${loadedThroughPage}/${totalMaxPages}` : "";
+      const loadingNote = loading ? " · loading more…" : "";
+      setStatus(
+        `${allMovies.length} movie${allMovies.length === 1 ? "" : "s"}${pagesNote}${loadingNote}${tmdbNote}`,
+        loading ? "" : "ok"
+      );
+    }
+
+    async function loadRemainingPages(gen, fromPage, toPage) {
+      for (let page = fromPage; page <= toPage; page++) {
+        if (gen !== loadGeneration) return;
+
+        updateStatus(false);
+        try {
+          const data = await fetchPageRange(page, page);
+          if (gen !== loadGeneration) return;
+
+          mergeMovies(data.movies || []);
+          loadedThroughPage = page;
+          tmdbEnabledFlag = data.tmdbEnabled;
+          filtersEl.hidden = allMovies.length === 0;
+          populateFilterOptions(allMovies);
+          updateStatus(page === toPage);
+          applyFiltersAndRender();
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    }
+
+    function getDisplayTitle(movie) {
+      return movie.tmdb?.tmdbTitle || movie.title || "Untitled";
+    }
+
+    function getReleaseTime(movie) {
+      if (movie.tmdb?.releaseDate) return new Date(movie.tmdb.releaseDate).getTime();
+      if (movie.tmdb?.year) return new Date(`${movie.tmdb.year}-01-01`).getTime();
+      return 0;
+    }
+
+    function populateFilterOptions(movies) {
+      const genres = new Set();
+      const years = new Set();
+
+      for (const movie of movies) {
+        for (const genre of movie.tmdb?.genres || []) genres.add(genre);
+        if (movie.tmdb?.year) years.add(movie.tmdb.year);
+      }
+
+      const currentGenre = genreFilter.value;
+      genreFilter.innerHTML = '<option value="all">All genres</option>';
+      [...genres].sort().forEach((genre) => {
+        const opt = document.createElement("option");
+        opt.value = genre;
+        opt.textContent = genre;
+        genreFilter.appendChild(opt);
+      });
+      if ([...genreFilter.options].some((o) => o.value === currentGenre)) {
+        genreFilter.value = currentGenre;
+      }
+
+      const currentYear = yearFilter.value;
+      yearFilter.innerHTML = `
+        <option value="all">All years</option>
+        <option value="recent">Recent (2 yrs)</option>
+      `;
+      [...years].sort((a, b) => b - a).forEach((year) => {
+        const opt = document.createElement("option");
+        opt.value = year;
+        opt.textContent = year;
+        yearFilter.appendChild(opt);
+      });
+      if ([...yearFilter.options].some((o) => o.value === currentYear)) {
+        yearFilter.value = currentYear;
+      }
+    }
+
+    function applyFiltersAndRender() {
+      let list = [...allMovies];
+      const search = searchInput.value.trim().toLowerCase();
+      const type = typeFilter.value;
+      const genre = genreFilter.value;
+      const year = yearFilter.value;
+      const sort = sortSelect.value;
+
+      if (search) {
+        list = list.filter((m) => getDisplayTitle(m).toLowerCase().includes(search));
+      }
+
+      if (type !== "all") {
+        list = list.filter((m) => m.tmdb?.type === type);
+      }
+
+      if (genre !== "all") {
+        list = list.filter((m) => m.tmdb?.genres?.includes(genre));
+      }
+
+      if (year === "recent") {
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - 2);
+        list = list.filter((m) => {
+          const time = getReleaseTime(m);
+          return time && time >= cutoff.getTime();
+        });
+      } else if (year !== "all") {
+        list = list.filter((m) => m.tmdb?.year === year);
+      }
+
+      list.sort((a, b) => {
+        if (sort === "release-desc") return getReleaseTime(b) - getReleaseTime(a);
+        if (sort === "release-asc") return getReleaseTime(a) - getReleaseTime(b);
+        if (sort === "rating-desc") return (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0);
+        return getDisplayTitle(a).localeCompare(getDisplayTitle(b));
+      });
+
+      filterCountEl.textContent = `Showing ${list.length} of ${allMovies.length}`;
+      if (list.length === 0 && search && allMovies.length > 0) {
+        if (loadedThroughPage < totalMaxPages) {
+          filterCountEl.textContent = `No matches yet in ${allMovies.length} loaded · pages ${loadedThroughPage + 1}-${totalMaxPages} loading…`;
+          content.className = "state empty";
+          content.innerHTML = `
+            <p class="empty-hint">
+              No results for <strong>${escapeHtml(searchInput.value.trim())}</strong> in loaded pages so far.
+              Still fetching pages ${loadedThroughPage + 1}-${totalMaxPages} in the background…
+            </p>`;
+        } else {
+          renderEmptySearch(searchInput.value.trim());
+        }
+      } else {
+        renderMovies(list, tmdbEnabledFlag);
+      }
+
+      document.querySelectorAll(".chip[data-preset]").forEach((chip) => {
+        chip.classList.remove("active");
+      });
+    }
+
+    function resetFilters() {
+      searchInput.value = "";
+      sortSelect.value = "release-desc";
+      typeFilter.value = "all";
+      genreFilter.value = "all";
+      yearFilter.value = "all";
+      applyFiltersAndRender();
+    }
+
+    function applyPreset(preset) {
+      resetFilters();
+      if (preset === "recent") {
+        yearFilter.value = "recent";
+        sortSelect.value = "release-desc";
+      } else if (preset === "top-rated") {
+        sortSelect.value = "rating-desc";
+        const list = allMovies
+          .filter((m) => (m.tmdb?.rating || 0) >= 7)
+          .sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0));
+        filterCountEl.textContent = `Showing ${list.length} of ${allMovies.length}`;
+        renderMovies(list, tmdbEnabledFlag);
+        document.querySelector('.chip[data-preset="top-rated"]')?.classList.add("active");
+        return;
+      } else if (preset === "movies") {
+        typeFilter.value = "movie";
+      } else if (preset === "tv") {
+        typeFilter.value = "tv";
+      } else if (preset === "reset") {
+        applyFiltersAndRender();
+        return;
+      }
+
+      document.querySelector(`.chip[data-preset="${preset}"]`)?.classList.add("active");
+      applyFiltersAndRender();
+    }
+    function setStatus(text, type) {
+      statusEl.textContent = text;
+      statusEl.className = "badge" + (type ? " " + type : "");
+    }
+
+    function renderEmptySearch(searchTerm) {
+      const currentPages = loadedThroughPage || Number.parseInt(maxPagesEl.textContent, 10) || 1;
+      const nextPages = Math.min((Number.parseInt(maxPagesEl.textContent, 10) || 1) + 3, 100);
+      const canSearchDeeper = nextPages > totalMaxPages;
+
+      content.className = "state empty";
+      content.innerHTML = `
+        <div>No results found for <strong>${escapeHtml(searchTerm)}</strong>.</div>
+        <p class="empty-hint">
+          This search checked ${currentPages} loaded page${currentPages === 1 ? "" : "s"}.
+          Try searching deeper to fetch more pages from the source.
+        </p>
+        <div class="empty-actions">
+          <button id="search-deeper" type="button" ${canSearchDeeper ? "" : "disabled"}>
+            Search ${nextPages} pages
+          </button>
+          <button class="btn-secondary" id="clear-search" type="button">Clear search</button>
+        </div>
+      `;
+
+      document.getElementById("search-deeper")?.addEventListener("click", async () => {
+        const btn = document.getElementById("search-deeper");
+        btn.disabled = true;
+        btn.textContent = "Searching deeper…";
+        try {
+          await saveMaxPages(nextPages);
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+          btn.textContent = `Search ${nextPages} pages`;
+        }
+      });
+
+      document.getElementById("clear-search")?.addEventListener("click", () => {
+        searchInput.value = "";
+        applyFiltersAndRender();
+      });
+    }
+
+    function renderMovies(movies, tmdbEnabled) {
+      footer.hidden = !tmdbEnabled;
+
+      if (!movies.length) {
+        content.className = "state empty";
+        content.textContent = "No movies found. Check MAIN_URL and page selectors.";
+        return;
+      }
+
+      content.className = "grid";
+      content.innerHTML = movies.map((m) => {
+        const t = m.tmdb;
+        const displayTitle = t?.tmdbTitle || m.title || "Untitled";
+        const poster = t?.poster
+          ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
+          : "No poster";
+
+        const qualityBadges = `
+          <div class="quality-badges">
+            ${m.quality?.k4 ? '<span class="quality-badge k4">4K</span>' : ""}
+            ${m.quality?.hd ? '<span class="quality-badge hd">HD</span>' : ""}
+          </div>`;
+
+        return `
+        <article class="card">
+          <div class="poster">${poster}${qualityBadges}</div>
+          <div class="card-body">
+            <h2>${escapeHtml(displayTitle)}</h2>
+            ${m.title && m.title !== displayTitle ? `<div class="scraped-title">${escapeHtml(m.title)}</div>` : ""}
+            ${t ? `
+              <div class="meta-row">
+                <span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>
+                ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+                ${t.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+              </div>
+              ${t.genres?.length ? `<div class="genre-tags">${t.genres.slice(0, 3).map((g) => `<span class="genre-tag">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
+              ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
+            ` : (tmdbEnabled ? `<p class="overview">No TMDB match</p>` : "")}
+            <div class="links">
+              <a href="#" class="download-link" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}">Download Link</a>
+              ${t?.tmdbUrl ? `<a href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB page</a>` : ""}
+            </div>
+            ${renderCardDownloadStatus(displayTitle)}
+          </div>
+        </article>`;
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/'/g, "&#39;");
+    }
+
+    function closeDownloadModal() {
+      downloadModal.hidden = true;
+      downloadModalState = { title: "", options: [], movieTitle: "" };
+      for (const timer of jobPollers.values()) clearInterval(timer);
+      jobPollers.clear();
+    }
+
+    function formatJobStatus(job) {
+      if (job.status === "queued") return "Queued…";
+      if (job.status === "downloading") {
+        if (job.totalBytes > 0) {
+          const pct = Math.min(100, Math.round((job.receivedBytes / job.totalBytes) * 100));
+          return `Downloading… ${pct}%`;
+        }
+        return "Downloading…";
+      }
+      if (job.status === "completed") return "Saved to PlexMedia";
+      if (job.status === "failed") return `Failed: ${job.error}`;
+      return job.status;
+    }
+
+    function jobProgress(job) {
+      if (!job.totalBytes) return 0;
+      return Math.min(100, Math.round((job.receivedBytes / job.totalBytes) * 100));
+    }
+
+    function latestJobForMovie(title) {
+      if (!title) return null;
+      return downloadJobs.find((job) => job.movieTitle === title) || null;
+    }
+
+    function renderCardDownloadStatus(title) {
+      const job = latestJobForMovie(title);
+      if (!job) return "";
+
+      const progress = jobProgress(job);
+      const statusClass = job.status === "completed" ? " completed" : job.status === "failed" ? " failed" : "";
+      const progressBar =
+        job.status === "downloading" || job.status === "queued"
+          ? `<div class="download-progress" style="--progress: ${progress}%"><span></span></div>`
+          : "";
+
+      return `
+        <div class="card-download-status${statusClass}">
+          <strong>${escapeHtml(formatJobStatus(job))}</strong>
+          <div>${escapeHtml(job.label || "Server download")}</div>
+          ${progressBar}
+        </div>
+      `;
+    }
+
+    async function refreshDownloadJobs({ rerender = true } = {}) {
+      try {
+        const res = await fetch(apiUrl("downloads/jobs"));
+        const data = await res.json();
+        if (!res.ok) return;
+        downloadJobs = data.jobs || [];
+        if (rerender) applyFiltersAndRender();
+        updateDownloadJobsPoller();
+      } catch {
+        // Ignore transient polling failures.
+      }
+    }
+
+    function updateDownloadJobsPoller() {
+      const hasActiveJobs = downloadJobs.some((job) => job.status === "queued" || job.status === "downloading");
+      if (hasActiveJobs && !downloadJobsPoller) {
+        downloadJobsPoller = setInterval(() => refreshDownloadJobs(), 2000);
+      } else if (!hasActiveJobs && downloadJobsPoller) {
+        clearInterval(downloadJobsPoller);
+        downloadJobsPoller = null;
+      }
+    }
+
+    function startJobPolling(jobId, button, label) {
+      if (jobPollers.has(jobId)) clearInterval(jobPollers.get(jobId));
+
+      const timer = setInterval(async () => {
+        try {
+          const res = await fetch(apiUrl("downloads/jobs"));
+          const data = await res.json();
+          const job = data.jobs?.find((item) => item.id === jobId);
+          if (!job) return;
+
+          button.textContent = `${label} — ${formatJobStatus(job)}`;
+
+          if (job.status === "completed") {
+            button.classList.add("saved");
+            button.disabled = true;
+            clearInterval(timer);
+            jobPollers.delete(jobId);
+          } else if (job.status === "failed") {
+            button.classList.add("failed");
+            button.disabled = false;
+            clearInterval(timer);
+            jobPollers.delete(jobId);
+          } else {
+            button.disabled = true;
+          }
+        } catch {
+          // keep polling
+        }
+      }, 1500);
+
+      jobPollers.set(jobId, timer);
+    }
+
+    async function startServerDownload(button) {
+      const { url, label, movieTitle } = button.dataset;
+      button.disabled = true;
+      button.textContent = `${label} — Starting…`;
+
+      const res = await fetch(apiUrl("downloads/save"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, label, movieTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      button.textContent = `${label} — Queued…`;
+      await refreshDownloadJobs();
+      startJobPolling(data.job.id, button, label);
+    }
+
+    function renderQualityOptions(options) {
+      return `
+        <ul class="download-list">
+          ${options.map((option) => `
+            <li>
+              <button type="button" class="download-option download-picker" data-url="${escapeAttr(option.href)}" data-label="${escapeAttr(option.label)}">
+                ${escapeHtml(option.label)}
+                <span>${escapeHtml(option.href)}</span>
+              </button>
+            </li>
+          `).join("")}
+        </ul>
+      `;
+    }
+
+    function renderDirectOptions(options, parentLabel, movieTitle) {
+      return `
+        <button type="button" class="btn-secondary download-back">← Back</button>
+        ${parentLabel ? `<p class="empty-hint">${escapeHtml(parentLabel)}</p>` : ""}
+        <p class="download-save-hint">Click to download to PlexMedia on the server (background download).</p>
+        <ul class="download-list">
+          ${options.map((option) => `
+            <li>
+              <button
+                type="button"
+                class="download-option server-download"
+                data-url="${escapeAttr(option.href)}"
+                data-label="${escapeAttr(option.label)}"
+                data-movie-title="${escapeAttr(movieTitle || "")}"
+              >
+                ${escapeHtml(option.label)}
+              </button>
+            </li>
+          `).join("")}
+        </ul>
+      `;
+    }
+
+    async function loadDirectDownloads(pageUrl, parentLabel) {
+      downloadModalContent.className = "download-state";
+      downloadModalContent.textContent = "Loading direct download links…";
+
+      const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}&type=direct`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      if (!data.options?.length) {
+        downloadModalContent.className = "download-state";
+        downloadModalContent.innerHTML = `
+          <button type="button" class="btn-secondary download-back">← Back</button>
+          <p>No direct download links found.</p>
+          <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
+        `;
+        return;
+      }
+
+      downloadModalContent.innerHTML = renderDirectOptions(
+        data.options,
+        parentLabel,
+        downloadModalState.movieTitle
+      );
+    }
+
+    async function openDownloadModal(pageUrl, title) {
+      downloadModalTitle.textContent = title || "Download options";
+      downloadModalContent.className = "download-state";
+      downloadModalContent.textContent = "Loading download options…";
+      downloadModal.hidden = false;
+
+      try {
+        const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}`));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        if (!data.options?.length) {
+          downloadModalContent.className = "download-state";
+          downloadModalContent.innerHTML = `
+            <p>No download links found on this page.</p>
+            <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
+          `;
+          return;
+        }
+
+        downloadModalState = {
+          title: title || "Download options",
+          options: data.options,
+          movieTitle: title || "",
+        };
+        downloadModalContent.innerHTML = renderQualityOptions(data.options);
+      } catch (err) {
+        downloadModalContent.className = "download-state";
+        downloadModalContent.textContent = err.message;
+      }
+    }
+
+    async function load() {
+      const gen = ++loadGeneration;
+      refreshBtn.disabled = true;
+      allMovies = [];
+      loadedThroughPage = 0;
+      filtersEl.hidden = true;
+      setStatus("Loading…", "");
+
+      try {
+        const configRes = await fetch(apiUrl("config"));
+        const config = await configRes.json();
+        if (!configRes.ok) throw new Error("Failed to load config");
+
+        totalMaxPages = config.maxPages;
+        initialPagesCount = config.initialPages || 2;
+        setSourceText(config.mainUrl);
+        setMaxPagesText(config.maxPages);
+
+        const firstTo = Math.min(initialPagesCount, totalMaxPages);
+        const data = await fetchPageRange(1, firstTo);
+        if (gen !== loadGeneration) return;
+
+        mergeMovies(data.movies || []);
+        loadedThroughPage = data.to;
+        tmdbEnabledFlag = data.tmdbEnabled;
+        filtersEl.hidden = allMovies.length === 0;
+        populateFilterOptions(allMovies);
+        await refreshDownloadJobs({ rerender: false });
+        updateStatus(loadedThroughPage >= totalMaxPages);
+        applyFiltersAndRender();
+        refreshBtn.disabled = false;
+
+        if (loadedThroughPage < totalMaxPages) {
+          loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages);
+        }
+      } catch (err) {
+        setSourceText("—");
+        setStatus("Error", "err");
+        content.className = "state error";
+        content.textContent = err.message;
+        refreshBtn.disabled = false;
+      }
+    }
+
+    refreshBtn.addEventListener("click", load);
+    editUrlBtn.addEventListener("click", openUrlModal);
+    document.getElementById("modal-cancel").addEventListener("click", closeUrlModal);
+    document.getElementById("confirm-back").addEventListener("click", () => {
+      modalConfirm.hidden = true;
+      modalEdit.hidden = false;
+      modalTitle.textContent = "Edit main URL";
+      urlInput.value = pendingUrl;
+      urlInput.focus();
+    });
+    document.getElementById("modal-next").addEventListener("click", () => {
+      const url = urlInput.value.trim();
+      if (!url) {
+        alert("Please enter a URL.");
+        return;
+      }
+      try {
+        new URL(url);
+      } catch {
+        alert("Please enter a valid URL (include https://).");
+        return;
+      }
+      showConfirmStep(url);
+    });
+    document.getElementById("confirm-save").addEventListener("click", async () => {
+      const btn = document.getElementById("confirm-save");
+      btn.disabled = true;
+      try {
+        await saveMainUrl(pendingUrl);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    urlModal.addEventListener("click", (e) => {
+      if (e.target === urlModal) closeUrlModal();
+    });
+
+    document.getElementById("edit-pages").addEventListener("click", openPagesModal);
+    document.getElementById("pages-modal-cancel").addEventListener("click", closePagesModal);
+    document.getElementById("pages-confirm-back").addEventListener("click", () => {
+      pagesModalConfirm.hidden = true;
+      pagesModalEdit.hidden = false;
+      pagesModalTitle.textContent = "Edit max pages";
+      pagesInput.value = String(pendingPages);
+      pagesInput.focus();
+    });
+    document.getElementById("pages-modal-next").addEventListener("click", () => {
+      const pages = Number.parseInt(pagesInput.value, 10);
+      if (!Number.isFinite(pages) || pages < 1 || pages > 100) {
+        alert("Please enter a number between 1 and 100.");
+        return;
+      }
+      showPagesConfirmStep(pages);
+    });
+    document.getElementById("pages-confirm-save").addEventListener("click", async () => {
+      const btn = document.getElementById("pages-confirm-save");
+      btn.disabled = true;
+      try {
+        await saveMaxPages(pendingPages);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    pagesModal.addEventListener("click", (e) => {
+      if (e.target === pagesModal) closePagesModal();
+    });
+
+    content.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-download-link]");
+      if (!btn) return;
+      e.preventDefault();
+      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle);
+    });
+
+    document.getElementById("download-modal-close").addEventListener("click", closeDownloadModal);
+    downloadModal.addEventListener("click", (e) => {
+      if (e.target === downloadModal) closeDownloadModal();
+    });
+
+    downloadModalContent.addEventListener("click", async (e) => {
+      const picker = e.target.closest(".download-picker");
+      if (picker) {
+        e.preventDefault();
+        try {
+          await loadDirectDownloads(picker.dataset.url, picker.dataset.label);
+        } catch (err) {
+          downloadModalContent.className = "download-state";
+          downloadModalContent.textContent = err.message;
+        }
+        return;
+      }
+
+      const serverBtn = e.target.closest(".server-download");
+      if (serverBtn) {
+        e.preventDefault();
+        try {
+          await startServerDownload(serverBtn);
+        } catch (err) {
+          serverBtn.disabled = false;
+          serverBtn.classList.add("failed");
+          serverBtn.textContent = `${serverBtn.dataset.label} — ${err.message}`;
+        }
+        return;
+      }
+
+      const backBtn = e.target.closest(".download-back");
+      if (backBtn) {
+        e.preventDefault();
+        downloadModalContent.innerHTML = renderQualityOptions(downloadModalState.options);
+      }
+    });
+
+    [searchInput, sortSelect, typeFilter, genreFilter, yearFilter].forEach((el) => {
+      el.addEventListener("input", applyFiltersAndRender);
+      el.addEventListener("change", applyFiltersAndRender);
+    });
+
+    document.querySelectorAll(".chip[data-preset]").forEach((chip) => {
+      chip.addEventListener("click", () => applyPreset(chip.dataset.preset));
+    });
+
+    loadConfig();
+    load();
+  </script>
+</body>
+</html>

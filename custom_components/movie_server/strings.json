@@ -1,0 +1,19 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Movie Server is already configured"
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Movie Server. Check the URL and that the add-on is running."
+    },
+    "step": {
+      "user": {
+        "data": {
+          "url": "Movie Server URL"
+        },
+        "description": "Enter the Movie Server URL. If you use the Home Assistant add-on, the default is usually correct.",
+        "title": "Movie Server"
+      }
+    }
+  }
+}

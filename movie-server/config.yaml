@@ -1,0 +1,40 @@
+name: Movie Server
+version: "1.0.0"
+slug: movie_server
+description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
+url: https://github.com/DevrajGajurel/ha-app-movie-server
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 3001
+panel_icon: mdi:movie-open-play
+panel_title: Movie Server
+webui: http://[HOST]:[PORT:3001]/
+arch:
+  - aarch64
+  - amd64
+  - armv7
+ports:
+  3001/tcp: 3001
+ports_description:
+  3001/tcp: Movie Server dashboard
+map:
+  - media:rw
+  - config:rw
+options:
+  main_url: "https://example.com/"
+  max_pages: 5
+  initial_pages: 2
+  tmdb_api_key: ""
+  download_dir: "/media"
+  hd_keywords: "720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray"
+  k4_keywords: "2160p,4k,4K,UHD"
+schema:
+  main_url: url
+  max_pages: int(1,100)
+  initial_pages: int(1,20)
+  tmdb_api_key: password
+  download_dir: str
+  hd_keywords: str
+  k4_keywords: str
