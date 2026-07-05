@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Add HD (and 4K) quality filter dropdown plus an HD only preset chip.
+
 ## 1.1.0
 
 - Persist downloaded status across restarts by scanning the download folder.

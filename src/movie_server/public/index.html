@@ -830,6 +830,11 @@
           <option value="all">All years</option>
           <option value="recent">Recent (2 yrs)</option>
         </select>
+        <select id="quality-filter" aria-label="Filter by quality">
+          <option value="all">All quality</option>
+          <option value="hd">HD</option>
+          <option value="k4">4K</option>
+        </select>
         <button id="refresh" type="button">Refresh</button>
       </div>
       <div class="filter-chips">
@@ -837,6 +842,7 @@
         <button class="chip" type="button" data-preset="top-rated">Top rated (7+)</button>
         <button class="chip" type="button" data-preset="movies">Movies only</button>
         <button class="chip" type="button" data-preset="tv">TV only</button>
+        <button class="chip" type="button" data-preset="hd">HD only</button>
         <button class="chip" type="button" data-preset="reset">Reset filters</button>
       </div>
       <p class="filter-count" id="filter-count"></p>
@@ -878,6 +884,7 @@
     const typeFilter = document.getElementById("type-filter");
     const genreFilter = document.getElementById("genre-filter");
     const yearFilter = document.getElementById("year-filter");
+    const qualityFilter = document.getElementById("quality-filter");
     const filterCountEl = document.getElementById("filter-count");
     const downloadModal = document.getElementById("download-modal");
     const downloadModalTitle = document.getElementById("download-modal-title");
@@ -1011,6 +1018,7 @@
       const type = typeFilter.value;
       const genre = genreFilter.value;
       const year = yearFilter.value;
+      const quality = qualityFilter.value;
       const sort = sortSelect.value;
 
       if (search) {
@@ -1034,6 +1042,12 @@
         });
       } else if (year !== "all") {
         list = list.filter((m) => m.tmdb?.year === year);
+      }
+
+      if (quality === "hd") {
+        list = list.filter((m) => m.quality?.hd);
+      } else if (quality === "k4") {
+        list = list.filter((m) => m.quality?.k4);
       }
 
       list.sort((a, b) => {
@@ -1071,6 +1085,7 @@
       typeFilter.value = "all";
       genreFilter.value = "all";
       yearFilter.value = "all";
+      qualityFilter.value = "all";
       applyFiltersAndRender();
     }
 
@@ -1092,6 +1107,8 @@
         typeFilter.value = "movie";
       } else if (preset === "tv") {
         typeFilter.value = "tv";
+      } else if (preset === "hd") {
+        qualityFilter.value = "hd";
       } else if (preset === "reset") {
         applyFiltersAndRender();
         return;
@@ -1539,7 +1556,7 @@
       }
     });
 
-    [searchInput, sortSelect, typeFilter, genreFilter, yearFilter].forEach((el) => {
+    [searchInput, sortSelect, typeFilter, genreFilter, yearFilter, qualityFilter].forEach((el) => {
       el.addEventListener("input", applyFiltersAndRender);
       el.addEventListener("change", applyFiltersAndRender);
     });
