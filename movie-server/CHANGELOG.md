@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Align app and integration version numbers with the Home Assistant add-on release.
+
 ## 1.0.3
 
 - Fix downloads saving to `/app/downloads` instead of the configured HA folder (env was read before `.env` loaded).
