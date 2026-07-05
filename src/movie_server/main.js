@@ -7,7 +7,7 @@ const ENV_CANDIDATES = [
 ];
 const ENV_PATH = ENV_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || ENV_CANDIDATES[0];
 
-require("dotenv").config({ path: ENV_PATH });
+require("dotenv").config({ path: ENV_PATH, override: true });
 
 const http = require("http");
 const { parseHTML } = require("linkedom");
@@ -20,8 +20,14 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const MAX_PAGES_LIMIT = 100;
 const DEFAULT_HD_KEYWORDS = "720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray";
 const DEFAULT_K4_KEYWORDS = "2160p,4k,4K,UHD";
-const HD_KEYWORDS = parseKeywordList(process.env.HD_KEYWORDS || DEFAULT_HD_KEYWORDS);
-const K4_KEYWORDS = parseKeywordList(process.env.K4_KEYWORDS || DEFAULT_K4_KEYWORDS);
+
+function resolveKeywords(envValue, fallback) {
+  const parsed = parseKeywordList(envValue);
+  return parsed.length ? parsed : parseKeywordList(fallback);
+}
+
+const HD_KEYWORDS = resolveKeywords(process.env.HD_KEYWORDS, DEFAULT_HD_KEYWORDS);
+const K4_KEYWORDS = resolveKeywords(process.env.K4_KEYWORDS, DEFAULT_K4_KEYWORDS);
 
 let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
@@ -216,11 +222,12 @@ async function scrapeMoviesRange(fromPage, toPage) {
 
   const withDownloadLinks = await resolveDownloadLinks(movies);
 
+  let result = withDownloadLinks;
   if (TMDB_API_KEY) {
-    return enrichMovies(withDownloadLinks, TMDB_API_KEY);
+    result = await enrichMovies(withDownloadLinks, TMDB_API_KEY);
   }
 
-  return withDownloadLinks;
+  return result.map((movie) => tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS));
 }
 
 async function scrapeMovies() {
@@ -387,4 +394,6 @@ server.listen(PORT, () => {
   console.log(`Pages:     1-${maxPages}`);
   console.log(`TMDB:      ${TMDB_API_KEY ? "enabled" : "disabled (set TMDB_API_KEY in .env)"}`);
   console.log(`Downloads: ${getDownloadDir()}`);
+  console.log(`HD tags:   ${HD_KEYWORDS.join(", ")}`);
+  console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
 });

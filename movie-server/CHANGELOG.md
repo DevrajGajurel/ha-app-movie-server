@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8
+
+- Fix HD/4K badges missing in Home Assistant when optional keyword config is blank or overridden by empty env vars.
+- Re-apply quality tags after TMDB enrichment and log loaded keyword lists on startup.
+
 ## 1.0.7
 
 - Document and enforce defaults for optional advanced options when left blank in HA config.
