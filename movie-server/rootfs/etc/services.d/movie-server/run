@@ -1,15 +1,29 @@
 #!/usr/bin/with-contenv bashio
 set -euo pipefail
 
+MAIN_URL="$(bashio::config 'main_url')"
+MAX_PAGES="$(bashio::config 'max_pages')"
+TMDB_API_KEY="$(bashio::config 'tmdb_api_key')"
+DOWNLOAD_DIR="$(bashio::config 'download_dir')"
+
+INITIAL_PAGES="$(bashio::config 'initial_pages')"
+INITIAL_PAGES="${INITIAL_PAGES:-2}"
+
+HD_KEYWORDS="$(bashio::config 'hd_keywords')"
+HD_KEYWORDS="${HD_KEYWORDS:-720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray}"
+
+K4_KEYWORDS="$(bashio::config 'k4_keywords')"
+K4_KEYWORDS="${K4_KEYWORDS:-2160p,4k,4K,UHD}"
+
 cat > /app/.env <<EOF
-MAIN_URL=$(bashio::config 'main_url')
+MAIN_URL=${MAIN_URL}
 PORT=3001
-MAX_PAGES=$(bashio::config 'max_pages')
-INITIAL_PAGES=$(bashio::config 'initial_pages')
-TMDB_API_KEY=$(bashio::config 'tmdb_api_key')
-DOWNLOAD_DIR=$(bashio::config 'download_dir')
-HD_KEYWORDS=$(bashio::config 'hd_keywords')
-K4_KEYWORDS=$(bashio::config 'k4_keywords')
+MAX_PAGES=${MAX_PAGES}
+INITIAL_PAGES=${INITIAL_PAGES}
+TMDB_API_KEY=${TMDB_API_KEY}
+DOWNLOAD_DIR=${DOWNLOAD_DIR}
+HD_KEYWORDS=${HD_KEYWORDS}
+K4_KEYWORDS=${K4_KEYWORDS}
 EOF
 
 cd /app || exit 1

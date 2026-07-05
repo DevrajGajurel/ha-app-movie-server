@@ -6,10 +6,19 @@ Run the Movie Server dashboard inside Home Assistant with Ingress (sidebar panel
 
 - `main_url` — listing site to scrape
 
-## Recommended options
+## Common options
 
 - `tmdb_api_key` — [TMDB API key](https://www.themoviedb.org/settings/api) for posters, genres, and filters
-- `download_dir` — defaults to `/media` (HA media folder)
+- `download_dir` — defaults to `/media` (e.g. `/media/Plex_Media` for Plex)
+- `max_pages` — defaults to `5`
+
+## Advanced options (hidden by default)
+
+On the **Configuration** tab, open **Show unused optional configuration options** to change:
+
+- `initial_pages` — pages loaded first (default `2`)
+- `hd_keywords` — HD badge keywords
+- `k4_keywords` — 4K badge keywords
 
 ## Notes
 

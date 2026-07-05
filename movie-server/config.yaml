@@ -1,5 +1,5 @@
 name: Movie Server
-version: "1.0.1"
+version: "1.0.2"
 slug: movie_server
 description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
 url: https://github.com/DevrajGajurel/ha-app-movie-server
@@ -25,16 +25,13 @@ map:
 options:
   main_url: "https://example.com/"
   max_pages: 5
-  initial_pages: 2
   tmdb_api_key: ""
   download_dir: "/media"
-  hd_keywords: "720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray"
-  k4_keywords: "2160p,4k,4K,UHD"
 schema:
   main_url: url
   max_pages: int(1,100)
-  initial_pages: int(1,20)
   tmdb_api_key: password
   download_dir: str
-  hd_keywords: str
-  k4_keywords: str
+  initial_pages: int(1,20)?
+  hd_keywords: str?
+  k4_keywords: str?

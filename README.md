@@ -24,9 +24,9 @@ Before publishing, confirm GitHub values in:
 | `main_url` | Yes | Source listing URL to scrape |
 | `tmdb_api_key` | No | TMDB API key for posters and filters |
 | `max_pages` | No | Pages to fetch (default `5`) |
-| `initial_pages` | No | Pages loaded first (default `2`) |
+| `initial_pages` | No | Optional advanced — pages loaded first (default `2`) |
 | `download_dir` | No | Server download folder (default `/media`) |
-| `hd_keywords` / `k4_keywords` | No | Title keywords for quality badges |
+| `hd_keywords` / `k4_keywords` | No | Optional advanced — quality badge keywords |
 
 Downloads are saved under `download_dir` (default HA `/media` folder).
 

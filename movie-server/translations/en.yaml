@@ -1,0 +1,22 @@
+configuration:
+  main_url:
+    name: Source URL
+    description: Main listing page to scrape
+  max_pages:
+    name: Max pages
+    description: Number of listing pages to fetch
+  tmdb_api_key:
+    name: TMDB API key
+    description: Optional API key from themoviedb.org
+  download_dir:
+    name: Download folder
+    description: Folder inside the container for downloads (e.g. /media/Plex_Media)
+  initial_pages:
+    name: Initial pages
+    description: Pages loaded immediately before background loading (default 2)
+  hd_keywords:
+    name: HD keywords
+    description: Comma-separated title keywords for the HD badge
+  k4_keywords:
+    name: 4K keywords
+    description: Comma-separated title keywords for the 4K badge
