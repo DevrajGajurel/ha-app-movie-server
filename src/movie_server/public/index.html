@@ -504,6 +504,13 @@
     .card-download-status.failed {
       border-color: rgba(255, 107, 107, 0.5);
     }
+
+    .download-path {
+      margin-top: 0.35rem;
+      word-break: break-all;
+      font-size: 0.7rem;
+      color: var(--success);
+    }
   </style>
 </head>
 <body>
@@ -883,7 +890,9 @@
         }
         return "Downloading…";
       }
-      if (job.status === "completed") return "Saved to PlexMedia";
+      if (job.status === "completed") {
+        return job.filePath ? `Saved: ${job.filePath}` : "Saved";
+      }
       if (job.status === "failed") return `Failed: ${job.error}`;
       return job.status;
     }
@@ -913,6 +922,7 @@
         <div class="card-download-status${statusClass}">
           <strong>${escapeHtml(formatJobStatus(job))}</strong>
           <div>${escapeHtml(job.label || "Server download")}</div>
+          ${job.filePath ? `<div class="download-path">${escapeHtml(job.filePath)}</div>` : ""}
           ${progressBar}
         </div>
       `;

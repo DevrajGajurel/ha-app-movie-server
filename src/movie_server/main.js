@@ -1,9 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const { parseHTML } = require("linkedom");
-const { enrichMovies } = require("./tmdb");
-const { parseKeywordList, tagQuality } = require("./quality");
-const { startDownload, getJob, listJobs, initDownloadDir, DOWNLOAD_DIR } = require("./fileDownloads");
 
 const ENV_CANDIDATES = [
   path.join(__dirname, ".env"),
@@ -14,6 +10,10 @@ const ENV_PATH = ENV_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ||
 require("dotenv").config({ path: ENV_PATH });
 
 const http = require("http");
+const { parseHTML } = require("linkedom");
+const { enrichMovies } = require("./tmdb");
+const { parseKeywordList, tagQuality } = require("./quality");
+const { startDownload, getJob, listJobs, initDownloadDir, getDownloadDir } = require("./fileDownloads");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -343,7 +343,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === "/api/downloads/jobs" && req.method === "GET") {
-    sendJson(res, 200, { downloadDir: DOWNLOAD_DIR, jobs: listJobs() });
+    sendJson(res, 200, { downloadDir: getDownloadDir(), jobs: listJobs() });
     return;
   }
 
@@ -384,5 +384,5 @@ server.listen(PORT, () => {
   console.log(`Scraping:  ${mainUrl}`);
   console.log(`Pages:     1-${maxPages}`);
   console.log(`TMDB:      ${TMDB_API_KEY ? "enabled" : "disabled (set TMDB_API_KEY in .env)"}`);
-  console.log(`Downloads: ${DOWNLOAD_DIR}`);
+  console.log(`Downloads: ${getDownloadDir()}`);
 });

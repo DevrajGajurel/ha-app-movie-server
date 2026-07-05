@@ -3,9 +3,12 @@ const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 
-const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, "downloads");
 const jobs = [];
 let jobId = 0;
+
+function getDownloadDir() {
+  return process.env.DOWNLOAD_DIR || path.join(__dirname, "downloads");
+}
 
 function sanitizeName(value) {
   return String(value || "download")
@@ -16,7 +19,7 @@ function sanitizeName(value) {
 }
 
 function ensureDir(movieTitle) {
-  const base = path.resolve(DOWNLOAD_DIR);
+  const base = path.resolve(getDownloadDir());
   const dir = movieTitle ? path.join(base, sanitizeName(movieTitle)) : base;
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -79,10 +82,12 @@ async function runDownload(job) {
 
     job.status = "completed";
     job.finishedAt = new Date().toISOString();
+    console.log(`[download] saved job #${job.id} -> ${filePath}`);
   } catch (err) {
     job.status = "failed";
     job.error = err.message;
     job.finishedAt = new Date().toISOString();
+    console.error(`[download] failed job #${job.id}: ${err.message}`);
   }
 }
 
@@ -104,6 +109,7 @@ function startDownload({ url, label, movieTitle }) {
   jobs.unshift(job);
   if (jobs.length > 100) jobs.length = 100;
 
+  console.log(`[download] queued job #${job.id} "${label}" -> ${getDownloadDir()}`);
   runDownload(job);
   return job;
 }
@@ -117,11 +123,13 @@ function listJobs() {
 }
 
 function initDownloadDir() {
-  fs.mkdirSync(path.resolve(DOWNLOAD_DIR), { recursive: true });
+  const dir = path.resolve(getDownloadDir());
+  fs.mkdirSync(dir, { recursive: true });
+  console.log(`[download] folder ready: ${dir}`);
 }
 
 module.exports = {
-  DOWNLOAD_DIR,
+  getDownloadDir,
   startDownload,
   getJob,
   listJobs,

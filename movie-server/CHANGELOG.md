@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+- Fix downloads saving to `/app/downloads` instead of the configured HA folder (env was read before `.env` loaded).
+- Log each download path on queue and completion; show saved path on movie cards.
+- Default download folder is now `/media/Plex_Media`.
+
 ## 1.0.2
 
 - Move `initial_pages`, `hd_keywords`, and `k4_keywords` to optional advanced config (hidden until expanded in the UI).
