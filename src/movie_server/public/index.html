@@ -813,6 +813,7 @@
       <div class="filters-row">
         <input id="search-input" type="search" placeholder="Search titles…" />
         <select id="sort-select" aria-label="Sort by">
+          <option value="source-order">Source order</option>
           <option value="release-desc">Newest first</option>
           <option value="release-asc">Oldest first</option>
           <option value="rating-desc">Top rated</option>
@@ -843,6 +844,7 @@
         <button class="chip" type="button" data-preset="movies">Movies only</button>
         <button class="chip" type="button" data-preset="tv">TV only</button>
         <button class="chip" type="button" data-preset="hd">HD only</button>
+        <button class="chip" type="button" data-preset="k4">4K only</button>
         <button class="chip" type="button" data-preset="reset">Reset filters</button>
       </div>
       <p class="filter-count" id="filter-count"></p>
@@ -873,8 +875,10 @@
     const footer = document.getElementById("footer");
     const filtersEl = document.getElementById("filters");
     let allMovies = [];
+    let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
     let loadGeneration = 0;
+    const activePresets = new Set();
     let loadedThroughPage = 0;
     let totalMaxPages = 1;
     let initialPagesCount = 2;
@@ -940,7 +944,7 @@
       for (const movie of incoming) {
         if (!seen.has(movie.link)) {
           seen.add(movie.link);
-          allMovies.push(movie);
+          allMovies.push({ ...movie, sourceOrder: nextSourceOrder++ });
         }
       }
     }
@@ -1050,7 +1054,37 @@
         list = list.filter((m) => m.quality?.k4);
       }
 
+      if (activePresets.has("recent")) {
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - 2);
+        list = list.filter((m) => {
+          const time = getReleaseTime(m);
+          return time && time >= cutoff.getTime();
+        });
+      }
+
+      if (activePresets.has("top-rated")) {
+        list = list.filter((m) => (m.tmdb?.rating || 0) >= 7);
+      }
+
+      if (activePresets.has("movies")) {
+        list = list.filter((m) => m.tmdb?.type === "movie");
+      }
+
+      if (activePresets.has("tv")) {
+        list = list.filter((m) => m.tmdb?.type === "tv");
+      }
+
+      if (activePresets.has("hd")) {
+        list = list.filter((m) => m.quality?.hd);
+      }
+
+      if (activePresets.has("k4")) {
+        list = list.filter((m) => m.quality?.k4);
+      }
+
       list.sort((a, b) => {
+        if (sort === "source-order") return (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0);
         if (sort === "release-desc") return getReleaseTime(b) - getReleaseTime(a);
         if (sort === "release-asc") return getReleaseTime(a) - getReleaseTime(b);
         if (sort === "rating-desc") return (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0);
@@ -1074,47 +1108,48 @@
         renderMovies(list, tmdbEnabledFlag);
       }
 
+      syncChipActiveStates();
+    }
+
+    function syncChipActiveStates() {
       document.querySelectorAll(".chip[data-preset]").forEach((chip) => {
-        chip.classList.remove("active");
+        const preset = chip.dataset.preset;
+        if (preset === "reset") return;
+        const active = activePresets.has(preset);
+        chip.classList.toggle("active", active);
+        chip.setAttribute("aria-pressed", active ? "true" : "false");
       });
     }
 
     function resetFilters() {
       searchInput.value = "";
-      sortSelect.value = "release-desc";
+      sortSelect.value = "source-order";
       typeFilter.value = "all";
       genreFilter.value = "all";
       yearFilter.value = "all";
       qualityFilter.value = "all";
+      activePresets.clear();
+      syncChipActiveStates();
       applyFiltersAndRender();
     }
 
-    function applyPreset(preset) {
-      resetFilters();
-      if (preset === "recent") {
-        yearFilter.value = "recent";
-        sortSelect.value = "release-desc";
-      } else if (preset === "top-rated") {
-        sortSelect.value = "rating-desc";
-        const list = allMovies
-          .filter((m) => (m.tmdb?.rating || 0) >= 7)
-          .sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0));
-        filterCountEl.textContent = `Showing ${list.length} of ${allMovies.length}`;
-        renderMovies(list, tmdbEnabledFlag);
-        document.querySelector('.chip[data-preset="top-rated"]')?.classList.add("active");
-        return;
-      } else if (preset === "movies") {
-        typeFilter.value = "movie";
-      } else if (preset === "tv") {
-        typeFilter.value = "tv";
-      } else if (preset === "hd") {
-        qualityFilter.value = "hd";
-      } else if (preset === "reset") {
-        applyFiltersAndRender();
+    function togglePreset(preset) {
+      if (preset === "reset") {
+        resetFilters();
         return;
       }
 
-      document.querySelector(`.chip[data-preset="${preset}"]`)?.classList.add("active");
+      if (activePresets.has(preset)) {
+        activePresets.delete(preset);
+      } else {
+        if (preset === "movies") activePresets.delete("tv");
+        if (preset === "tv") activePresets.delete("movies");
+        activePresets.add(preset);
+        if (preset === "recent") sortSelect.value = "release-desc";
+        if (preset === "top-rated") sortSelect.value = "rating-desc";
+      }
+
+      syncChipActiveStates();
       applyFiltersAndRender();
     }
     function renderEmptySearch(searchTerm) {
@@ -1472,6 +1507,8 @@
       const gen = ++loadGeneration;
       refreshBtn.disabled = true;
       allMovies = [];
+      nextSourceOrder = 0;
+      activePresets.clear();
       loadedThroughPage = 0;
       filtersEl.hidden = true;
       content.className = "state";
@@ -1562,7 +1599,7 @@
     });
 
     document.querySelectorAll(".chip[data-preset]").forEach((chip) => {
-      chip.addEventListener("click", () => applyPreset(chip.dataset.preset));
+      chip.addEventListener("click", () => togglePreset(chip.dataset.preset));
     });
 
     load();

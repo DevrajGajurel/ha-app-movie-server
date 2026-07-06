@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Filter preset chips now support multi-select (combine HD, 4K, movies, TV, recent, top-rated).
+- Add **Source order** sort option to list movies in the same order as the source site.
+
 ## 1.2.0
 
 - Add Emby integration with optional `emby_url` and `emby_api_key` in add-on configuration.
