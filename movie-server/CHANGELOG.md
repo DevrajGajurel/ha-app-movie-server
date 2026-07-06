@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Improve TMDB matching by cleaning source titles (year, language, quality, Bollywood tags) before search.
+- Score results by title similarity and release year instead of popularity alone.
+- Skip weak matches so incorrect posters/titles are not shown.
+
 ## 1.2.1
 
 - Filter preset chips now support multi-select (combine HD, 4K, movies, TV, recent, top-rated).
