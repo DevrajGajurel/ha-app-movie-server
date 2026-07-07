@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.4
+
+- Add CORS headers so the Tizen TV client can call the API cross-origin.
+- Include TMDB backdrop images in movie metadata for TV hero banners.
+
 ## 1.2.3
 
 - Fix TMDB title parsing for filmyfly-style names: cut metadata at the year instead of stripping `movie` from real titles.
