@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3
+
+- Fix TMDB title parsing for filmyfly-style names: cut metadata at the year instead of stripping `movie` from real titles.
+- Support alternate titles in parentheses, space-insensitive matching, and Hindi spelling variants.
+- Reject junk TMDB results (trailers, audio launches) while restoring posters for South/Bollywood listings.
+
 ## 1.2.2
 
 - Improve TMDB matching by cleaning source titles (year, language, quality, Bollywood tags) before search.

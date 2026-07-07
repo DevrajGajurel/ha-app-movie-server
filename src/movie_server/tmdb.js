@@ -1,47 +1,105 @@
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const POSTER_BASE = "https://image.tmdb.org/t/p/w342";
-const MIN_MATCH_SCORE = 0.52;
+const MIN_MATCH_SCORE = 0.48;
 const cache = new Map();
 let genreMap = null;
 
-const NOISE_PATTERN =
-  /\b(720p|1080p|480p|2160p|4k|uhd|hd|hdr|web-?dl|bluray|blu-?ray|cam|ts|tc|dvdrip|brrip|hdcam|hdrip|x264|x265|hevc|aac|dd5\.1|dts)\b/gi;
+const METADATA_PAREN =
+  /\b(hindi|english|tamil|telugu|malayalam|kannada|bengali|punjabi|panjabi|marathi|gujarati|urdu|dual|audio|hq|esub|hevc|org|uncut|dubbed|dub|part|add|episode|ep)\b/i;
 
-const LANGUAGE_PATTERN =
-  /\b(hindi|english|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|dual[\s-]?audio|multi[\s-]?audio|dubbed|dub|org(?:inal)?|uncut|extended|unrated|proper|repack|esub|subs?)\b/gi;
-
-const REGION_PATTERN =
-  /\b(bollywood|hollywood|tollywood|kollywood|south[\s-]?indian|hindi[\s-]?movie|hindi[\s-]?dubbed|movie|movies|film|cinema|web[\s-]?series|complete|all[\s-]?episodes?)\b/gi;
+const JUNK_TITLE =
+  /\b(audio launch|launch event|trailer|teaser|short film|interview|promo|promotional|behind the scenes|making of|concert|spot|fan made|unofficial)\b/i;
 
 function looksLikeTv(title) {
-  return /\b(season|s\d{1,2}\s*e\d{1,2}|series|episodes?|web\s*series|complete)\b/i.test(title);
+  return /\b(season|s\d{1,2}\s*e\d{1,2}|series|episodes?|web\s*series|completed\s+web\s+series)\b/i.test(title);
+}
+
+function looksLikeMetadataParen(value) {
+  return METADATA_PAREN.test(value) || /^\d{1,2}$/.test(value.trim());
+}
+
+function stripTvMarkers(title) {
+  return String(title || "")
+    .replace(/\bseason\s*\d+.*$/i, "")
+    .replace(/\bs\d{1,2}(\s*e\d{1,2})?.*$/i, "")
+    .replace(/\b(s\d{1,2}\s*e\d{1,2}|season\s*\d+|episode\s*\d+)\b/gi, " ")
+    .replace(/\s+S\d{1,2}\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractYear(title) {
+  const match = title.match(/\((19|20)\d{2}\)/);
+  return match ? Number.parseInt(match[0].slice(1, -1), 10) : null;
+}
+
+function stripReleaseTail(title) {
+  return String(title || "")
+    .replace(/\{[^}]*\}/g, " ")
+    .replace(
+      /\s+(?:\(|(?:\b(?:dual[\s-]?audio|multi[\s-]?audio|south\s+movie|south\s+hindi|bollywood|hollywood|tollywood|kollywood|mollywood|animated\s+movie|animation\s+movie|hindi\s+movie|panjabi\s+movie|punjabi\s+movie|full\s+movie|web\s+series|completed\s+web\s+series|predvd|hqcam|hdrip|brrip|dvdrip|web-?dl|bluray|blu-?ray|hevc|esub|uncut|hdr|hd)\b)).*/i,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitAlternateTitle(title) {
+  let query = title;
+  let altQuery = null;
+
+  const altMatch = query.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (altMatch && !looksLikeMetadataParen(altMatch[2])) {
+    query = altMatch[1].trim();
+    altQuery = altMatch[2].trim();
+  }
+
+  return { query, altQuery };
 }
 
 function parseSourceTitle(title) {
   const raw = String(title || "").trim();
-  const yearMatch = raw.match(/\((19|20)\d{2}\)/);
-  const year = yearMatch ? Number.parseInt(yearMatch[0].slice(1, -1), 10) : null;
+  let work = stripTvMarkers(raw);
+  const year = extractYear(work);
 
-  let query = raw
-    .replace(/\bseason\s*\d+.*$/i, "")
-    .replace(/\bs\d{1,2}(\s*e\d{1,2})?.*$/i, "")
-    .replace(/\b(s\d{1,2}\s*e\d{1,2}|season\s*\d+|episode\s*\d+)\b/gi, "")
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/\[[^\]]*\]/g, " ")
-    .replace(NOISE_PATTERN, " ")
-    .replace(LANGUAGE_PATTERN, " ")
-    .replace(REGION_PATTERN, " ")
-    .replace(/\bmov(?:ie)?\.{0,3}\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(/[|\-–:]/)[0]
-    .trim();
+  let query = work;
+  if (year) {
+    const yearIndex = work.search(/\((19|20)\d{2}\)/);
+    if (yearIndex >= 0) {
+      query = work.slice(0, yearIndex).trim();
+    }
+  } else {
+    query = stripReleaseTail(work);
+  }
 
-  return { query, year, raw };
+  const alternate = splitAlternateTitle(query);
+  query = alternate.query;
+  const altQuery = alternate.altQuery;
+
+  return { query, altQuery, year, raw };
 }
 
 function cleanTitle(title) {
   return parseSourceTitle(title).query;
+}
+
+function expandQueryVariants(query) {
+  const variants = [query];
+  const nahin = query.replace(/\bnahi\b/gi, "nahin");
+  if (nahin !== query) variants.push(nahin);
+  const nahi = query.replace(/\bnahin\b/gi, "nahi");
+  if (nahi !== query) variants.push(nahi);
+  return [...new Set(variants.filter(Boolean))];
+}
+
+function compactSimilarity(a, b) {
+  const left = normalizeForMatch(a).replace(/\s/g, "");
+  const right = normalizeForMatch(b).replace(/\s/g, "");
+  if (!left || !right) return 0;
+  if (left === right) return 0.96;
+  if (left.length >= 4 && right.includes(left)) return 0.9;
+  if (right.length >= 4 && left.includes(right)) return 0.88;
+  return 0;
 }
 
 function normalizeForMatch(text) {
@@ -81,7 +139,14 @@ function titleSimilarity(query, candidateTitle) {
     if (tokensB.has(token)) matched += 1;
   }
 
-  return matched / tokensA.length;
+  const tokenScore = matched / tokensA.length;
+  return Math.max(tokenScore, compactSimilarity(query, candidateTitle));
+}
+
+function isJunkCandidate(candidate) {
+  const displayTitle = getCandidateTitle(candidate);
+  const originalTitle = getCandidateOriginalTitle(candidate);
+  return JUNK_TITLE.test(displayTitle) || JUNK_TITLE.test(originalTitle);
 }
 
 function getCandidateTitle(candidate) {
@@ -97,41 +162,65 @@ function getCandidateYear(candidate) {
   return date ? Number.parseInt(date.slice(0, 4), 10) : null;
 }
 
-function scoreCandidate(candidate, parsed) {
+function scoreCandidate(candidate, parsed, context = {}) {
   const displayTitle = getCandidateTitle(candidate);
   const originalTitle = getCandidateOriginalTitle(candidate);
+  const queries = [parsed.query, parsed.altQuery].filter(Boolean);
 
-  let score = Math.max(
-    titleSimilarity(parsed.query, displayTitle),
-    titleSimilarity(parsed.query, originalTitle)
-  );
+  let score = 0;
+  for (const query of queries) {
+    score = Math.max(
+      score,
+      titleSimilarity(query, displayTitle),
+      titleSimilarity(query, originalTitle),
+      compactSimilarity(query, displayTitle),
+      compactSimilarity(query, originalTitle)
+    );
+  }
+
+  for (const query of queries) {
+    if (normalizeForMatch(query) === normalizeForMatch(displayTitle)) {
+      score += 0.2;
+    }
+  }
 
   const candidateYear = getCandidateYear(candidate);
   if (parsed.year && candidateYear) {
     const yearDiff = Math.abs(parsed.year - candidateYear);
-    if (yearDiff === 0) score += 0.18;
+    if (yearDiff === 0) score += 0.16;
     else if (yearDiff === 1) score += 0.06;
-    else if (yearDiff > 2) score -= 0.25;
+    else if (yearDiff === 2) score += 0.02;
+    else if (parsed.year >= 2025 && yearDiff <= 4) score += 0;
+    else if (yearDiff > 2) score -= 0.12;
   }
 
   if (looksLikeTv(parsed.raw)) {
     if (candidate.media_type === "tv") score += 0.12;
-    else if (candidate.media_type === "movie") score -= 0.2;
+    else if (candidate.media_type === "movie") score -= 0.15;
   } else if (candidate.media_type === "movie") {
     score += 0.04;
+  }
+
+  if (isJunkCandidate(candidate)) {
+    score -= 0.35;
+  }
+
+  const searchRank = context.searchRanks?.get(candidate.id);
+  if (searchRank === 0) {
+    score = Math.max(score, 0.56);
   }
 
   score += Math.min(candidate.popularity || 0, 40) / 1000;
   return score;
 }
 
-function pickBestMatch(candidates, parsed) {
+function pickBestMatch(candidates, parsed, context = {}) {
   if (!candidates.length) return null;
 
   const scored = candidates
     .map((candidate) => ({
       candidate,
-      score: scoreCandidate(candidate, parsed),
+      score: scoreCandidate(candidate, parsed, context),
     }))
     .sort((a, b) => b.score - a.score);
 
@@ -175,6 +264,25 @@ function dedupeCandidates(candidates) {
   }
 
   return unique;
+}
+
+function normalizeCandidates(data) {
+  const candidates = [];
+
+  for (const result of data.results || []) {
+    if (result.media_type === "movie" || result.media_type === "tv") {
+      candidates.push(result);
+      continue;
+    }
+
+    if (result.title) {
+      candidates.push({ ...result, media_type: "movie" });
+    } else if (result.name) {
+      candidates.push({ ...result, media_type: "tv" });
+    }
+  }
+
+  return candidates;
 }
 
 async function loadGenreMap(apiKey) {
@@ -229,53 +337,86 @@ function mapResult(match, genres) {
   };
 }
 
-async function gatherCandidates(apiKey, parsed) {
-  const { query, year } = parsed;
+async function gatherCandidates(apiKey, parsed, { useYear = true } = {}) {
+  const { query, altQuery, year } = parsed;
   const wantTv = looksLikeTv(parsed.raw);
+  const queries = [...new Set([query, altQuery].filter(Boolean))];
   const searches = [];
+  const searchRanks = new Map();
 
-  searches.push(fetchSearch(apiKey, "multi", query));
-
-  if (year) {
-    searches.push(fetchSearch(apiKey, "movie", query, year));
-    searches.push(fetchSearch(apiKey, "tv", query, year));
-  } else if (wantTv) {
-    searches.push(fetchSearch(apiKey, "tv", query));
-  } else {
-    searches.push(fetchSearch(apiKey, "movie", query));
-  }
-
-  const responses = await Promise.all(searches);
-  const candidates = [];
-
-  for (const data of responses) {
-    for (const result of data.results || []) {
-      if (result.media_type === "movie" || result.media_type === "tv") {
-        candidates.push(result);
-        continue;
+  const trackResults = (results) => {
+    results.forEach((result, index) => {
+      if (!result?.id) return;
+      const current = searchRanks.get(result.id);
+      if (current === undefined || index < current) {
+        searchRanks.set(result.id, index);
       }
+    });
+  };
 
-      if (result.title) {
-        candidates.push({ ...result, media_type: "movie" });
-      } else if (result.name) {
-        candidates.push({ ...result, media_type: "tv" });
+  for (const searchQuery of queries) {
+    for (const variant of expandQueryVariants(searchQuery)) {
+      searches.push(
+        fetchSearch(apiKey, "multi", variant).then((data) => {
+          trackResults(normalizeCandidates(data));
+          return data;
+        })
+      );
+
+      if (useYear && year) {
+        searches.push(
+          fetchSearch(apiKey, "movie", variant, year).then((data) => {
+            trackResults(normalizeCandidates(data));
+            return data;
+          })
+        );
+        searches.push(
+          fetchSearch(apiKey, "tv", variant, year).then((data) => {
+            trackResults(normalizeCandidates(data));
+            return data;
+          })
+        );
+      } else if (wantTv) {
+        searches.push(
+          fetchSearch(apiKey, "tv", variant).then((data) => {
+            trackResults(normalizeCandidates(data));
+            return data;
+          })
+        );
+      } else {
+        searches.push(
+          fetchSearch(apiKey, "movie", variant).then((data) => {
+            trackResults(normalizeCandidates(data));
+            return data;
+          })
+        );
       }
     }
   }
 
-  return dedupeCandidates(candidates);
+  const responses = await Promise.all(searches);
+  return {
+    candidates: dedupeCandidates(responses.flatMap(normalizeCandidates)),
+    searchRanks,
+  };
 }
 
 async function searchMedia(apiKey, title, genres) {
   const parsed = parseSourceTitle(title);
-  const { query, year } = parsed;
-  if (!query) return null;
+  const { query, altQuery } = parsed;
+  if (!query && !altQuery) return null;
 
-  const cacheKey = `${query}|${year || ""}|${looksLikeTv(parsed.raw) ? "tv" : "movie"}`;
+  const cacheKey = `${query}|${altQuery || ""}|${parsed.year || ""}|${looksLikeTv(parsed.raw) ? "tv" : "movie"}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
-  const candidates = await gatherCandidates(apiKey, parsed);
-  const match = pickBestMatch(candidates, parsed);
+  let { candidates, searchRanks } = await gatherCandidates(apiKey, parsed, { useYear: true });
+  let match = pickBestMatch(candidates, parsed, { searchRanks });
+
+  if (!match) {
+    ({ candidates, searchRanks } = await gatherCandidates(apiKey, parsed, { useYear: false }));
+    match = pickBestMatch(candidates, parsed, { searchRanks });
+  }
+
   const meta = match ? mapResult(match, genres) : null;
   cache.set(cacheKey, meta);
   return meta;
