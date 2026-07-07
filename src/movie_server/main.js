@@ -271,6 +271,18 @@ function serveFile(res, filePath) {
 const server = http.createServer(async (req, res) => {
   const url = req.url?.split("?")[0] ?? "/";
 
+  // Allows a locally-packaged client (e.g. the Tizen TV app in tizen/)
+  // to call this server's API from a different origin.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (url === "/api/config" && req.method === "GET") {
     sendJson(res, 200, { mainUrl, maxPages, initialPages, embyConfigured: isEmbyConfigured() });
     return;

@@ -1,5 +1,6 @@
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const POSTER_BASE = "https://image.tmdb.org/t/p/w342";
+const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 const MIN_MATCH_SCORE = 0.48;
 const cache = new Map();
 let genreMap = null;
@@ -319,6 +320,7 @@ function mapResult(match, genres) {
       overview: match.overview || null,
       genres: mapGenres(match, genres),
       poster: match.poster_path ? `${POSTER_BASE}${match.poster_path}` : null,
+      backdrop: match.backdrop_path ? `${BACKDROP_BASE}${match.backdrop_path}` : null,
       tmdbUrl: `https://www.themoviedb.org/tv/${match.id}`,
     };
   }
@@ -333,6 +335,7 @@ function mapResult(match, genres) {
     overview: match.overview || null,
     genres: mapGenres(match, genres),
     poster: match.poster_path ? `${POSTER_BASE}${match.poster_path}` : null,
+    backdrop: match.backdrop_path ? `${BACKDROP_BASE}${match.backdrop_path}` : null,
     tmdbUrl: `https://www.themoviedb.org/movie/${match.id}`,
   };
 }

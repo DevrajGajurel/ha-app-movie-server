@@ -4,7 +4,8 @@
   "description": "Scrape movie listings from a configured URL",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "build:tizen": "node ../../tizen/build-tizen.js"
   },
   "engines": {
     "node": ">=18"

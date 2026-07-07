@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "movie-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["src/movie_server/main.js"],
+      "port": 3001,
+      "autoPort": false
+    },
+    {
+      "name": "tizen-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tizen/preview-dist.js"],
+      "port": 4600,
+      "autoPort": true
+    },
+    {
+      "name": "hellotv-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tizen-hello-test/preview-hellotv.js"],
+      "port": 4601,
+      "autoPort": true
+    }
+  ]
+}

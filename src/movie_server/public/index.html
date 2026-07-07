@@ -901,7 +901,8 @@
     let downloadedTitles = new Set();
 
     function apiUrl(path) {
-      return `api/${path.replace(/^\//, "")}`;
+      const base = window.MOVIE_SERVER_API_BASE || "";
+      return `${base}api/${path.replace(/^\//, "")}`;
     }
 
     function normalizeTitle(value) {
