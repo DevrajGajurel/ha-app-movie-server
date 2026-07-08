@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.6
+
+- Add streaming endpoint (`/api/downloads/play`) for already-downloaded movies with HTTP range support.
+- Sync Home Assistant add-on version with the app release.
+
+## 1.2.5
+
+- Add Play button and streaming support for downloaded movies in the dashboard.
+
 ## 1.2.4
 
 - Add CORS headers so the Tizen TV client can call the API cross-origin.
