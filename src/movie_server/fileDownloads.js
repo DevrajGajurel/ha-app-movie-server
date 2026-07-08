@@ -183,6 +183,106 @@ function hasMediaFiles(dir) {
   }
 }
 
+const VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"]);
+const MIME_TYPES = {
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mkv": "video/x-matroska",
+  ".webm": "video/webm",
+  ".avi": "video/x-msvideo",
+  ".mov": "video/quicktime",
+};
+
+function findMediaFile({ tmdbId, title }) {
+  const base = path.resolve(getDownloadDir());
+  const normTitle = title ? normalizeTitle(title) : null;
+
+  let entries;
+  try {
+    entries = fs.readdirSync(base, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(base, entry.name);
+
+    let entryTmdbId = null;
+    let entryTitle = entry.name;
+    const marker = path.join(dir, MARKER_FILE);
+    if (fs.existsSync(marker)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(marker, "utf8"));
+        if (data.tmdbId) entryTmdbId = String(data.tmdbId);
+        if (data.movieTitle) entryTitle = data.movieTitle;
+      } catch {
+        // fall back to folder name parsing
+      }
+    }
+    if (!entryTmdbId) {
+      const match = /\(tmdb-(\d+)\)/i.exec(entry.name);
+      if (match) entryTmdbId = match[1];
+    }
+    const cleanTitle = entry.name.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim();
+
+    const tmdbMatches = Boolean(tmdbId && entryTmdbId && String(tmdbId) === entryTmdbId);
+    const titleMatches = Boolean(
+      normTitle && (normalizeTitle(cleanTitle) === normTitle || normalizeTitle(entryTitle) === normTitle)
+    );
+    if (!tmdbMatches && !titleMatches) continue;
+
+    let files;
+    try {
+      files = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    let best = null;
+    for (const file of files) {
+      if (!file.isFile() || file.name === MARKER_FILE) continue;
+      if (!VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
+      const full = path.join(dir, file.name);
+      const size = fs.statSync(full).size;
+      if (!best || size > best.size) best = { path: full, size };
+    }
+
+    if (best) return best.path;
+  }
+
+  return null;
+}
+
+function streamFile(req, res, filePath) {
+  const stat = fs.statSync(filePath);
+  const contentType = MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+  const range = req.headers.range;
+
+  if (!range) {
+    res.writeHead(200, {
+      "Content-Length": stat.size,
+      "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+
+  const match = /bytes=(\d*)-(\d*)/.exec(range);
+  const start = match[1] ? Number.parseInt(match[1], 10) : 0;
+  let end = match[2] ? Number.parseInt(match[2], 10) : stat.size - 1;
+  if (Number.isNaN(end) || end >= stat.size) end = stat.size - 1;
+
+  res.writeHead(206, {
+    "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+    "Accept-Ranges": "bytes",
+    "Content-Length": end - start + 1,
+    "Content-Type": contentType,
+  });
+  fs.createReadStream(filePath, { start, end }).pipe(res);
+}
+
 function scanLibrary() {
   const base = path.resolve(getDownloadDir());
   const tmdbIds = new Set();
@@ -245,4 +345,6 @@ module.exports = {
   initDownloadDir,
   scanLibrary,
   normalizeTitle,
+  findMediaFile,
+  streamFile,
 };

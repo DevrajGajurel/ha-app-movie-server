@@ -13,7 +13,16 @@ const http = require("http");
 const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
 const { parseKeywordList, tagQuality } = require("./quality");
-const { startDownload, getJob, listJobs, initDownloadDir, getDownloadDir, scanLibrary } = require("./fileDownloads");
+const {
+  startDownload,
+  getJob,
+  listJobs,
+  initDownloadDir,
+  getDownloadDir,
+  scanLibrary,
+  findMediaFile,
+  streamFile,
+} = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
@@ -373,6 +382,30 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/play" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+
+      if (!tmdbId && !title) {
+        sendJson(res, 400, { error: "tmdbId or title is required" });
+        return;
+      }
+
+      const filePath = findMediaFile({ tmdbId, title });
+      if (!filePath) {
+        sendJson(res, 404, { error: "No downloaded file found for this title" });
+        return;
+      }
+
+      streamFile(req, res, filePath);
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
