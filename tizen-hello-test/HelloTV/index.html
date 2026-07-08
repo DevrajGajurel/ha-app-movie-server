@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, user-scalable=no" />
+  <title>Movie Server</title>
+  <style>
+    :root {
+      --bg: #0a0c12;
+      --surface: #1a1d27;
+      --border: #2a2f3d;
+      --text: #e8eaef;
+      --muted: #8b93a7;
+      --accent: #6c8cff;
+      --accent-hover: #8aa4ff;
+      --danger: #ff6b6b;
+      --success: #4ade80;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      overflow-x: hidden;
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* ---- Hero ---- */
+    .tv-hero {
+      position: relative;
+      height: 64vh;
+      min-height: 440px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .tv-hero-backdrop {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center top;
+    }
+
+    .tv-hero-gradient {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(to top, var(--bg) 3%, rgba(10, 12, 18, 0.15) 45%, rgba(10, 12, 18, 0.55) 100%),
+        linear-gradient(to right, rgba(10, 12, 18, 0.9) 0%, rgba(10, 12, 18, 0.2) 55%, rgba(10, 12, 18, 0) 78%);
+    }
+
+    .tv-hero-content {
+      position: relative;
+      z-index: 2;
+      margin-top: auto;
+      padding: 0 4.5rem 3rem;
+      max-width: 45rem;
+    }
+
+    .tv-hero-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.7rem;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .tv-hero-title {
+      font-size: 3rem;
+      font-weight: 800;
+      margin-bottom: 0.85rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
+    }
+
+    .tv-hero-overview {
+      font-size: 1.05rem;
+      color: var(--text);
+      margin-bottom: 1.4rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+    }
+
+    .tv-hero-actions {
+      display: flex;
+      gap: 0.9rem;
+    }
+
+    .tv-hero-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.85rem 1.7rem;
+      border-radius: 8px;
+      font-size: 1.05rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      cursor: pointer;
+    }
+
+    /* A class-level "display" rule has the same specificity as the
+       browser's built-in [hidden] { display: none } rule, and being later
+       in the cascade silently wins — so any hidden button that also has a
+       display-setting class (like this one) would otherwise stay visible.
+       This needs its own [hidden] override to actually hide. */
+    .tv-hero-btn[hidden] {
+      display: none;
+    }
+
+    .tv-hero-btn.primary {
+      background: var(--text);
+      color: #05060a;
+      border-color: transparent;
+    }
+
+    .tv-hero-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .tv-hero-btn.primary:hover {
+      background: #fff;
+    }
+
+    /* ---- Top bar ---- */
+    .tv-topbar {
+      position: relative;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      padding: 1.5rem 4.5rem 1rem;
+    }
+
+    .tv-logo {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .tv-icon-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 3rem;
+      height: 3rem;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      padding: 0;
+    }
+
+    .tv-icon-btn:hover:not(:disabled) {
+      background: var(--border);
+    }
+
+    /* ---- Left side navigation drawer ----
+       Hidden off-screen by default; slides in over the content (not
+       pushing it over) when focus moves Left off the first column of the
+       hero actions or a row, matching the reference app's behavior. */
+    .tv-sidenav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 30;
+      width: 21rem;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      background: rgba(8, 9, 14, 0.94);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      padding: 2.25rem 1.5rem;
+    }
+
+    .tv-sidenav.open {
+      transform: translateX(0);
+    }
+
+    .tv-sidenav-brand {
+      font-size: 1.15rem;
+      font-weight: 700;
+      padding: 0 0.6rem;
+      margin-bottom: 2rem;
+    }
+
+    .tv-sidenav-items {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .tv-sidenav-btn {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+      padding: 0.85rem 0.9rem;
+      border-radius: 8px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 1.05rem;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tv-sidenav-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .tv-sidenav-icon {
+      width: 1.5rem;
+      text-align: center;
+      font-size: 1.2rem;
+    }
+
+    /* ---- Rows ---- */
+    .tv-rows {
+      position: relative;
+      z-index: 1;
+      padding: 1.5rem 0 3rem;
+    }
+
+    .tv-row {
+      margin-bottom: 2.6rem;
+      position: relative;
+    }
+
+    /* A focused card scales up beyond its row's own box (see below). By
+       default it would render underneath whatever row comes after it in
+       the document, since sibling <section>s paint in DOM order with no
+       z-index of their own. Bump the row containing focus above the rest
+       for as long as focus is inside it. */
+    .tv-row:focus-within {
+      z-index: 2;
+    }
+
+    .tv-row-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      padding: 0 4.5rem 1rem;
+    }
+
+    .tv-row-track {
+      display: flex;
+      gap: 1rem;
+      overflow-x: auto;
+      /* overflow-y is intentionally NOT "visible" here: per spec, pairing
+         overflow-x: auto with overflow-y: visible silently computes the
+         latter to "auto" anyway, so it would still clip — it just looks
+         like it shouldn't. Instead we accept the clip and give enough
+         vertical padding that the focused card's scale-up (see
+         .tv-poster-card.tv-focused below) never actually reaches it. */
+      padding: 1.75rem 4.5rem 1.6rem;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+    }
+
+    .tv-row-track::-webkit-scrollbar { display: none; }
+
+    .tv-poster-card {
+      flex: 0 0 auto;
+      width: 200px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: transform 0.18s ease;
+      position: relative;
+    }
+
+    .tv-poster-card.tv-focused,
+    .tv-poster-card:focus {
+      transform: scale(1.1);
+      z-index: 3;
+      outline: none;
+    }
+
+    .tv-poster-wrap {
+      aspect-ratio: 2 / 3;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      padding: 0.5rem;
+    }
+
+    .tv-poster-card.tv-focused .tv-poster-wrap,
+    .tv-poster-card:focus .tv-poster-wrap {
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65), 0 0 0 3px var(--accent);
+    }
+
+    .tv-poster-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .tv-poster-title {
+      margin-top: 0.55rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-align: center;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .tv-poster-year {
+      margin-top: 0.15rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* ---- Top 10 ranked row (Netflix-style big rank numerals) ---- */
+    .tv-row-track--ranked {
+      padding-left: 4.5rem;
+    }
+
+    .tv-ranked-card {
+      width: 260px;
+    }
+
+    .tv-ranked-visual {
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .tv-rank-number {
+      flex-shrink: 0;
+      margin-right: -2rem;
+      font-size: 6.5rem;
+      font-weight: 800;
+      line-height: 0.8;
+      color: var(--bg);
+      -webkit-text-stroke: 3px rgba(255, 255, 255, 0.35);
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+      user-select: none;
+      z-index: 0;
+    }
+
+    .tv-ranked-visual .tv-poster-wrap {
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+      width: 150px;
+    }
+
+    .quality-badges {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      align-items: flex-end;
+    }
+
+    .quality-badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.18rem 0.4rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .quality-badge.hd {
+      background: rgba(74, 222, 128, 0.9);
+      color: #0f1117;
+    }
+
+    .quality-badge.k4 {
+      background: rgba(251, 191, 36, 0.95);
+      color: #0f1117;
+    }
+
+    .download-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 0.4rem;
+      left: 0.4rem;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 999px;
+      border: none;
+      background: rgba(74, 222, 128, 0.95);
+      color: #0f1117;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    .download-badge svg {
+      width: 0.95rem;
+      height: 0.95rem;
+      display: block;
+    }
+
+    .state {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .state.error { color: var(--danger); }
+
+    /* ---- Splash screen ---- */
+    .tv-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.75rem;
+    }
+
+    .tv-splash[hidden] { display: none; }
+
+    .tv-splash-logo {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .tv-splash-spinner {
+      width: 3.5rem;
+      height: 3.5rem;
+      border: 4px solid rgba(255, 255, 255, 0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: tv-spin 0.9s linear infinite;
+    }
+
+    .tv-splash-text {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    /* ---- Search overlay ---- */
+    .tv-search-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--bg);
+      padding: 3rem 4.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      overflow-y: auto;
+    }
+
+    .tv-search-overlay[hidden] { display: none; }
+
+    .tv-search-input {
+      width: 100%;
+      max-width: 42rem;
+      padding: 1rem 1.3rem;
+      font-size: 1.3rem;
+      border-radius: 10px;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .tv-search-input:focus {
+      border-color: var(--accent);
+      outline: none;
+    }
+
+    .tv-search-results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1.5rem 1.2rem;
+    }
+
+    .tv-search-hint {
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    /* ---- Video player ---- */
+    .tv-player-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tv-player-overlay[hidden] { display: none; }
+
+    #player-video {
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+
+    .tv-player-close {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      z-index: 1;
+    }
+
+    .tv-player-status {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 1.1rem;
+      background: rgba(0, 0, 0, 0.6);
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .tv-player-status[hidden] { display: none; }
+
+    /* ---- Modals (shared shell for detail + download) ---- */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      z-index: 300;
+    }
+
+    .modal-backdrop[hidden] { display: none; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      width: min(100%, 520px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .modal p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      word-break: break-all;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--border);
+    }
+
+    /* ---- Detail page (full screen) ---- */
+    .tv-detail-page {
+      position: fixed;
+      inset: 0;
+      z-index: 250;
+      background: var(--bg);
+      overflow-y: auto;
+    }
+
+    .tv-detail-page[hidden] { display: none; }
+
+    .tv-detail-page-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 70vh;
+      min-height: 420px;
+      background-size: cover;
+      background-position: center top;
+      background-color: var(--surface);
+    }
+
+    .tv-detail-page-gradient {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 70vh;
+      min-height: 420px;
+      background:
+        linear-gradient(to top, var(--bg) 0%, rgba(10, 12, 18, 0.25) 55%, rgba(10, 12, 18, 0) 100%),
+        linear-gradient(to right, rgba(10, 12, 18, 0.85) 0%, rgba(10, 12, 18, 0.1) 60%, rgba(10, 12, 18, 0) 90%);
+    }
+
+    .tv-detail-page-close {
+      position: fixed;
+      top: 1.5rem;
+      left: 1.5rem;
+      z-index: 2;
+    }
+
+    .tv-detail-page-content {
+      position: relative;
+      z-index: 1;
+      padding: 34vh 4.5rem 4rem;
+      max-width: 50rem;
+    }
+
+    .tv-detail-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.6);
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.6rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+
+    .rating {
+      color: #fbbf24;
+      font-weight: 600;
+    }
+
+    .type-badge {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--muted);
+    }
+
+    .type-badge.tv {
+      color: #a78bfa;
+      background: rgba(167, 139, 250, 0.12);
+    }
+
+    .genre-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.7rem;
+    }
+
+    .genre-tag {
+      font-size: 0.72rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(108, 140, 255, 0.12);
+      color: var(--accent);
+    }
+
+    .overview {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .tv-detail-status {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .tv-detail-status--error {
+      color: var(--danger);
+    }
+
+    .download-progress {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 0.4rem;
+    }
+
+    .download-progress span {
+      display: block;
+      height: 100%;
+      width: var(--progress, 0%);
+      background: var(--accent);
+      transition: width 0.2s;
+    }
+
+    .tv-detail-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+
+    .tv-detail-actions a {
+      text-decoration: none;
+      font-size: 0.95rem;
+      padding: 0.7rem 1.4rem;
+    }
+
+    /* ---- Download quality/option picker (unchanged behavior) ---- */
+    .download-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .download-option {
+      display: block;
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: border-color 0.15s;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    button.download-option {
+      font-family: inherit;
+    }
+
+    .download-back {
+      margin-bottom: 0.75rem;
+      padding: 0.4rem 0.85rem;
+      font-size: 0.85rem;
+    }
+
+    .download-option:hover {
+      border-color: var(--accent);
+    }
+
+    .download-option span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-top: 0.25rem;
+      word-break: break-all;
+    }
+
+    button.download-option:disabled {
+      opacity: 0.7;
+      cursor: default;
+    }
+
+    .download-option.saved {
+      border-color: var(--success);
+    }
+
+    .download-option.failed {
+      border-color: var(--danger);
+    }
+
+    .download-save-hint {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+  </style>
+  <link rel="stylesheet" href="css/tv.css">
+</head>
+<body>
+  <script src="js/tv-config.js"></script>
+  <script src="js/network-status.js"></script>
+  <script src="js/focus-manager.js"></script>
+  <script src="js/remote-control.js"></script>
+  <script src="js/tizen-lifecycle.js"></script>
+
+  <div class="tv-splash" id="splash">
+    <div class="tv-splash-logo">Movie Server</div>
+    <div class="tv-splash-spinner"></div>
+    <div class="tv-splash-text" id="splash-text">Loading your library…</div>
+  </div>
+
+  <nav class="tv-sidenav" id="sidenav">
+    <div class="tv-sidenav-brand">Movie Server</div>
+    <div class="tv-sidenav-items">
+      <button class="tv-sidenav-btn" id="nav-search-btn" type="button">
+        <span class="tv-sidenav-icon">🔍</span> Search
+      </button>
+      <button class="tv-sidenav-btn" id="refresh" type="button">
+        <span class="tv-sidenav-icon">⟳</span> Refresh
+      </button>
+    </div>
+  </nav>
+
+  <section class="tv-hero" id="hero">
+    <div class="tv-hero-backdrop" id="hero-backdrop"></div>
+    <div class="tv-hero-gradient"></div>
+
+    <header class="tv-topbar">
+      <div class="tv-logo">Movie Server</div>
+    </header>
+
+    <div class="tv-hero-content" id="hero-content" hidden>
+      <div class="tv-hero-meta" id="hero-meta"></div>
+      <h1 class="tv-hero-title" id="hero-title"></h1>
+      <p class="tv-hero-overview" id="hero-overview"></p>
+      <div class="tv-hero-actions">
+        <button class="tv-hero-btn primary" id="hero-play-btn" type="button" hidden>▶ Play</button>
+        <button class="tv-hero-btn primary" id="hero-download-btn" type="button">⬇ Download</button>
+        <button class="tv-hero-btn" id="hero-info-btn" type="button">ⓘ More Info</button>
+      </div>
+    </div>
+  </section>
+
+  <main class="tv-rows" id="rows-container">
+    <div class="state" id="status-state">Loading movies…</div>
+  </main>
+
+  <div class="tv-player-overlay" id="player-overlay" hidden>
+    <video id="player-video" controls></video>
+    <div class="tv-player-status" id="player-status" hidden></div>
+    <button class="tv-icon-btn tv-player-close" id="player-close-btn" type="button" aria-label="Close player">✕</button>
+  </div>
+
+  <div class="tv-search-overlay" id="search-overlay" hidden>
+    <input class="tv-search-input" type="search" id="search-input" placeholder="Search titles…" />
+    <div class="tv-search-hint" id="search-hint">Start typing to search your library.</div>
+    <div class="tv-search-results" id="search-results"></div>
+  </div>
+
+  <section class="tv-detail-page" id="detail-page" hidden>
+    <div class="tv-detail-page-backdrop" id="detail-page-backdrop"></div>
+    <div class="tv-detail-page-gradient"></div>
+    <button class="tv-icon-btn tv-detail-page-close" id="detail-page-close" type="button" aria-label="Back">←</button>
+    <div class="tv-detail-page-content">
+      <h1 class="tv-detail-title" id="detail-page-title"></h1>
+      <div id="detail-page-body"></div>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" id="download-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="download-modal-title">
+      <h2 id="download-modal-title">Download options</h2>
+      <div id="download-modal-content" class="download-state">Loading…</div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="download-modal-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const rowsContainer = document.getElementById("rows-container");
+    const statusStateEl = document.getElementById("status-state");
+    const refreshBtn = document.getElementById("refresh");
+    const splash = document.getElementById("splash");
+    const splashText = document.getElementById("splash-text");
+    const heroBackdrop = document.getElementById("hero-backdrop");
+    const heroContent = document.getElementById("hero-content");
+    const heroMeta = document.getElementById("hero-meta");
+    const heroTitle = document.getElementById("hero-title");
+    const heroOverview = document.getElementById("hero-overview");
+    const heroPlayBtn = document.getElementById("hero-play-btn");
+    const heroDownloadBtn = document.getElementById("hero-download-btn");
+    const heroInfoBtn = document.getElementById("hero-info-btn");
+    const playerOverlay = document.getElementById("player-overlay");
+    const playerVideo = document.getElementById("player-video");
+    const playerStatus = document.getElementById("player-status");
+    let featuredMovie = null;
+    let preModalFocus = null;
+    let allMovies = [];
+    let nextSourceOrder = 0;
+    let tmdbEnabledFlag = false;
+    let loadGeneration = 0;
+    let loadedThroughPage = 0;
+    let totalMaxPages = 1;
+    let initialPagesCount = 2;
+
+    const detailPage = document.getElementById("detail-page");
+    const detailPageTitle = document.getElementById("detail-page-title");
+    const detailPageBody = document.getElementById("detail-page-body");
+    const detailPageBackdrop = document.getElementById("detail-page-backdrop");
+
+    const downloadModal = document.getElementById("download-modal");
+    const downloadModalTitle = document.getElementById("download-modal-title");
+    const downloadModalContent = document.getElementById("download-modal-content");
+    let downloadModalState = { title: "", options: [], movieTitle: "", tmdbId: null };
+    const jobPollers = new Map();
+    let downloadJobs = [];
+    let downloadJobsPoller = null;
+    let downloadedTmdbIds = new Set();
+    let downloadedTitles = new Set();
+
+    const searchOverlay = document.getElementById("search-overlay");
+    const searchInput = document.getElementById("search-input");
+    const searchHint = document.getElementById("search-hint");
+    const searchResults = document.getElementById("search-results");
+    const navSearchBtn = document.getElementById("nav-search-btn");
+
+    function apiUrl(path) {
+      const base = window.MOVIE_SERVER_API_BASE || "";
+      return `${base}api/${path.replace(/^\//, "")}`;
+    }
+
+    function normalizeTitle(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/\(tmdb-\d+\)/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    }
+
+    async function refreshDownloadLibrary() {
+      try {
+        const res = await fetch(apiUrl("downloads/library"));
+        const data = await res.json();
+        if (!res.ok) return;
+        downloadedTmdbIds = new Set((data.tmdbIds || []).map(String));
+        downloadedTitles = new Set(data.titles || []);
+      } catch {
+        // Ignore transient failures; downloads still work.
+      }
+    }
+
+    function isAlreadyDownloaded(movie) {
+      const t = movie?.tmdb;
+      if (t?.tmdbId && downloadedTmdbIds.has(String(t.tmdbId))) return true;
+      const title = t?.tmdbTitle || movie?.title || "";
+      const norm = normalizeTitle(title);
+      return norm ? downloadedTitles.has(norm) : false;
+    }
+
+    async function fetchPageRange(from, to) {
+      const res = await fetch(apiUrl(`movies?from=${from}&to=${to}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function mergeMovies(incoming) {
+      const seen = new Set(allMovies.map((movie) => movie.link));
+      for (const movie of incoming) {
+        if (!seen.has(movie.link)) {
+          seen.add(movie.link);
+          allMovies.push({ ...movie, sourceOrder: nextSourceOrder++ });
+        }
+      }
+    }
+
+    async function loadRemainingPages(gen, fromPage, toPage) {
+      // Fetch every remaining page silently in the background — no
+      // re-render per page, since that was visibly "refreshing" the
+      // screen (and disturbing focus) once per page while it streamed in.
+      // Render exactly once, after the whole background batch is done.
+      let mergedAny = false;
+
+      for (let page = fromPage; page <= toPage; page++) {
+        if (gen !== loadGeneration) return;
+
+        try {
+          const data = await fetchPageRange(page, page);
+          if (gen !== loadGeneration) return;
+
+          mergeMovies(data.movies || []);
+          loadedThroughPage = page;
+          tmdbEnabledFlag = data.tmdbEnabled;
+          mergedAny = true;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      if (mergedAny && gen === loadGeneration) renderRows(allMovies);
+    }
+
+    function getDisplayTitle(movie) {
+      return movie.tmdb?.tmdbTitle || movie.title || "Untitled";
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/'/g, "&#39;");
+    }
+
+    function latestJobForMovie(title) {
+      if (!title) return null;
+      return downloadJobs.find((job) => job.movieTitle === title) || null;
+    }
+
+    function jobProgress(job) {
+      if (!job.totalBytes) return 0;
+      return Math.min(100, Math.round((job.receivedBytes / job.totalBytes) * 100));
+    }
+
+    function formatJobStatus(job) {
+      if (job.status === "queued") return "Queued…";
+      if (job.status === "downloading") {
+        if (job.totalBytes > 0) {
+          const pct = Math.min(100, Math.round((job.receivedBytes / job.totalBytes) * 100));
+          return `Downloading… ${pct}%`;
+        }
+        return "Downloading…";
+      }
+      if (job.status === "completed") return "Saved";
+      if (job.status === "failed") return `Failed: ${job.error}`;
+      return job.status;
+    }
+
+    function renderDownloadedBadge(movie, title) {
+      const job = latestJobForMovie(title);
+      const jobDone = job && job.status === "completed";
+      const libraryDone = isAlreadyDownloaded(movie);
+      if (!jobDone && !libraryDone) return "";
+
+      return `
+        <span class="download-badge" aria-label="Downloaded">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+        </span>
+      `;
+    }
+
+    // ---- Hero ----
+    function pickFeaturedMovie(movies) {
+      const withBackdrop = movies.filter((m) => m.tmdb?.backdrop);
+      const pool = withBackdrop.length ? withBackdrop : movies;
+      return [...pool].sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0))[0] || null;
+    }
+
+    function renderHero(movies) {
+      if (!movies.length) return;
+      if (!featuredMovie || !movies.some((m) => m.link === featuredMovie.link)) {
+        featuredMovie = pickFeaturedMovie(movies);
+      }
+      if (!featuredMovie) return;
+
+      const t = featuredMovie.tmdb;
+      const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
+      const backdropUrl = t?.backdrop || t?.poster;
+      heroBackdrop.style.backgroundImage = backdropUrl ? `url("${backdropUrl}")` : "none";
+      heroTitle.textContent = displayTitle;
+      heroOverview.textContent = t?.overview || "";
+      heroMeta.innerHTML = `
+        ${t ? `<span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>` : ""}
+        ${t?.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+        ${t?.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+      `;
+
+      const downloaded = isAlreadyDownloaded(featuredMovie);
+      heroPlayBtn.hidden = !downloaded;
+      heroPlayBtn.classList.toggle("primary", downloaded);
+      heroDownloadBtn.classList.toggle("primary", !downloaded);
+
+      heroContent.hidden = false;
+    }
+
+    // ---- Row grouping ----
+    function buildRows(movies) {
+      const rows = [];
+      const bySource = [...movies].sort((a, b) => (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0));
+      rows.push({ title: "Recently Added", items: bySource });
+
+      const k4 = movies.filter((m) => m.quality?.k4);
+      if (k4.length) rows.push({ title: "4K", items: k4 });
+
+      const hd = movies.filter((m) => m.quality?.hd);
+      if (hd.length) rows.push({ title: "HD", items: hd });
+
+      const topRated = [...movies]
+        .filter((m) => (m.tmdb?.rating || 0) >= 7)
+        .sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0))
+        .slice(0, 10);
+      if (topRated.length) rows.push({ title: "Top 10", items: topRated, ranked: true });
+
+      const movieType = movies.filter((m) => m.tmdb?.type === "movie");
+      if (movieType.length) rows.push({ title: "Movies", items: movieType });
+
+      const tvType = movies.filter((m) => m.tmdb?.type === "tv");
+      if (tvType.length) rows.push({ title: "TV Series", items: tvType });
+
+      return rows;
+    }
+
+    function renderPosterCard(m) {
+      const t = m.tmdb;
+      const displayTitle = t?.tmdbTitle || m.title || "Untitled";
+      const poster = t?.poster
+        ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
+        : "No poster";
+
+      const qualityBadges = `
+        <div class="quality-badges">
+          ${m.quality?.k4 ? '<span class="quality-badge k4">4K</span>' : ""}
+          ${m.quality?.hd ? '<span class="quality-badge hd">HD</span>' : ""}
+        </div>`;
+
+      return `
+        <article class="tv-poster-card" tabindex="0" data-link="${escapeAttr(m.link)}">
+          <div class="tv-poster-wrap">
+            ${poster}
+            ${qualityBadges}
+            ${renderDownloadedBadge(m, displayTitle)}
+          </div>
+          <div class="tv-poster-title">${escapeHtml(displayTitle)}</div>
+          ${t?.year ? `<div class="tv-poster-year">${escapeHtml(t.year)}</div>` : ""}
+        </article>
+      `;
+    }
+
+    function renderRankedPosterCard(m, rank) {
+      const t = m.tmdb;
+      const displayTitle = t?.tmdbTitle || m.title || "Untitled";
+      const poster = t?.poster
+        ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
+        : "No poster";
+
+      const qualityBadges = `
+        <div class="quality-badges">
+          ${m.quality?.k4 ? '<span class="quality-badge k4">4K</span>' : ""}
+          ${m.quality?.hd ? '<span class="quality-badge hd">HD</span>' : ""}
+        </div>`;
+
+      return `
+        <article class="tv-poster-card tv-ranked-card" tabindex="0" data-link="${escapeAttr(m.link)}">
+          <div class="tv-ranked-visual">
+            <span class="tv-rank-number">${rank}</span>
+            <div class="tv-poster-wrap">
+              ${poster}
+              ${qualityBadges}
+              ${renderDownloadedBadge(m, displayTitle)}
+            </div>
+          </div>
+          <div class="tv-poster-title">${escapeHtml(displayTitle)}</div>
+          ${t?.year ? `<div class="tv-poster-year">${escapeHtml(t.year)}</div>` : ""}
+        </article>
+      `;
+    }
+
+    function renderRows(movies) {
+      if (!movies.length) {
+        rowsContainer.innerHTML = `<div class="state" id="status-state">Loading movies…</div>`;
+        return;
+      }
+
+      // A full innerHTML replacement below destroys every existing card,
+      // including whichever one has keyboard focus (this runs on every
+      // background page load and every download-progress poll tick, not
+      // just user-triggered refreshes). Without restoring focus after,
+      // the browser silently drops it to <body>, and the next arrow-key
+      // press falls back to the first focusable element in the document —
+      // which is the sidenav Refresh button. Capture what was focused
+      // (and which row it was in) so we can re-focus its equivalent.
+      const focusedCard = document.activeElement?.closest?.(".tv-poster-card");
+      const focusedLink = focusedCard?.dataset.link;
+      const priorRows = [...rowsContainer.querySelectorAll(".tv-row")];
+      const focusedRowIndex = focusedCard ? priorRows.indexOf(focusedCard.closest(".tv-row")) : -1;
+
+      renderHero(movies);
+
+      const rows = buildRows(movies);
+      rowsContainer.innerHTML = rows
+        .map(
+          (row) => `
+        <section class="tv-row">
+          <h2 class="tv-row-title">${escapeHtml(row.title)}</h2>
+          <div class="tv-row-track${row.ranked ? " tv-row-track--ranked" : ""}">
+            ${row.items.map((m, i) => (row.ranked ? renderRankedPosterCard(m, i + 1) : renderPosterCard(m))).join("")}
+          </div>
+        </section>
+      `
+        )
+        .join("");
+
+      if (focusedLink) {
+        const newRows = rowsContainer.querySelectorAll(".tv-row");
+        const sameRow = newRows[focusedRowIndex];
+        const escapedLink = CSS.escape(focusedLink);
+        const restored =
+          sameRow?.querySelector(`[data-link="${escapedLink}"]`) ||
+          rowsContainer.querySelector(`[data-link="${escapedLink}"]`);
+        if (restored) {
+          document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+          restored.classList.add("tv-focused");
+          restored.focus({ preventScroll: true });
+        }
+      }
+
+      window.TVFocusManager?.getFocusable();
+    }
+
+    // ---- Detail page ----
+    function openDetailOverlay(movie) {
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+
+      const bannerImage = t?.backdrop || t?.poster;
+      detailPageBackdrop.style.backgroundImage = bannerImage ? `url("${bannerImage}")` : "none";
+      detailPageTitle.textContent = displayTitle;
+
+      const job = latestJobForMovie(displayTitle);
+      let statusHtml = "";
+      if (job?.status === "failed") {
+        statusHtml = `
+        <div class="tv-detail-status tv-detail-status--error">
+          Download failed: ${escapeHtml(job.error || "unknown error")}
+        </div>`;
+      } else if (job && job.status !== "completed") {
+        statusHtml = `
+        <div class="tv-detail-status">
+          ${escapeHtml(formatJobStatus(job))}
+          <div class="download-progress"><span style="--progress: ${jobProgress(job)}%"></span></div>
+        </div>`;
+      }
+
+      detailPageBody.innerHTML = `
+        ${
+          t
+            ? `
+          <div class="meta-row">
+            <span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>
+            ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+            ${t.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+          </div>
+          ${t.genres?.length ? `<div class="genre-tags">${t.genres.map((g) => `<span class="genre-tag">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
+          ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
+        `
+            : tmdbEnabledFlag
+            ? `<p class="overview">No TMDB match</p>`
+            : ""
+        }
+        ${statusHtml}
+        <div class="tv-detail-actions">
+          ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
+          <a class="tv-hero-btn${isAlreadyDownloaded(movie) ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(movie.link)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>
+          ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
+        </div>
+      `;
+
+      if (detailPage.hidden && downloadModal.hidden) preModalFocus = document.activeElement;
+      detailPage.hidden = false;
+      document.getElementById("detail-play-btn")?.addEventListener("click", () => playMovie(movie));
+      document.getElementById("detail-download-link")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        const el = e.currentTarget;
+        openDownloadModal(el.dataset.link, el.dataset.title, el.dataset.tmdbId || null);
+      });
+
+      // Land focus on the primary action (Play if downloaded, otherwise
+      // Download) rather than the back button, which is what the generic
+      // focusFirst() would pick since it's first in the DOM.
+      const primaryAction = document.getElementById("detail-play-btn") || document.getElementById("detail-download-link");
+      if (primaryAction) {
+        document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+        primaryAction.classList.add("tv-focused");
+        primaryAction.focus();
+      } else {
+        window.TVFocusManager?.focusFirst();
+      }
+    }
+
+    function closeDetailOverlay() {
+      detailPage.hidden = true;
+      restoreFocusAfterModalClose();
+    }
+
+    // ---- Player ----
+    function playMovie(movie) {
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+
+      preModalFocus = document.activeElement;
+      playerStatus.hidden = true;
+      playerOverlay.hidden = false;
+
+      const params = new URLSearchParams();
+      if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
+      params.set("title", displayTitle);
+      playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
+      playerVideo.focus();
+      playerVideo.play().catch(() => {
+        // Autoplay may be blocked; the error handler below covers real
+        // playback failures (unsupported format, file not found, etc.).
+      });
+    }
+
+    function closePlayer() {
+      playerVideo.pause();
+      playerVideo.removeAttribute("src");
+      playerVideo.load();
+      playerOverlay.hidden = true;
+      if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
+        preModalFocus.classList.add("tv-focused");
+        preModalFocus.focus({ preventScroll: true });
+      } else {
+        window.TVFocusManager?.focusFirst();
+      }
+      preModalFocus = null;
+    }
+
+    // ---- Download modal (behavior unchanged from previous version) ----
+    function closeDownloadModal() {
+      downloadModal.hidden = true;
+      downloadModalState = { title: "", options: [], movieTitle: "", tmdbId: null };
+      for (const timer of jobPollers.values()) clearInterval(timer);
+      jobPollers.clear();
+      restoreFocusAfterModalClose();
+    }
+
+    // Hiding a modal (or an ancestor of the focused element) silently
+    // drops focus to <body> per the HTML spec — without this, the next
+    // arrow-key press would fall back to focusFirst()'s default landing
+    // spot instead of wherever the user actually was.
+    function restoreFocusAfterModalClose() {
+      if (!detailPage.hidden || !downloadModal.hidden) return; // another modal still open
+      if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
+        preModalFocus.classList.add("tv-focused");
+        preModalFocus.focus({ preventScroll: true });
+      } else {
+        window.TVFocusManager?.focusFirst();
+      }
+      preModalFocus = null;
+    }
+
+    // ---- Search overlay ----
+    function renderSearchResults(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) {
+        searchResults.innerHTML = "";
+        searchHint.hidden = false;
+        searchHint.textContent = "Start typing to search your library.";
+        return;
+      }
+
+      const matches = allMovies.filter((m) => getDisplayTitle(m).toLowerCase().includes(q));
+      if (!matches.length) {
+        searchResults.innerHTML = "";
+        searchHint.hidden = false;
+        searchHint.textContent = `No matches for "${query.trim()}".`;
+        return;
+      }
+
+      searchHint.hidden = true;
+      searchResults.innerHTML = matches.map(renderPosterCard).join("");
+    }
+
+    function openSearchOverlay() {
+      preModalFocus = document.activeElement;
+      searchOverlay.hidden = false;
+      searchInput.value = "";
+      renderSearchResults("");
+      searchInput.focus();
+      searchInput.classList.add("tv-focused");
+    }
+
+    function closeSearchOverlay() {
+      searchOverlay.hidden = true;
+      if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
+        preModalFocus.classList.add("tv-focused");
+        preModalFocus.focus({ preventScroll: true });
+      } else {
+        window.TVFocusManager?.focusFirst();
+      }
+      preModalFocus = null;
+    }
+
+    function startJobPolling(jobId, button, label, onComplete) {
+      if (jobPollers.has(jobId)) clearInterval(jobPollers.get(jobId));
+
+      const timer = setInterval(async () => {
+        try {
+          const res = await fetch(apiUrl("downloads/jobs"));
+          const data = await res.json();
+          const job = data.jobs?.find((item) => item.id === jobId);
+          if (!job) return;
+
+          button.textContent = `${label} — ${formatJobStatus(job)}`;
+
+          if (job.status === "completed") {
+            button.classList.add("saved");
+            button.disabled = true;
+            clearInterval(timer);
+            jobPollers.delete(jobId);
+            if (typeof onComplete === "function") onComplete();
+          } else if (job.status === "failed") {
+            button.classList.add("failed");
+            button.disabled = false;
+            clearInterval(timer);
+            jobPollers.delete(jobId);
+          } else {
+            button.disabled = true;
+          }
+        } catch {
+          // keep polling
+        }
+      }, 1500);
+
+      jobPollers.set(jobId, timer);
+    }
+
+    async function startServerDownload(button) {
+      const { url, label, movieTitle, tmdbId } = button.dataset;
+      button.disabled = true;
+      button.textContent = `${label} — Starting…`;
+
+      const res = await fetch(apiUrl("downloads/save"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, label, movieTitle, tmdbId: tmdbId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      button.textContent = `${label} — Queued…`;
+      await refreshDownloadJobs();
+      startJobPolling(data.job.id, button, label, () => {
+        refreshDownloadLibrary().then(() => renderRows(allMovies));
+      });
+    }
+
+    function renderQualityOptions(options) {
+      return `
+        <ul class="download-list">
+          ${options
+            .map(
+              (option) => `
+            <li>
+              <button type="button" class="download-option download-picker" data-url="${escapeAttr(option.href)}" data-label="${escapeAttr(option.label)}">
+                ${escapeHtml(option.label)}
+                <span>${escapeHtml(option.href)}</span>
+              </button>
+            </li>
+          `
+            )
+            .join("")}
+        </ul>
+      `;
+    }
+
+    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId) {
+      return `
+        <button type="button" class="btn-secondary download-back">← Back</button>
+        ${parentLabel ? `<p>${escapeHtml(parentLabel)}</p>` : ""}
+        <p class="download-save-hint">Click to download to PlexMedia on the server (background download).</p>
+        <ul class="download-list">
+          ${options
+            .map(
+              (option) => `
+            <li>
+              <button
+                type="button"
+                class="download-option server-download"
+                data-url="${escapeAttr(option.href)}"
+                data-label="${escapeAttr(option.label)}"
+                data-movie-title="${escapeAttr(movieTitle || "")}"
+                data-tmdb-id="${escapeAttr(tmdbId ? String(tmdbId) : "")}"
+              >
+                ${escapeHtml(option.label)}
+              </button>
+            </li>
+          `
+            )
+            .join("")}
+        </ul>
+      `;
+    }
+
+    async function loadDirectDownloads(pageUrl, parentLabel) {
+      downloadModalContent.className = "download-state";
+      downloadModalContent.textContent = "Loading direct download links…";
+
+      const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}&type=direct`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      if (!data.options?.length) {
+        downloadModalContent.className = "download-state";
+        downloadModalContent.innerHTML = `
+          <button type="button" class="btn-secondary download-back">← Back</button>
+          <p>No direct download links found.</p>
+          <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
+        `;
+        window.TVFocusManager?.focusFirst();
+        return;
+      }
+
+      downloadModalContent.innerHTML = renderDirectOptions(
+        data.options,
+        parentLabel,
+        downloadModalState.movieTitle,
+        downloadModalState.tmdbId
+      );
+      window.TVFocusManager?.focusFirst();
+    }
+
+    async function openDownloadModal(pageUrl, title, tmdbId) {
+      if (detailPage.hidden && downloadModal.hidden) preModalFocus = document.activeElement;
+      downloadModalTitle.textContent = title || "Download options";
+      downloadModalContent.className = "download-state";
+      downloadModalContent.textContent = "Loading download options…";
+      downloadModal.hidden = false;
+      window.TVFocusManager?.focusFirst();
+
+      try {
+        const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}`));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        if (!data.options?.length) {
+          downloadModalContent.className = "download-state";
+          downloadModalContent.innerHTML = `
+            <p>No download links found on this page.</p>
+            <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
+          `;
+          window.TVFocusManager?.focusFirst();
+          return;
+        }
+
+        downloadModalState = {
+          title: title || "Download options",
+          options: data.options,
+          movieTitle: title || "",
+          tmdbId: tmdbId || null,
+        };
+        downloadModalContent.innerHTML = renderQualityOptions(data.options);
+        window.TVFocusManager?.focusFirst();
+      } catch (err) {
+        downloadModalContent.className = "download-state";
+        downloadModalContent.textContent = err.message;
+        window.TVFocusManager?.focusFirst();
+      }
+    }
+
+    let lastCompletedTitles = new Set();
+
+    async function refreshDownloadJobs({ rerender = true } = {}) {
+      try {
+        const res = await fetch(apiUrl("downloads/jobs"));
+        const data = await res.json();
+        if (!res.ok) return;
+        downloadJobs = data.jobs || [];
+
+        // The poster grid only reflects a job's status once it completes
+        // (the checkmark badge) — nothing about "queued"/"downloading" is
+        // shown on a card. Re-rendering every row on every 2s poll tick
+        // regardless was pure wasted work (destroying and recreating every
+        // poster + re-decoding every image) and was visibly janky on TV
+        // hardware. Only rebuild when a title actually finished.
+        const completedNow = new Set(downloadJobs.filter((j) => j.status === "completed").map((j) => j.movieTitle));
+        const completedChanged =
+          completedNow.size !== lastCompletedTitles.size || [...completedNow].some((title) => !lastCompletedTitles.has(title));
+        lastCompletedTitles = completedNow;
+
+        if (rerender && completedChanged) renderRows(allMovies);
+        updateDownloadJobsPoller();
+      } catch {
+        // Ignore transient polling failures.
+      }
+    }
+
+    function updateDownloadJobsPoller() {
+      const hasActiveJobs = downloadJobs.some((job) => job.status === "queued" || job.status === "downloading");
+      if (hasActiveJobs && !downloadJobsPoller) {
+        downloadJobsPoller = setInterval(() => refreshDownloadJobs(), 2000);
+      } else if (!hasActiveJobs && downloadJobsPoller) {
+        clearInterval(downloadJobsPoller);
+        downloadJobsPoller = null;
+      }
+    }
+
+    // ---- Initial load ----
+    let hasLoadedOnce = false;
+
+    async function load() {
+      const gen = ++loadGeneration;
+      const isFirstLoad = !hasLoadedOnce;
+      refreshBtn.disabled = true;
+      allMovies = [];
+      nextSourceOrder = 0;
+      loadedThroughPage = 0;
+
+      if (isFirstLoad) {
+        splashText.textContent = "Loading your library…";
+        splash.hidden = false;
+      } else {
+        rowsContainer.innerHTML = `<div class="state" id="status-state">Refreshing…</div>`;
+      }
+
+      try {
+        const configRes = await fetch(apiUrl("config"));
+        const config = await configRes.json();
+        if (!configRes.ok) throw new Error("Failed to load config");
+
+        totalMaxPages = config.maxPages;
+        initialPagesCount = window.TV_INITIAL_PAGES || config.initialPages || 2;
+
+        const firstTo = Math.min(initialPagesCount, totalMaxPages);
+        const data = await fetchPageRange(1, firstTo);
+        if (gen !== loadGeneration) return;
+
+        mergeMovies(data.movies || []);
+        loadedThroughPage = data.to;
+        tmdbEnabledFlag = data.tmdbEnabled;
+        await refreshDownloadLibrary();
+        await refreshDownloadJobs({ rerender: false });
+        renderRows(allMovies);
+        refreshBtn.disabled = false;
+        hasLoadedOnce = true;
+        splash.hidden = true;
+
+        if (loadedThroughPage < totalMaxPages) {
+          loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages);
+        }
+      } catch (err) {
+        splash.hidden = true;
+        rowsContainer.innerHTML = `<div class="state error">${escapeHtml(err.message)}</div>`;
+        refreshBtn.disabled = false;
+      }
+    }
+
+    refreshBtn.addEventListener("click", load);
+
+    heroPlayBtn.addEventListener("click", () => {
+      if (featuredMovie) playMovie(featuredMovie);
+    });
+
+    heroDownloadBtn.addEventListener("click", () => {
+      if (!featuredMovie) return;
+      const t = featuredMovie.tmdb;
+      const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
+      openDownloadModal(featuredMovie.link, displayTitle, t?.tmdbId || null);
+    });
+
+    heroInfoBtn.addEventListener("click", () => {
+      if (featuredMovie) openDetailOverlay(featuredMovie);
+    });
+
+    document.getElementById("player-close-btn").addEventListener("click", closePlayer);
+
+    playerVideo.addEventListener("error", () => {
+      const err = playerVideo.error;
+      const messages = {
+        1: "Playback was aborted.",
+        2: "Network error while loading the video.",
+        3: "This file is corrupted or uses an unsupported encoding.",
+        4: "This TV can't play this file's format (unsupported container/codec).",
+      };
+      playerStatus.textContent = (err && messages[err.code]) || "Playback error.";
+      playerStatus.hidden = false;
+    });
+
+    rowsContainer.addEventListener("click", (e) => {
+      const card = e.target.closest(".tv-poster-card");
+      if (!card) return;
+      const movie = allMovies.find((m) => m.link === card.dataset.link);
+      if (movie) openDetailOverlay(movie);
+    });
+
+    navSearchBtn.addEventListener("click", () => {
+      window.TVFocusManager?.closeSidenav?.();
+      openSearchOverlay();
+    });
+
+    searchInput.addEventListener("input", () => renderSearchResults(searchInput.value));
+
+    searchResults.addEventListener("click", (e) => {
+      const card = e.target.closest(".tv-poster-card");
+      if (!card) return;
+      const movie = allMovies.find((m) => m.link === card.dataset.link);
+      if (movie) openDetailOverlay(movie);
+    });
+
+    document.addEventListener("tv-close-search", closeSearchOverlay);
+
+    document.getElementById("detail-page-close").addEventListener("click", closeDetailOverlay);
+
+    document.getElementById("download-modal-close").addEventListener("click", closeDownloadModal);
+    downloadModal.addEventListener("click", (e) => {
+      if (e.target === downloadModal) closeDownloadModal();
+    });
+
+    downloadModalContent.addEventListener("click", async (e) => {
+      const picker = e.target.closest(".download-picker");
+      if (picker) {
+        e.preventDefault();
+        try {
+          await loadDirectDownloads(picker.dataset.url, picker.dataset.label);
+        } catch (err) {
+          downloadModalContent.className = "download-state";
+          downloadModalContent.textContent = err.message;
+        }
+        return;
+      }
+
+      const serverBtn = e.target.closest(".server-download");
+      if (serverBtn) {
+        e.preventDefault();
+        try {
+          await startServerDownload(serverBtn);
+        } catch (err) {
+          serverBtn.disabled = false;
+          serverBtn.classList.add("failed");
+          serverBtn.textContent = `${serverBtn.dataset.label} — ${err.message}`;
+        }
+        return;
+      }
+
+      const backBtn = e.target.closest(".download-back");
+      if (backBtn) {
+        e.preventDefault();
+        downloadModalContent.innerHTML = renderQualityOptions(downloadModalState.options);
+        window.TVFocusManager?.focusFirst();
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

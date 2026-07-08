@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain.example/MovieServerTV" version="1.2.0" viewmodes="maximized">
+	<tizen:application id="4NhLsB4hhb.HelloTV" package="4NhLsB4hhb" required_version="2.3"/>
+	<name>MovieServerTV</name>
+	<icon src="icon.png"/>
+	<tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+	<tizen:privilege name="http://tizen.org/privilege/internet"/>
+	<tizen:privilege name="http://tizen.org/privilege/tvinputdevice"/>
+	<content src="index.html"/>
+	<feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
+	<tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>
+	<tizen:profile name="tv"/>
+	<tizen:setting background-support="disable" context-menu="disable" encryption="disable" hwkey-event="enable" install-location="auto" screen-orientation="landscape"/>
+	<access origin="*" subdomains="true"/>
+</widget>
