@@ -148,6 +148,12 @@ function sortDownloadOptions(options) {
   });
 }
 
+const DOWNLOAD_SELECTORS = {
+  quality: [".dlink.dl a"],
+  direct: ['a[class*="button"]'],
+  resolvedListing: [".dlbtn a"],
+};
+
 async function fetchPageHtml(pageUrl) {
   const response = await fetch(pageUrl);
   if (!response.ok) {
@@ -156,28 +162,41 @@ async function fetchPageHtml(pageUrl) {
   return response.text();
 }
 
+function selectorDiagnostics(document, selectors) {
+  return selectors.map((selector) => ({
+    selector,
+    matches: document.querySelectorAll(selector).length,
+  }));
+}
+
 async function fetchDownloadOptions(pageUrl) {
   const html = await fetchPageHtml(pageUrl);
   const { document } = parseHTML(html);
+  const selectors = DOWNLOAD_SELECTORS.quality;
+  const anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
 
-  return sortDownloadOptions(
-    [...document.querySelectorAll(".dlink.dl a")].map((anchor) => ({
+  return {
+    options: sortDownloadOptions(anchors.map((anchor) => ({
       label: (anchor.querySelector(".dll")?.textContent || anchor.textContent || "Download").trim(),
       href: new URL(anchor.getAttribute("href"), pageUrl).href,
-    }))
-  );
+    }))),
+    selectors: selectorDiagnostics(document, selectors),
+  };
 }
 
 async function fetchDirectDownloadOptions(pageUrl) {
   const html = await fetchPageHtml(pageUrl);
   const { document } = parseHTML(html);
+  const selectors = DOWNLOAD_SELECTORS.direct;
+  const anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
 
-  return sortDownloadOptions(
-    [...document.querySelectorAll('a[class*="button"]')].map((anchor) => ({
+  return {
+    options: sortDownloadOptions(anchors.map((anchor) => ({
       label: (anchor.textContent || "Download").trim(),
       href: new URL(anchor.getAttribute("href"), pageUrl).href,
-    }))
-  );
+    }))),
+    selectors: selectorDiagnostics(document, selectors),
+  };
 }
 
 async function resolveDownloadLink(detailUrl) {
@@ -437,11 +456,17 @@ const server = http.createServer(async (req, res) => {
 
       new URL(pageUrl);
       const type = new URL(req.url, "http://localhost").searchParams.get("type") || "quality";
-      const options =
+      const result =
         type === "direct"
           ? await fetchDirectDownloadOptions(pageUrl)
           : await fetchDownloadOptions(pageUrl);
-      sendJson(res, 200, { url: pageUrl, type, count: options.length, options });
+      sendJson(res, 200, {
+        url: pageUrl,
+        type,
+        count: result.options.length,
+        options: result.options,
+        selectors: result.selectors,
+      });
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
       sendJson(res, 500, { error: message });

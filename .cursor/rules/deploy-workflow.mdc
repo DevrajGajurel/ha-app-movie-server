@@ -1,0 +1,16 @@
+---
+description: After any Movie Server change, update local Docker, HA add-on, and Tizen app
+alwaysApply: true
+---
+
+# Movie Server deploy workflow
+
+When the user asks for a code change, always complete all three deploy targets before finishing:
+
+1. **Local Docker** — rebuild and restart: `docker compose up --build -d`
+2. **Home Assistant** — bump `movie-server/config.yaml`, `movie-server/Dockerfile` (`APP_BUILD_VERSION`), `movie-server/CHANGELOG.md`, `src/movie_server/package.json`, and `custom_components/movie_server/manifest.json`; then commit and push (do not ask first).
+3. **Tizen TV** — bump `tizen-hello-test/HelloTV/config.xml` version and sync any shared UI/API changes into `tizen-hello-test/HelloTV/`
+
+Do not leave server-only changes unported to the Tizen bundled UI when the dashboard behavior changed.
+
+Fix `docker-compose.yml` port mapping if needed so host `${PORT}` maps to the same container port the app listens on.

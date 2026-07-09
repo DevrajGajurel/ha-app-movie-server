@@ -2,7 +2,7 @@ services:
   movie-server:
     build: .
     ports:
-      - "${PORT:-3001}:3000"
+      - "${PORT:-3001}:${PORT:-3001}"
     environment:
       MAIN_URL: ${MAIN_URL}
       PORT: 3000

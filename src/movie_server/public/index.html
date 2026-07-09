@@ -137,6 +137,25 @@
       font-size: 0.85rem;
     }
 
+    .selector-debug {
+      margin: 0.75rem 0;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: left;
+    }
+
+    .selector-debug code {
+      display: block;
+      margin-top: 0.35rem;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     .genre-tags {
       display: flex;
       flex-wrap: wrap;
@@ -1421,6 +1440,19 @@
       `;
     }
 
+    function renderSelectorDebug(selectors) {
+      if (!selectors?.length) return "";
+
+      return `
+        <div class="selector-debug">
+          <div>Selectors tried:</div>
+          ${selectors.map((item) => `
+            <code>${escapeHtml(item.selector)} → ${Number(item.matches || 0)} match${Number(item.matches || 0) === 1 ? "" : "es"}</code>
+          `).join("")}
+        </div>
+      `;
+    }
+
     function renderDirectOptions(options, parentLabel, movieTitle, tmdbId) {
       return `
         <button type="button" class="btn-secondary download-back">← Back</button>
@@ -1458,6 +1490,7 @@
         downloadModalContent.innerHTML = `
           <button type="button" class="btn-secondary download-back">← Back</button>
           <p>No direct download links found.</p>
+          ${renderSelectorDebug(data.selectors)}
           <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
         `;
         return;
@@ -1486,6 +1519,7 @@
           downloadModalContent.className = "download-state";
           downloadModalContent.innerHTML = `
             <p>No download links found on this page.</p>
+            ${renderSelectorDebug(data.selectors)}
             <a class="download-option" href="${escapeAttr(pageUrl)}" target="_blank" rel="noopener noreferrer">Open source page</a>
           `;
           return;

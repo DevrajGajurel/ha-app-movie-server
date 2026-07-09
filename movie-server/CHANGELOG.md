@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.7
+
+- Show CSS selectors tried when no download links are found, with match counts for easier debugging.
+- Fix local Docker port mapping so `${PORT}` matches inside and outside the container.
+
 ## 1.2.6
 
 - Add streaming endpoint (`/api/downloads/play`) for already-downloaded movies with HTTP range support.
