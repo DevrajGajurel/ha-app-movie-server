@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.8
+
+- Add fallback download selectors for FilmyFly pages using `.dlbtn a`, `.dlbtn a.bg2`, and `a.bg2`.
+- De-duplicate matched download anchors when multiple selectors find the same link.
+
 ## 1.2.7
 
 - Show CSS selectors tried when no download links are found, with match counts for easier debugging.

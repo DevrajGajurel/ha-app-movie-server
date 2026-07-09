@@ -149,7 +149,7 @@ function sortDownloadOptions(options) {
 }
 
 const DOWNLOAD_SELECTORS = {
-  quality: [".dlink.dl a"],
+  quality: [".dlink.dl a", ".dlbtn a", ".dlbtn a.bg2", "a.bg2"],
   direct: ['a[class*="button"]'],
   resolvedListing: [".dlbtn a"],
 };
@@ -169,11 +169,27 @@ function selectorDiagnostics(document, selectors) {
   }));
 }
 
+function collectAnchors(document, selectors) {
+  const seen = new Set();
+  const anchors = [];
+
+  for (const selector of selectors) {
+    for (const anchor of document.querySelectorAll(selector)) {
+      const href = anchor.getAttribute("href");
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      anchors.push(anchor);
+    }
+  }
+
+  return anchors;
+}
+
 async function fetchDownloadOptions(pageUrl) {
   const html = await fetchPageHtml(pageUrl);
   const { document } = parseHTML(html);
   const selectors = DOWNLOAD_SELECTORS.quality;
-  const anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
+  const anchors = collectAnchors(document, selectors);
 
   return {
     options: sortDownloadOptions(anchors.map((anchor) => ({
