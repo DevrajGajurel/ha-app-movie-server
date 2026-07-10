@@ -204,6 +204,8 @@ function findMediaFile({ tmdbId, title }) {
     return null;
   }
 
+  let best = null;
+
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dir = path.join(base, entry.name);
@@ -239,7 +241,10 @@ function findMediaFile({ tmdbId, title }) {
       continue;
     }
 
-    let best = null;
+    // Keep scanning every matching folder (e.g. separate HD/4K downloads of
+    // the same movie) instead of stopping at the first one, so the largest
+    // file across ALL of them wins, not just the largest in whichever
+    // folder happens to be listed first.
     for (const file of files) {
       if (!file.isFile() || file.name === MARKER_FILE) continue;
       if (!VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
@@ -247,11 +252,9 @@ function findMediaFile({ tmdbId, title }) {
       const size = fs.statSync(full).size;
       if (!best || size > best.size) best = { path: full, size };
     }
-
-    if (best) return best.path;
   }
 
-  return null;
+  return best ? best.path : null;
 }
 
 function streamFile(req, res, filePath) {
