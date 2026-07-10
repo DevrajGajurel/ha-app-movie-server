@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.9
+
+- Add a local-only Source URL input in the dashboard; Home Assistant keeps using add-on options.
+- Expose `configEditable` from `/api/config` and block in-app config writes in the HA add-on.
+
 ## 1.2.8
 
 - Add fallback download selectors for FilmyFly pages using `.dlbtn a`, `.dlbtn a.bg2`, and `a.bg2`.

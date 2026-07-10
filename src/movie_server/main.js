@@ -43,6 +43,21 @@ let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
 let initialPages = parseInitialPages(process.env.INITIAL_PAGES);
 
+function isHomeAssistantAddon() {
+  return process.env.HOME_ASSISTANT_ADDON === "true";
+}
+
+function getConfigPayload(extra = {}) {
+  return {
+    mainUrl,
+    maxPages,
+    initialPages,
+    embyConfigured: isEmbyConfigured(),
+    configEditable: !isHomeAssistantAddon(),
+    ...extra,
+  };
+}
+
 function parseInitialPages(value) {
   const pages = Number.parseInt(value, 10);
   if (!Number.isFinite(pages) || pages < 1) return 2;
@@ -328,11 +343,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === "/api/config" && req.method === "GET") {
-    sendJson(res, 200, { mainUrl, maxPages, initialPages, embyConfigured: isEmbyConfigured() });
+    sendJson(res, 200, getConfigPayload());
     return;
   }
 
   if (url === "/api/config" && req.method === "PUT") {
+    if (isHomeAssistantAddon()) {
+      sendJson(res, 403, { error: "Config is managed by the Home Assistant add-on options." });
+      return;
+    }
+
     try {
       const body = JSON.parse(await readBody(req));
 
@@ -355,7 +375,7 @@ const server = http.createServer(async (req, res) => {
         setMaxPages(nextPages);
       }
 
-      sendJson(res, 200, { mainUrl, maxPages, initialPages, message: "Config updated" });
+      sendJson(res, 200, getConfigPayload({ message: "Config updated" }));
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
       sendJson(res, 400, { error: message });

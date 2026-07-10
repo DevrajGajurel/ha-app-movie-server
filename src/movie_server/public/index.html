@@ -68,7 +68,8 @@
     }
 
     .filters-row input,
-    .filters-row select {
+    .filters-row select,
+    .source-config-row input {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -86,7 +87,8 @@
     }
 
     .filters-row input:focus,
-    .filters-row select:focus {
+    .filters-row select:focus,
+    .source-config-row input:focus {
       outline: none;
       border-color: var(--accent);
     }
@@ -120,6 +122,34 @@
       margin-top: 0.65rem;
       font-size: 0.75rem;
       color: var(--muted);
+    }
+
+    .source-config-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .source-config-panel {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 0;
+    }
+
+    .source-config-panel[hidden] {
+      display: none;
+    }
+
+    .source-config-row label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .source-config-row input {
+      min-width: 0;
     }
 
     .empty-actions {
@@ -609,7 +639,8 @@
 
     @media (max-width: 768px) {
       main,
-      .filters {
+      .filters,
+      .source-config-panel {
         padding-left: 0.75rem;
         padding-right: 0.75rem;
       }
@@ -640,6 +671,10 @@
         width: 100%;
         font-size: 1rem;
         padding: 0.65rem 0.75rem;
+      }
+
+      .source-config-row {
+        grid-template-columns: 1fr;
       }
 
       .filters-row select {
@@ -827,6 +862,14 @@
   </style>
 </head>
 <body>
+  <section class="source-config-panel" id="source-config" hidden>
+    <div class="source-config-row">
+      <label for="main-url-input">Source URL</label>
+      <input id="main-url-input" type="url" placeholder="https://filmyfly.luxe/" />
+      <button id="apply-main-url" type="button">Apply</button>
+    </div>
+  </section>
+
   <section class="filters" id="filters" hidden>
     <div class="filters-panel">
       <div class="filters-row">
@@ -893,6 +936,9 @@
     const refreshBtn = document.getElementById("refresh");
     const footer = document.getElementById("footer");
     const filtersEl = document.getElementById("filters");
+    const sourceConfigEl = document.getElementById("source-config");
+    const mainUrlInput = document.getElementById("main-url-input");
+    const applyMainUrlBtn = document.getElementById("apply-main-url");
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -1538,6 +1584,42 @@
       }
     }
 
+    function setupSourceConfig(config) {
+      if (!config?.configEditable) {
+        sourceConfigEl.hidden = true;
+        return;
+      }
+
+      sourceConfigEl.hidden = false;
+      mainUrlInput.value = config.mainUrl || "";
+    }
+
+    async function applyMainUrl() {
+      const nextUrl = mainUrlInput.value.trim();
+      if (!nextUrl) return;
+
+      applyMainUrlBtn.disabled = true;
+      applyMainUrlBtn.textContent = "Saving…";
+
+      try {
+        const res = await fetch(apiUrl("config"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mainUrl: nextUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        await load();
+      } catch (err) {
+        content.className = "state error";
+        content.textContent = err.message;
+      } finally {
+        applyMainUrlBtn.disabled = false;
+        applyMainUrlBtn.textContent = "Apply";
+      }
+    }
+
     async function load() {
       const gen = ++loadGeneration;
       refreshBtn.disabled = true;
@@ -1556,6 +1638,7 @@
 
         totalMaxPages = config.maxPages;
         initialPagesCount = config.initialPages || 2;
+        setupSourceConfig(config);
 
         const firstTo = Math.min(initialPagesCount, totalMaxPages);
         const data = await fetchPageRange(1, firstTo);
@@ -1582,6 +1665,10 @@
     }
 
     refreshBtn.addEventListener("click", load);
+    applyMainUrlBtn.addEventListener("click", applyMainUrl);
+    mainUrlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") applyMainUrl();
+    });
 
     content.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-download-link]");
