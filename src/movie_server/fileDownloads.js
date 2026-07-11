@@ -5,6 +5,9 @@ const { pipeline } = require("stream/promises");
 const { execFile, spawn } = require("child_process");
 
 const MARKER_FILE = ".movieserver.json";
+const PROGRESS_FILE = ".movieserver-progress.json";
+const RESUME_MIN_SECONDS = 10;
+const RESUME_DONE_RATIO = 0.95;
 const jobs = [];
 let jobId = 0;
 
@@ -171,7 +174,7 @@ function initDownloadDir() {
 function hasMediaFiles(dir) {
   try {
     return fs.readdirSync(dir).some((name) => {
-      if (name === MARKER_FILE) return false;
+      if (name === MARKER_FILE || name === PROGRESS_FILE) return false;
       const full = path.join(dir, name);
       try {
         return fs.statSync(full).isFile();
@@ -288,6 +291,57 @@ function resolveMediaToken(token) {
     return null;
   }
   return full;
+}
+
+// Resume position is tied to the movie's download folder (same place
+// downloads/marker files already live) rather than a separate database,
+// consistent with how everything else in this file is organized. Prefers
+// the folder containing the exact file that was playing (via fileToken);
+// falls back to a title/tmdbId match when no token is given.
+function progressDirsFor({ tmdbId, title, fileToken }) {
+  if (fileToken) {
+    const resolved = resolveMediaToken(fileToken);
+    if (resolved) return [path.dirname(resolved)];
+  }
+  return findMatchingDirs({ tmdbId, title });
+}
+
+function saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds }) {
+  const dirs = progressDirsFor({ tmdbId, title, fileToken });
+  if (!dirs.length) return false;
+
+  // Treat "nearly finished" as complete: clear progress so the next play
+  // starts from the beginning instead of resuming at 98%.
+  const nearlyDone = durationSeconds > 0 && positionSeconds / durationSeconds > RESUME_DONE_RATIO;
+  const payload = nearlyDone
+    ? null
+    : { positionSeconds, durationSeconds, updatedAt: new Date().toISOString() };
+
+  for (const dir of dirs) {
+    const file = path.join(dir, PROGRESS_FILE);
+    try {
+      if (payload) {
+        fs.writeFileSync(file, JSON.stringify(payload));
+      } else {
+        fs.rmSync(file, { force: true });
+      }
+    } catch {
+      // Best-effort — a failed write here shouldn't break playback.
+    }
+  }
+  return true;
+}
+
+function getProgress({ tmdbId, title, fileToken }) {
+  for (const dir of progressDirsFor({ tmdbId, title, fileToken })) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(dir, PROGRESS_FILE), "utf8"));
+      if (data.positionSeconds >= RESUME_MIN_SECONDS) return data;
+    } catch {
+      // No progress file in this folder, or it's unreadable — keep looking.
+    }
+  }
+  return null;
 }
 
 // Inspects a file's streams via ffprobe. Resolves to null (rather than
@@ -474,4 +528,6 @@ module.exports = {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  saveProgress,
+  getProgress,
 };

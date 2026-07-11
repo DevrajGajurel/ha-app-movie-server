@@ -1741,9 +1741,64 @@
     playerVideo.addEventListener("waiting", () => playerSpinner.classList.add("show"));
     playerVideo.addEventListener("playing", () => playerSpinner.classList.remove("show"));
 
+    // ---- Resume playback (Continue Watching) ----
+    // Position is tracked server-side, tied to the movie's download folder
+    // (see /api/downloads/progress), so it survives across app restarts.
+    const RESUME_MIN_SECONDS = 10;
+    const PROGRESS_SAVE_INTERVAL_MS = 10000;
+    let playbackContext = null; // { tmdbId, title, fileToken }
+    let pendingResumeSeconds = null;
+    let lastProgressSaveAt = 0;
+
+    function resumeQueryParams(ctx) {
+      const params = new URLSearchParams();
+      if (ctx.tmdbId) params.set("tmdbId", String(ctx.tmdbId));
+      if (ctx.title) params.set("title", ctx.title);
+      if (ctx.fileToken) params.set("file", ctx.fileToken);
+      return params;
+    }
+
+    function savePlaybackProgress({ immediate = false } = {}) {
+      if (!playbackContext) return;
+      const duration = playerVideo.duration;
+      if (!Number.isFinite(duration) || duration <= 0) return;
+
+      const now = Date.now();
+      if (!immediate && now - lastProgressSaveAt < PROGRESS_SAVE_INTERVAL_MS) return;
+      lastProgressSaveAt = now;
+
+      fetch(apiUrl("downloads/progress"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tmdbId: playbackContext.tmdbId,
+          title: playbackContext.title,
+          file: playbackContext.fileToken,
+          positionSeconds: playerVideo.currentTime,
+          durationSeconds: duration,
+        }),
+      }).catch(() => {
+        // Best-effort — a failed save shouldn't interrupt playback.
+      });
+    }
+
+    playerVideo.addEventListener("timeupdate", () => savePlaybackProgress());
+    playerVideo.addEventListener("pause", () => savePlaybackProgress({ immediate: true }));
+
+    playerVideo.addEventListener("loadedmetadata", () => {
+      if (pendingResumeSeconds != null) {
+        playerVideo.currentTime = pendingResumeSeconds;
+        pendingResumeSeconds = null;
+      }
+    });
+
     function startPlayer(movie, fileToken, audioTrack) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+
+      playbackContext = { tmdbId: t?.tmdbId || null, title: displayTitle, fileToken: fileToken || null };
+      pendingResumeSeconds = null;
+      lastProgressSaveAt = 0;
 
       playerStatus.hidden = true;
       playerTitle.textContent = displayTitle;
@@ -1765,9 +1820,29 @@
         // playback failures (unsupported format, file not found, etc.).
       });
       showPlayerControls();
+
+      // Look up a saved resume position in parallel with playback starting;
+      // applied once loadedmetadata fires above (seeking before the video
+      // has metadata doesn't stick).
+      fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`))
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.progress?.positionSeconds >= RESUME_MIN_SECONDS) {
+            pendingResumeSeconds = data.progress.positionSeconds;
+            if (playerVideo.readyState >= 1) {
+              playerVideo.currentTime = pendingResumeSeconds;
+              pendingResumeSeconds = null;
+            }
+          }
+        })
+        .catch(() => {
+          // No resume position available — play from the start.
+        });
     }
 
     function closePlayer() {
+      savePlaybackProgress({ immediate: true });
+      playbackContext = null;
       playerVideo.pause();
       playerVideo.removeAttribute("src");
       playerVideo.load();

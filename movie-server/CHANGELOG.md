@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.6
+
+- Resume playback: the player now remembers where you left off in a movie and auto-resumes from that position next time you press Play. Position is stored server-side alongside the movie's downloaded file (so it survives app reinstalls), saved every ~10s during playback plus on pause/exit, and cleared automatically once a movie is nearly finished (>95%) so it starts over from the beginning.
+
 ## 1.4.5
 
 - TV app: replaced the native `<video controls>` chrome with a custom player (progress bar with time labels, movie title, auto-hiding control bar, center play/pause flash icon, buffering spinner). This also fixes Play/Pause not responding on the remote — Tizen's native video controls don't reliably respond to D-pad input, so Enter/OK is now handled directly to toggle playback.

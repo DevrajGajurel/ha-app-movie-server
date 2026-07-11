@@ -26,6 +26,8 @@ const {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  saveProgress,
+  getProgress,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
@@ -560,6 +562,47 @@ const server = http.createServer(async (req, res) => {
       );
 
       sendJson(res, 200, { versions });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/progress" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+      const file = searchParams.get("file") || null;
+
+      if (!tmdbId && !title) {
+        sendJson(res, 400, { error: "tmdbId or title is required" });
+        return;
+      }
+
+      sendJson(res, 200, { progress: getProgress({ tmdbId, title, fileToken: file }) });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/progress" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const tmdbId = body.tmdbId ? String(body.tmdbId) : null;
+      const title = body.title ? String(body.title) : null;
+      const fileToken = body.file ? String(body.file) : null;
+      const positionSeconds = Number(body.positionSeconds);
+      const durationSeconds = Number(body.durationSeconds);
+
+      if ((!tmdbId && !title) || !Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds)) {
+        sendJson(res, 400, { error: "tmdbId/title and numeric positionSeconds/durationSeconds are required" });
+        return;
+      }
+
+      saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds });
+      sendJson(res, 200, { ok: true });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
