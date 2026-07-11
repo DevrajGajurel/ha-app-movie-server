@@ -154,6 +154,7 @@
     }
     const step = Math.min(SEEK_STEP_SECONDS * (1 + seekRepeatCount), SEEK_MAX_STEP_SECONDS);
     seekPlayer(direction === "right" ? step : -step);
+    window.TVPlayer?.showControls();
   }
 
   function resetSeekRepeat() {
@@ -171,7 +172,7 @@
     switch (action) {
       case "play":
       case "play-pause":
-        video.paused ? video.play() : video.pause();
+        window.TVPlayer ? window.TVPlayer.togglePlayPause() : (video.paused ? video.play() : video.pause());
         break;
       case "pause":
         video.pause();
@@ -211,6 +212,13 @@
     }
 
     if (e.keyCode === 13) {
+      if (playerOpen && document.activeElement === document.getElementById("player-video")) {
+        // The player has no native controls to activate (see the
+        // direction-key handling above) — Enter/OK is play/pause here.
+        e.preventDefault();
+        window.TVPlayer?.togglePlayPause();
+        return;
+      }
       // Enter: native <a>/<button>/<select>/<input> already activate on
       // their own; only step in for elements that rely on our synthetic
       // focus ring instead of native keyboard activation (e.g. poster

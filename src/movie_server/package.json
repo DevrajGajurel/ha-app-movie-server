@@ -1,6 +1,6 @@
 {
   "name": "movie-server",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Scrape movie listings from a configured URL",
   "main": "main.js",
   "scripts": {
