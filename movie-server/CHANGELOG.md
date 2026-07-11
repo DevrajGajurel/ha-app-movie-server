@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.2
+
+- Sync Home Assistant add-on version with the latest app release.
+
+## 1.4.1
+
+- Fix Redis cache key so domain rotations on the source site do not orphan cached listings.
+- Cache key prefix bumped to v2.
+
 ## 1.4.0
 
 - Add optional Redis listing cache with automatic refresh every 4 hours.
