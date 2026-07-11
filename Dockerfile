@@ -1,5 +1,7 @@
 FROM node:20-alpine
 
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 COPY src/movie_server/package.json src/movie_server/package-lock.json* ./

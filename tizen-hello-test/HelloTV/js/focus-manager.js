@@ -46,6 +46,8 @@
   function focusScope() {
     const player = document.getElementById("player-overlay");
     if (player && !player.hidden) return player;
+    const version = document.getElementById("version-modal");
+    if (version && !version.hidden) return version;
     const modal = document.getElementById("download-modal");
     if (modal && !modal.hidden) return modal;
     const detail = document.getElementById("detail-page");
@@ -129,7 +131,11 @@
     if (!candidates.length) return;
 
     const modalPreferred = candidates.find(
-      (el) => el.closest("#download-modal") || el.closest("#detail-page") || el.closest("#search-overlay")
+      (el) =>
+        el.closest("#download-modal") ||
+        el.closest("#detail-page") ||
+        el.closest("#search-overlay") ||
+        el.closest("#version-modal")
     );
     if (modalPreferred) {
       setFocused(modalPreferred);

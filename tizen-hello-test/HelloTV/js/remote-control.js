@@ -62,6 +62,8 @@
   function openModal() {
     const player = document.getElementById("player-overlay");
     if (player && !player.hidden) return player;
+    const version = document.getElementById("version-modal");
+    if (version && !version.hidden) return version;
     const download = document.getElementById("download-modal");
     if (download && !download.hidden) return download;
     const detail = document.getElementById("detail-page");
@@ -86,7 +88,7 @@
       document.getElementById("player-close-btn")?.click();
       return;
     }
-    const closeBtn = modal.querySelector("#download-modal-close, #detail-page-close");
+    const closeBtn = modal.querySelector("#download-modal-close, #detail-page-close, #version-modal-close");
     if (closeBtn) closeBtn.click();
   }
 

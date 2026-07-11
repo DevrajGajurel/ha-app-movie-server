@@ -21,7 +21,11 @@ const {
   getDownloadDir,
   scanLibrary,
   findMediaFile,
+  findMediaFiles,
+  resolveMediaToken,
+  probeMediaFile,
   streamFile,
+  streamAudioTrackRemux,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -448,19 +452,66 @@ const server = http.createServer(async (req, res) => {
       const searchParams = new URL(req.url, "http://localhost").searchParams;
       const tmdbId = searchParams.get("tmdbId") || null;
       const title = searchParams.get("title") || null;
+      const fileToken = searchParams.get("file") || null;
+      const audioTrackParam = searchParams.get("audioTrack");
+      const audioTrack = audioTrackParam !== null ? Number.parseInt(audioTrackParam, 10) : 0;
+
+      let filePath = fileToken ? resolveMediaToken(fileToken) : null;
+      if (!filePath) {
+        if (!tmdbId && !title) {
+          sendJson(res, 400, { error: "tmdbId or title is required" });
+          return;
+        }
+        filePath = findMediaFile({ tmdbId, title });
+      }
+      if (!filePath) {
+        sendJson(res, 404, { error: "No downloaded file found for this title" });
+        return;
+      }
+
+      // Track 0 is always the file's own default audio — direct-play it so
+      // Range requests keep working for proper seeking. Any other track
+      // requires remuxing since a raw byte stream can't switch which
+      // embedded audio track plays.
+      if (audioTrack > 0) {
+        streamAudioTrackRemux(req, res, filePath, audioTrack);
+      } else {
+        streamFile(req, res, filePath);
+      }
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/versions" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
 
       if (!tmdbId && !title) {
         sendJson(res, 400, { error: "tmdbId or title is required" });
         return;
       }
 
-      const filePath = findMediaFile({ tmdbId, title });
-      if (!filePath) {
-        sendJson(res, 404, { error: "No downloaded file found for this title" });
-        return;
-      }
+      const files = findMediaFiles({ tmdbId, title });
+      const versions = await Promise.all(
+        files.map(async (file) => {
+          const probe = await probeMediaFile(file.path);
+          return {
+            token: file.token,
+            filename: file.filename,
+            size: file.size,
+            duration: probe?.durationSeconds ?? null,
+            width: probe?.width ?? null,
+            height: probe?.height ?? null,
+            audioTracks: probe?.audioTracks ?? [],
+          };
+        })
+      );
 
-      streamFile(req, res, filePath);
+      sendJson(res, 200, { versions });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

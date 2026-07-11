@@ -823,6 +823,48 @@
       border-color: var(--danger);
     }
 
+    /* ---- Version picker (choose which downloaded file / audio track to play) ---- */
+    .version-option {
+      margin-bottom: 0.75rem;
+    }
+
+    .version-option:last-child {
+      margin-bottom: 0;
+    }
+
+    .version-filename {
+      display: block;
+      font-weight: 600;
+    }
+
+    .version-meta {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-top: 0.25rem;
+    }
+
+    .version-tracks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .version-track-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text);
+      padding: 0.45rem 0.9rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .version-track-btn:hover {
+      border-color: var(--accent);
+    }
+
     .download-save-hint {
       font-size: 0.82rem;
       color: var(--muted);
@@ -931,6 +973,16 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="version-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="version-modal-title">
+      <h2 id="version-modal-title">Choose version</h2>
+      <div id="version-modal-content" class="download-state">Loading…</div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="version-modal-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const rowsContainer = document.getElementById("rows-container");
     const statusStateEl = document.getElementById("status-state");
@@ -972,6 +1024,10 @@
     let downloadJobsPoller = null;
     let downloadedTmdbIds = new Set();
     let downloadedTitles = new Set();
+
+    const versionModal = document.getElementById("version-modal");
+    const versionModalContent = document.getElementById("version-modal-content");
+    let versionModalMovie = null;
 
     const searchOverlay = document.getElementById("search-overlay");
     const searchInput = document.getElementById("search-input");
@@ -1354,17 +1410,144 @@
     }
 
     // ---- Player ----
+    // Entry point for both the hero and detail-page Play buttons. Captures
+    // focus once, up front — startPlayer() below never touches
+    // preModalFocus, so it stays correct whether or not the version picker
+    // ends up showing in between.
     function playMovie(movie) {
+      preModalFocus = document.activeElement;
+      choosePlaybackVersion(movie);
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return "";
+      const units = ["B", "KB", "MB", "GB"];
+      let value = bytes;
+      let unitIndex = 0;
+      while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+      }
+      return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+    }
+
+    function formatDuration(seconds) {
+      if (!seconds) return "";
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+    }
+
+    function audioTrackLabel(track) {
+      if (track.title) return track.title;
+      if (track.language) return track.language.toUpperCase();
+      return `Track ${track.index + 1}`;
+    }
+
+    function renderVersionOptions(versions) {
+      return versions
+        .map((version) => {
+          const tracks = version.audioTracks || [];
+          const metaParts = [version.height ? `${version.height}p` : "", formatBytes(version.size), formatDuration(version.duration)].filter(
+            Boolean
+          );
+
+          if (tracks.length > 1) {
+            return `
+              <div class="version-option">
+                <span class="version-filename">${escapeHtml(version.filename)}</span>
+                <span class="version-meta">${escapeHtml(metaParts.join(" · "))}</span>
+                <div class="version-tracks">
+                  ${tracks
+                    .map(
+                      (track) => `
+                    <button type="button" class="version-track-btn" data-token="${escapeAttr(version.token)}" data-track="${track.index}">
+                      ${escapeHtml(audioTrackLabel(track))}
+                    </button>
+                  `
+                    )
+                    .join("")}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="version-option">
+              <button type="button" class="download-option" data-token="${escapeAttr(version.token)}" data-track="0">
+                <span class="version-filename">${escapeHtml(version.filename)}</span>
+                <span class="version-meta">${escapeHtml(metaParts.join(" · "))}</span>
+              </button>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    async function choosePlaybackVersion(movie) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
 
-      preModalFocus = document.activeElement;
+      let versions = [];
+      try {
+        const params = new URLSearchParams();
+        if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
+        params.set("title", displayTitle);
+        const res = await fetch(apiUrl(`downloads/versions?${params.toString()}`));
+        const data = await res.json();
+        if (res.ok) versions = data.versions || [];
+      } catch {
+        // Versions lookup failing (old server, transient network issue)
+        // shouldn't turn a working Play button into a dead end — fall back
+        // to direct-play, same as before this feature existed.
+      }
+
+      const onlyVersion = versions.length === 1 ? versions[0] : null;
+      if (versions.length <= 1 && (onlyVersion?.audioTracks || []).length <= 1) {
+        startPlayer(movie, onlyVersion?.token, 0);
+        return;
+      }
+
+      versionModalMovie = movie;
+      versionModalContent.innerHTML = renderVersionOptions(versions);
+      versionModal.hidden = false;
+      window.TVFocusManager?.focusFirst();
+    }
+
+    function closeVersionModal() {
+      versionModal.hidden = true;
+      versionModalMovie = null;
+      restoreFocusAfterModalClose();
+    }
+
+    versionModalContent.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-token]");
+      if (!btn || !versionModalMovie) return;
+      const movie = versionModalMovie;
+      const token = btn.dataset.token || null;
+      const track = Number(btn.dataset.track || 0);
+      versionModal.hidden = true;
+      versionModalMovie = null;
+      startPlayer(movie, token, track);
+    });
+
+    document.getElementById("version-modal-close").addEventListener("click", closeVersionModal);
+    versionModal.addEventListener("click", (e) => {
+      if (e.target === versionModal) closeVersionModal();
+    });
+
+    function startPlayer(movie, fileToken, audioTrack) {
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+
       playerStatus.hidden = true;
       playerOverlay.hidden = false;
 
       const params = new URLSearchParams();
       if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
       params.set("title", displayTitle);
+      if (fileToken) params.set("file", fileToken);
+      if (audioTrack) params.set("audioTrack", String(audioTrack));
       playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
       playerVideo.focus();
       playerVideo.play().catch(() => {
@@ -1401,7 +1584,12 @@
     // arrow-key press would fall back to focusFirst()'s default landing
     // spot instead of wherever the user actually was.
     function restoreFocusAfterModalClose() {
-      if (!detailPage.hidden || !downloadModal.hidden) return; // another modal still open
+      // Note: detailPage is deliberately NOT part of this guard. It's the
+      // underlying page a nested modal (download/version) was opened from,
+      // not another overlay blocking restoration — closing that nested
+      // modal should restore focus to preModalFocus (e.g. the Play button)
+      // inside the still-open detail page, not wait for it to close too.
+      if (!downloadModal.hidden || !versionModal.hidden) return; // another modal still open
       if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
         preModalFocus.classList.add("tv-focused");
         preModalFocus.focus({ preventScroll: true });

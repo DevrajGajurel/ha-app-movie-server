@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
+const { execFile, spawn } = require("child_process");
 
 const MARKER_FILE = ".movieserver.json";
 const jobs = [];
@@ -193,7 +194,7 @@ const MIME_TYPES = {
   ".mov": "video/quicktime",
 };
 
-function findMediaFile({ tmdbId, title }) {
+function findMatchingDirs({ tmdbId, title }) {
   const base = path.resolve(getDownloadDir());
   const normTitle = title ? normalizeTitle(title) : null;
 
@@ -201,11 +202,10 @@ function findMediaFile({ tmdbId, title }) {
   try {
     entries = fs.readdirSync(base, { withFileTypes: true });
   } catch {
-    return null;
+    return [];
   }
 
-  let best = null;
-
+  const dirs = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dir = path.join(base, entry.name);
@@ -234,6 +234,18 @@ function findMediaFile({ tmdbId, title }) {
     );
     if (!tmdbMatches && !titleMatches) continue;
 
+    dirs.push(dir);
+  }
+  return dirs;
+}
+
+// Every downloaded file matching a movie, across all of its matching
+// folders (e.g. separate HD/4K/language downloads), largest first.
+function findMediaFiles({ tmdbId, title }) {
+  const base = path.resolve(getDownloadDir());
+  const results = [];
+
+  for (const dir of findMatchingDirs({ tmdbId, title })) {
     let files;
     try {
       files = fs.readdirSync(dir, { withFileTypes: true });
@@ -241,20 +253,128 @@ function findMediaFile({ tmdbId, title }) {
       continue;
     }
 
-    // Keep scanning every matching folder (e.g. separate HD/4K downloads of
-    // the same movie) instead of stopping at the first one, so the largest
-    // file across ALL of them wins, not just the largest in whichever
-    // folder happens to be listed first.
     for (const file of files) {
       if (!file.isFile() || file.name === MARKER_FILE) continue;
       if (!VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
       const full = path.join(dir, file.name);
       const size = fs.statSync(full).size;
-      if (!best || size > best.size) best = { path: full, size };
+      // Token is the path relative to the download root; it round-trips
+      // through the client so a specific file can be requested later
+      // (see resolveMediaToken) without exposing the absolute disk path.
+      const token = path.relative(base, full).split(path.sep).join("/");
+      results.push({ path: full, token, filename: file.name, size });
     }
   }
 
-  return best ? best.path : null;
+  results.sort((a, b) => b.size - a.size);
+  return results;
+}
+
+function findMediaFile({ tmdbId, title }) {
+  const files = findMediaFiles({ tmdbId, title });
+  return files.length ? files[0].path : null;
+}
+
+// Resolves a token from findMediaFiles() back to an absolute path, refusing
+// anything that escapes the download root or isn't a video file.
+function resolveMediaToken(token) {
+  const base = path.resolve(getDownloadDir());
+  const full = path.resolve(base, String(token || ""));
+  if (full !== base && !full.startsWith(base + path.sep)) return null;
+  if (!VIDEO_EXTENSIONS.has(path.extname(full).toLowerCase())) return null;
+  try {
+    if (!fs.statSync(full).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return full;
+}
+
+// Inspects a file's streams via ffprobe. Resolves to null (rather than
+// throwing) when ffprobe isn't installed or the file can't be parsed, so
+// callers can degrade to filename/size-only version info.
+function probeMediaFile(filePath) {
+  return new Promise((resolve) => {
+    execFile(
+      "ffprobe",
+      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", filePath],
+      { maxBuffer: 10 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err) {
+          resolve(null);
+          return;
+        }
+        try {
+          const data = JSON.parse(stdout);
+          const streams = data.streams || [];
+          const videoStream = streams.find((s) => s.codec_type === "video");
+          const audioTracks = streams
+            .filter((s) => s.codec_type === "audio")
+            .map((s, index) => ({
+              index,
+              language: s.tags?.language || null,
+              title: s.tags?.title || null,
+              codec: s.codec_name || null,
+              channels: s.channels || null,
+            }));
+          resolve({
+            durationSeconds: data.format?.duration ? Math.round(Number(data.format.duration)) : null,
+            width: videoStream?.width || null,
+            height: videoStream?.height || null,
+            audioTracks,
+          });
+        } catch {
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+// Streams a specific (non-default) embedded audio track by remuxing on the
+// fly: video is stream-copied (no re-encode) and only the chosen audio
+// track is included, muxed as fragmented MP4 so it can be piped without
+// seeking the output. This is a live process, so unlike streamFile() above
+// it can't honor Range requests / precise seeking.
+function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
+  const ffmpeg = spawn("ffmpeg", [
+    "-v",
+    "error",
+    "-i",
+    filePath,
+    "-map",
+    "0:v:0",
+    "-map",
+    `0:a:${audioTrackIndex}`,
+    "-c",
+    "copy",
+    "-movflags",
+    "frag_keyframe+empty_moov+default_base_moof",
+    "-f",
+    "mp4",
+    "pipe:1",
+  ]);
+
+  // Only commit to a 200 once ffmpeg has actually started (Node's "spawn"
+  // event) so a missing ffmpeg binary or other launch failure surfaces as a
+  // real error response instead of a 200 with an empty body.
+  ffmpeg.on("spawn", () => {
+    res.writeHead(200, { "Content-Type": "video/mp4" });
+    ffmpeg.stdout.pipe(res);
+  });
+
+  ffmpeg.on("error", () => {
+    if (!res.headersSent) {
+      res.writeHead(500);
+      res.end();
+    }
+  });
+
+  const cleanup = () => {
+    if (!ffmpeg.killed) ffmpeg.kill("SIGKILL");
+  };
+  req.on("close", cleanup);
+  res.on("close", cleanup);
 }
 
 function streamFile(req, res, filePath) {
@@ -349,5 +469,9 @@ module.exports = {
   scanLibrary,
   normalizeTitle,
   findMediaFile,
+  findMediaFiles,
+  resolveMediaToken,
+  probeMediaFile,
   streamFile,
+  streamAudioTrackRemux,
 };
