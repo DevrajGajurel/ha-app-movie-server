@@ -29,6 +29,7 @@ const {
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
+const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -61,6 +62,11 @@ function getConfigPayload(extra = {}) {
     configEditable: !isHomeAssistantAddon(),
     ...extra,
   };
+}
+
+async function getConfigPayloadAsync(extra = {}) {
+  const cacheStatus = await getCacheStatus();
+  return getConfigPayload({ ...cacheStatus, ...extra });
 }
 
 function parseInitialPages(value) {
@@ -348,7 +354,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === "/api/config" && req.method === "GET") {
-    sendJson(res, 200, getConfigPayload());
+    sendJson(res, 200, await getConfigPayloadAsync());
     return;
   }
 
@@ -394,16 +400,12 @@ const server = http.createServer(async (req, res) => {
       const range = parsePageRange(searchParams);
       const from = Math.min(range.from, range.to);
       const to = Math.max(range.from, range.to);
-      const movies = await scrapeMoviesRange(from, to);
+      const refresh =
+        searchParams.get("refresh") === "1" || searchParams.get("refresh") === "true";
+      const result = await getMovies(from, to, { refresh });
       sendJson(res, 200, {
-        source: mainUrl,
-        maxPages,
-        initialPages,
-        from,
-        to,
-        count: movies.length,
-        tmdbEnabled: Boolean(TMDB_API_KEY),
-        movies,
+        ...result,
+        count: result.movies.length,
       });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
@@ -588,15 +590,38 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { error: "Not found" });
 });
 
-server.listen(PORT, () => {
-  console.log(`Movie server listening on http://localhost:${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}/`);
-  console.log(`API:       http://localhost:${PORT}/api/movies`);
-  console.log(`Scraping:  ${mainUrl}`);
-  console.log(`Pages:     1-${maxPages}`);
-  console.log(`TMDB:      ${TMDB_API_KEY ? "enabled" : "disabled (set TMDB_API_KEY in .env)"}`);
-  console.log(`Downloads: ${getDownloadDir()}`);
-  console.log(`HD tags:   ${HD_KEYWORDS.join(", ")}`);
-  console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
-  console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
-});
+const CACHE_REFRESH_MS =
+  (Number.parseFloat(process.env.CACHE_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
+
+async function startServer() {
+  try {
+    await initMovieCache({
+      redisUrl: process.env.REDIS_URL,
+      refreshMs: CACHE_REFRESH_MS,
+      scrapeMoviesRange,
+      getConfig: () => ({
+        mainUrl,
+        maxPages,
+        initialPages,
+        tmdbEnabled: Boolean(TMDB_API_KEY),
+      }),
+    });
+  } catch (err) {
+    console.warn("Redis init failed, continuing without cache:", err.message);
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Movie server listening on http://localhost:${PORT}`);
+    console.log(`Dashboard: http://localhost:${PORT}/`);
+    console.log(`API:       http://localhost:${PORT}/api/movies`);
+    console.log(`Scraping:  ${mainUrl}`);
+    console.log(`Pages:     1-${maxPages}`);
+    console.log(`TMDB:      ${TMDB_API_KEY ? "enabled" : "disabled (set TMDB_API_KEY in .env)"}`);
+    console.log(`Downloads: ${getDownloadDir()}`);
+    console.log(`HD tags:   ${HD_KEYWORDS.join(", ")}`);
+    console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
+    console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
+  });
+}
+
+startServer();

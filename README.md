@@ -91,7 +91,8 @@ copy .env.example .env
 | `GET` | `/` | Dashboard |
 | `GET` | `/api/config` | Current config |
 | `PUT` | `/api/config` | Update config |
-| `GET` | `/api/movies?from=1&to=2` | Movies for page range |
+| `GET` | `/api/movies?from=1&to=2` | Movies for page range (served from Redis cache when configured) |
+| `GET` | `/api/movies?from=1&to=2&refresh=1` | Force live scrape from source site |
 | `GET` | `/api/redirect?url=...` | Resolve HTTP redirects to the final URL |
 | `GET` | `/api/downloads?url=...` | Quality download options |
 | `POST` | `/api/downloads/save` | Start background download |
@@ -114,6 +115,17 @@ When configured:
 - **Manual refresh** — `POST /api/emby/refresh`
 
 If Emby sees a different filesystem path than `download_dir`, set optional `emby_path_prefix` under advanced options.
+
+## Redis listing cache (optional)
+
+Set `REDIS_URL` in `.env` (local Docker) or `redis_url` in the HA add-on configuration. The server:
+
+- Caches each listing page in Redis with TMDB metadata
+- Refreshes all pages automatically every 4 hours (`CACHE_REFRESH_HOURS`, default `4`)
+- Serves cached data on normal dashboard loads for fast responses
+- Uses **Refresh** in the UI to scrape live from the source site (`refresh=1`)
+
+Without Redis, behavior is unchanged — every request scrapes the source site directly.
 
 ## License
 

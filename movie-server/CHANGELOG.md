@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+- Add optional Redis listing cache with automatic refresh every 4 hours.
+- Dashboard loads from cache by default; Refresh button always scrapes live from the source site.
+- Per-page cache upsert keeps TMDB-enriched listings ready for fast responses.
+
 ## 1.3.0
 
 - Add `GET /api/redirect?url=...` to resolve HTTP redirects and return the final URL.

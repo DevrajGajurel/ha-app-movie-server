@@ -29,3 +29,6 @@ configuration:
   emby_path_prefix:
     name: Emby path prefix
     description: "Optional path prefix Emby uses for downloads (if different from download_dir)"
+  redis_url:
+    name: Redis URL
+    description: "Optional Redis URL for cached movie listings (speeds up dashboard loads). Refreshed every 4 hours."

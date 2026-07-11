@@ -1068,8 +1068,10 @@
       return norm ? downloadedTitles.has(norm) : false;
     }
 
-    async function fetchPageRange(from, to) {
-      const res = await fetch(apiUrl(`movies?from=${from}&to=${to}`));
+    async function fetchPageRange(from, to, { refresh = false } = {}) {
+      const params = new URLSearchParams({ from: String(from), to: String(to) });
+      if (refresh) params.set("refresh", "1");
+      const res = await fetch(apiUrl(`movies?${params}`));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       return data;
@@ -1085,7 +1087,7 @@
       }
     }
 
-    async function loadRemainingPages(gen, fromPage, toPage) {
+    async function loadRemainingPages(gen, fromPage, toPage, { refresh = false } = {}) {
       // Fetch every remaining page silently in the background — no
       // re-render per page, since that was visibly "refreshing" the
       // screen (and disturbing focus) once per page while it streamed in.
@@ -1096,7 +1098,7 @@
         if (gen !== loadGeneration) return;
 
         try {
-          const data = await fetchPageRange(page, page);
+          const data = await fetchPageRange(page, page, { refresh });
           if (gen !== loadGeneration) return;
 
           mergeMovies(data.movies || []);
@@ -1863,7 +1865,7 @@
     // ---- Initial load ----
     let hasLoadedOnce = false;
 
-    async function load() {
+    async function load({ refresh = false } = {}) {
       const gen = ++loadGeneration;
       const isFirstLoad = !hasLoadedOnce;
       refreshBtn.disabled = true;
@@ -1887,7 +1889,7 @@
         initialPagesCount = window.TV_INITIAL_PAGES || config.initialPages || 2;
 
         const firstTo = Math.min(initialPagesCount, totalMaxPages);
-        const data = await fetchPageRange(1, firstTo);
+        const data = await fetchPageRange(1, firstTo, { refresh });
         if (gen !== loadGeneration) return;
 
         mergeMovies(data.movies || []);
@@ -1901,7 +1903,7 @@
         splash.hidden = true;
 
         if (loadedThroughPage < totalMaxPages) {
-          loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages);
+          loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages, { refresh });
         }
       } catch (err) {
         splash.hidden = true;
@@ -1910,7 +1912,7 @@
       }
     }
 
-    refreshBtn.addEventListener("click", load);
+    refreshBtn.addEventListener("click", () => load({ refresh: true }));
 
     heroPlayBtn.addEventListener("click", () => {
       if (featuredMovie) playMovie(featuredMovie);

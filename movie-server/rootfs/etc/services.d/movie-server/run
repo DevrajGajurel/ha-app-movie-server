@@ -33,6 +33,10 @@ EMBY_PATH_PREFIX="$(bashio::config 'emby_path_prefix')"
 EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX#"${EMBY_PATH_PREFIX%%[![:space:]]*}"}"
 EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX%"${EMBY_PATH_PREFIX##*[![:space:]]}"}"
 
+REDIS_URL="$(bashio::config 'redis_url')"
+REDIS_URL="${REDIS_URL#"${REDIS_URL%%[![:space:]]*}"}"
+REDIS_URL="${REDIS_URL%"${REDIS_URL##*[![:space:]]}"}"
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -46,6 +50,8 @@ K4_KEYWORDS=${K4_KEYWORDS}
 EMBY_URL=${EMBY_URL}
 EMBY_API_KEY=${EMBY_API_KEY}
 EMBY_PATH_PREFIX=${EMBY_PATH_PREFIX}
+REDIS_URL=${REDIS_URL}
+CACHE_REFRESH_HOURS=4
 EOF
 
 cd /app || exit 1
