@@ -28,6 +28,7 @@ const {
   streamAudioTrackRemux,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
+const { resolveRedirectUrl } = require("./urlUtils");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -529,6 +530,24 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, result);
     } catch (err) {
       sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/redirect" && req.method === "GET") {
+    try {
+      const targetUrl = new URL(req.url, "http://localhost").searchParams.get("url");
+      if (!targetUrl) {
+        sendJson(res, 400, { error: "url query parameter is required" });
+        return;
+      }
+
+      new URL(targetUrl);
+      const finalUrl = await resolveRedirectUrl(targetUrl);
+      sendJson(res, 200, { url: finalUrl });
+    } catch (err) {
+      const message = err instanceof TypeError ? "Invalid URL" : err.message;
+      sendJson(res, 500, { error: message });
     }
     return;
   }

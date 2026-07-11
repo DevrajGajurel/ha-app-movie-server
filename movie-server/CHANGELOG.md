@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- Add `GET /api/redirect?url=...` to resolve HTTP redirects and return the final URL.
+
 ## 1.2.12
 
 - Sync Home Assistant add-on version with the latest app release.

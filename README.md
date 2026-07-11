@@ -92,6 +92,7 @@ copy .env.example .env
 | `GET` | `/api/config` | Current config |
 | `PUT` | `/api/config` | Update config |
 | `GET` | `/api/movies?from=1&to=2` | Movies for page range |
+| `GET` | `/api/redirect?url=...` | Resolve HTTP redirects to the final URL |
 | `GET` | `/api/downloads?url=...` | Quality download options |
 | `POST` | `/api/downloads/save` | Start background download |
 | `GET` | `/api/downloads/jobs` | Download job status |
