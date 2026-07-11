@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.3
+
+- Load the full poster library in one request when Redis cache is warm (no more page-by-page UI loading).
+- Redis cache reads now use MGET for faster bulk page retrieval.
+
 ## 1.4.2
 
 - Sync Home Assistant add-on version with the latest app release.

@@ -52,6 +52,18 @@ async function getPageCache(id, page) {
   return raw ? JSON.parse(raw) : null;
 }
 
+async function getPageCaches(id, from, to) {
+  if (from > to) return [];
+
+  const keys = [];
+  for (let page = from; page <= to; page += 1) {
+    keys.push(pageKey(id, page));
+  }
+
+  const raw = await client.mGet(keys);
+  return raw.map((value) => (value ? JSON.parse(value) : null));
+}
+
 async function upsertMeta(id, partial) {
   const existing = (await getMeta(id)) || {};
   const meta = {
@@ -168,9 +180,10 @@ async function getMovies(from, to, { refresh = false } = {}) {
 
   const movies = [];
   let cacheHit = !refresh;
+  const cachedPages = refresh ? [] : await getPageCaches(id, from, to);
 
   for (let page = from; page <= to; page += 1) {
-    let pageMovies = refresh ? null : await getPageCache(id, page);
+    let pageMovies = refresh ? null : cachedPages[page - from];
     if (!pageMovies) {
       cacheHit = false;
       pageMovies = await scrapeFn(page, page);

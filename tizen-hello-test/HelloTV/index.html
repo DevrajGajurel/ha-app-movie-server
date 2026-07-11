@@ -1888,8 +1888,18 @@
         totalMaxPages = config.maxPages;
         initialPagesCount = window.TV_INITIAL_PAGES || config.initialPages || 2;
 
-        const firstTo = Math.min(initialPagesCount, totalMaxPages);
-        const data = await fetchPageRange(1, firstTo, { refresh });
+        const loadAllFromCache = config.cacheEnabled && !refresh;
+        const toPage = loadAllFromCache
+          ? totalMaxPages
+          : Math.min(initialPagesCount, totalMaxPages);
+
+        if (loadAllFromCache) {
+          splashText.textContent = "Loading library from cache…";
+        } else if (refresh) {
+          splashText.textContent = "Refreshing from source…";
+        }
+
+        const data = await fetchPageRange(1, toPage, { refresh });
         if (gen !== loadGeneration) return;
 
         mergeMovies(data.movies || []);
@@ -1902,7 +1912,7 @@
         hasLoadedOnce = true;
         splash.hidden = true;
 
-        if (loadedThroughPage < totalMaxPages) {
+        if (!loadAllFromCache && loadedThroughPage < totalMaxPages) {
           loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages, { refresh });
         }
       } catch (err) {

@@ -1642,8 +1642,18 @@
         initialPagesCount = config.initialPages || 2;
         setupSourceConfig(config);
 
-        const firstTo = Math.min(initialPagesCount, totalMaxPages);
-        const data = await fetchPageRange(1, firstTo, { refresh });
+        const loadAllFromCache = config.cacheEnabled && !refresh;
+        const toPage = loadAllFromCache
+          ? totalMaxPages
+          : Math.min(initialPagesCount, totalMaxPages);
+
+        if (loadAllFromCache) {
+          content.textContent = "Loading library from cache…";
+        } else if (refresh) {
+          content.textContent = "Refreshing from source…";
+        }
+
+        const data = await fetchPageRange(1, toPage, { refresh });
         if (gen !== loadGeneration) return;
 
         mergeMovies(data.movies || []);
@@ -1656,7 +1666,7 @@
         applyFiltersAndRender();
         refreshBtn.disabled = false;
 
-        if (loadedThroughPage < totalMaxPages) {
+        if (!loadAllFromCache && loadedThroughPage < totalMaxPages) {
           loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages, { refresh });
         }
       } catch (err) {
