@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.12
+
+- Sync Home Assistant add-on version with the latest app release.
+- Install `ffmpeg` in the HA add-on image for audio-track playback remuxing.
+
+## 1.2.11
+
+- Add version/language picker before playback when multiple downloaded files or audio tracks exist.
+- New `GET /api/downloads/versions` endpoint with ffprobe metadata.
+- `/api/downloads/play` supports a specific file and audio track selection.
+
 ## 1.2.9
 
 - Add a local-only Source URL input in the dashboard; Home Assistant keeps using add-on options.
