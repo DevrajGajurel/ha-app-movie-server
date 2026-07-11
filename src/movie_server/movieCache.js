@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { createClient } = require("redis");
 
-const CACHE_PREFIX = "movieserver:v1:listing";
+const CACHE_PREFIX = "movieserver:v2:listing";
 const DEFAULT_REFRESH_MS = 4 * 60 * 60 * 1000;
 
 let client = null;
@@ -10,10 +10,18 @@ let refreshInProgress = false;
 let scrapeFn = null;
 let getListingConfig = null;
 
+// Deliberately independent of mainUrl and maxPages: the scraped source is a
+// piracy-mirror site that rotates domains constantly, but the underlying
+// catalog it serves is the same. Keying the cache by mainUrl orphaned the
+// entire cache on every domain rotation (and maxPages tweak), forcing a
+// full re-scrape for no real reason. tmdbEnabled is kept because it's the
+// one thing that actually changes the shape of cached movie objects
+// (enriched with TMDB data or not). mainUrl/maxPages are still recorded in
+// the meta blob below for visibility, just not used as the cache key.
 function listingId(config) {
   return crypto
     .createHash("sha256")
-    .update(`${config.mainUrl}|${config.maxPages}|${config.tmdbEnabled ? "tmdb" : "notmdb"}`)
+    .update(config.tmdbEnabled ? "tmdb" : "notmdb")
     .digest("hex")
     .slice(0, 16);
 }
