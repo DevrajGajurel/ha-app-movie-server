@@ -66,7 +66,45 @@ function getConfigPayload(extra = {}) {
 
 async function getConfigPayloadAsync(extra = {}) {
   const cacheStatus = await getCacheStatus();
-  return getConfigPayload({ ...cacheStatus, ...extra });
+  return getConfigPayload({ ...cacheStatus, ...getScrapeHealthPayload(), ...extra });
+}
+
+// Tracks whether the source site is actually reachable, independent of the
+// Redis cache: a warm cache can keep serving stale data (and every request
+// looking "successful") for hours after the source domain has died, which
+// is exactly when this needs to be visible. Recorded on every real fetch to
+// mainUrl (see scrapePage below), from both the on-demand and
+// background-refresh scrape paths, and surfaced via /api/config so the HA
+// integration can expose it as a sensor.
+const scrapeHealth = {
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+};
+
+function recordScrapeSuccess() {
+  scrapeHealth.lastSuccessAt = new Date().toISOString();
+}
+
+function recordScrapeError(err) {
+  // Node's fetch() wraps DNS/connection failures in a generic "fetch
+  // failed" TypeError with the actual reason (e.g. ENOTFOUND for a dead
+  // domain) nested in .cause — surface that instead of the useless outer
+  // message, since it's exactly what tells you "go rotate the source URL".
+  const detail = err.cause?.message || err.cause?.code;
+  scrapeHealth.lastErrorAt = new Date().toISOString();
+  scrapeHealth.lastError = detail ? `${err.message}: ${detail}` : err.message;
+}
+
+function getScrapeHealthPayload() {
+  // ISO 8601 UTC timestamps compare correctly as plain strings.
+  const ok = !scrapeHealth.lastErrorAt || (scrapeHealth.lastSuccessAt && scrapeHealth.lastSuccessAt > scrapeHealth.lastErrorAt);
+  return {
+    scrapeOk: Boolean(ok),
+    scrapeLastSuccessAt: scrapeHealth.lastSuccessAt,
+    scrapeLastErrorAt: scrapeHealth.lastErrorAt,
+    scrapeLastError: ok ? null : scrapeHealth.lastError,
+  };
 }
 
 function parseInitialPages(value) {
@@ -150,19 +188,26 @@ function readBody(req) {
 }
 
 function scrapePage(pageUrl) {
-  return fetch(pageUrl).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
-    }
+  return fetch(pageUrl)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
+      }
 
-    const html = await response.text();
-    const { document } = parseHTML(html);
+      const html = await response.text();
+      const { document } = parseHTML(html);
 
-    return [...document.querySelectorAll(".row-thumb-link")].map((a) => ({
-      title: a.querySelector("img")?.alt ?? "",
-      link: new URL(a.getAttribute("href"), pageUrl).href,
-    }));
-  });
+      const results = [...document.querySelectorAll(".row-thumb-link")].map((a) => ({
+        title: a.querySelector("img")?.alt ?? "",
+        link: new URL(a.getAttribute("href"), pageUrl).href,
+      }));
+      recordScrapeSuccess();
+      return results;
+    })
+    .catch((err) => {
+      recordScrapeError(err);
+      throw err;
+    });
 }
 
 function sortDownloadOptions(options) {

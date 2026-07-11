@@ -129,6 +129,38 @@
     console.info("[remote-control] exit requested (no-op outside Tizen)");
   }
 
+  // Left/Right while the player is open seeks instead of moving focus.
+  // Holding the key repeats (browser key-repeat fires keydown with
+  // e.repeat=true) and each repeat jumps a bit further, so a long press
+  // feels like it's fast-forwarding/rewinding quicker rather than just
+  // taking many identical small steps.
+  const SEEK_STEP_SECONDS = 30;
+  const SEEK_MAX_STEP_SECONDS = 120;
+  let seekRepeatDirection = null;
+  let seekRepeatCount = 0;
+
+  function seekPlayer(deltaSeconds) {
+    const video = document.getElementById("player-video");
+    if (!video || !Number.isFinite(video.duration)) return;
+    video.currentTime = Math.min(Math.max(0, video.currentTime + deltaSeconds), video.duration);
+  }
+
+  function handlePlayerSeek(direction, isRepeat) {
+    if (!isRepeat || seekRepeatDirection !== direction) {
+      seekRepeatDirection = direction;
+      seekRepeatCount = 0;
+    } else {
+      seekRepeatCount += 1;
+    }
+    const step = Math.min(SEEK_STEP_SECONDS * (1 + seekRepeatCount), SEEK_MAX_STEP_SECONDS);
+    seekPlayer(direction === "right" ? step : -step);
+  }
+
+  function resetSeekRepeat() {
+    seekRepeatDirection = null;
+    seekRepeatCount = 0;
+  }
+
   function dispatchMediaEvent(action) {
     document.dispatchEvent(new CustomEvent("tv-media-command", { detail: { action } }));
 
@@ -167,7 +199,11 @@
         return; // let the caret move within the text field
       }
       if (playerOpen && document.activeElement === document.getElementById("player-video")) {
-        return; // let the native video element handle its own seek/volume keys
+        if (direction === "left" || direction === "right") {
+          e.preventDefault();
+          handlePlayerSeek(direction, e.repeat);
+        }
+        return; // up/down while the player is open: no-op for now
       }
       e.preventDefault();
       window.TVFocusManager?.moveFocus(direction);
@@ -220,7 +256,12 @@
     if (e.keyName === "back") backOut();
   }
 
+  function handleKeyup(e) {
+    if (KEYCODE_DIRECTION[e.keyCode] === seekRepeatDirection) resetSeekRepeat();
+  }
+
   registerTizenKeys();
   document.addEventListener("keydown", handleKeydown);
+  document.addEventListener("keyup", handleKeyup);
   document.addEventListener("tizenhwkey", handleHwKey);
 })();

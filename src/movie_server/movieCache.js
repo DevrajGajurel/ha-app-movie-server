@@ -116,13 +116,16 @@ function scheduleBackgroundRefresh(refreshMs) {
 }
 
 async function initMovieCache({ redisUrl, scrapeMoviesRange, getConfig, refreshMs = DEFAULT_REFRESH_MS }) {
+  // getMovies()/getCacheStatus() below need scrapeFn/getListingConfig even
+  // when Redis is disabled (they still serve live, uncached scrapes) — this
+  // must run before the early return, or every listing request throws.
+  scrapeFn = scrapeMoviesRange;
+  getListingConfig = getConfig;
+
   if (!redisUrl) {
     console.log("Redis:      disabled (set REDIS_URL to enable listing cache)");
     return false;
   }
-
-  scrapeFn = scrapeMoviesRange;
-  getListingConfig = getConfig;
 
   client = createClient({ url: redisUrl });
   client.on("error", (err) => console.warn("[redis]", err.message));

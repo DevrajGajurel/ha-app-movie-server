@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.4
+
+- Track source-site scrape health (last success/error) independently of the Redis cache, since a warm cache can keep serving stale data for hours after the source domain dies. Exposed via `/api/config` and a new "Scrape problem" binary sensor in Home Assistant.
+- Fixed a bug where the app crashed on every movie listing request when Redis/REDIS_URL wasn't configured at all.
+- TV app: Left/Right now seeks 30s in the video player instead of moving focus; holding the key accelerates the jump size (30s -> 60s -> 90s -> 120s cap).
+
 ## 1.4.3
 
 - Load the full poster library in one request when Redis cache is warm (no more page-by-page UI loading).

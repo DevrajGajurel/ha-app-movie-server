@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from .const import DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "binary_sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
