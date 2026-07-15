@@ -1,62 +1,66 @@
-# Movie Server Home Assistant Add-on Repository
+# Movie Server
 
-This repository contains a Home Assistant add-on for running **Movie Server** — scrape movie/TV listings, enrich with TMDB metadata, and download to your media folder.
+Home Assistant **add-on** (dashboard + downloads) and optional **HACS integration** (sensors).
 
-Before publishing, confirm GitHub values in:
+Scrapes movie/TV listings, enriches with TMDB metadata, and downloads to your media folder.
 
-- `repository.yaml`
-- `movie-server/config.yaml` (`url`)
-- `movie-server/Dockerfile` (`APP_GIT_URL`, `APP_GIT_REF`)
+## Install with HACS (sensors)
 
-## Add this repository to Home Assistant
+Use HACS for the custom integration that creates entities like scrape health and download counts.
 
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
-2. Open the menu (three dots) and click **Repositories**.
-3. Add: `https://github.com/DevrajGajurel/ha-app-movie-server`
-4. Install **Movie Server** from the add-on store.
-5. Configure options and start the add-on.
-6. Open the dashboard from the add-on page or the **Movie Server** sidebar entry.
+1. HACS → ⋮ → **Custom repositories**
+2. Repository: `https://github.com/DevrajGajurel/ha-app-movie-server`
+3. Type: **Integration**
+4. Download **Movie Server**, then restart Home Assistant
+5. Settings → Devices & services → Add integration → **Movie Server**
+6. URL: `http://movie_server:3001` (add-on default) or your server URL
 
-## Configuration
+### Entities
+
+| Entity | Description |
+|--------|-------------|
+| `binary_sensor.movie_server_scrape_problem` | On when the source site cannot be scraped |
+| `sensor.movie_server_active_downloads` | Queued / in-progress downloads |
+| `sensor.movie_server_movies_on_page_1` | Movies returned for page 1 |
+| `sensor.movie_server_completed_downloads` | Completed download jobs |
+
+> The integration talks to a running Movie Server. Install the **add-on** below (or run local Docker) first.
+
+## Install the add-on (app / dashboard)
+
+1. Settings → Add-ons → Add-on Store → ⋮ → **Repositories**
+2. Add: `https://github.com/DevrajGajurel/ha-app-movie-server`
+3. Install **Movie Server**, configure options, start it
+4. Open the dashboard from the add-on page or the sidebar
+
+### Add-on configuration
 
 | Option | Required | Description |
 |--------|----------|-------------|
 | `main_url` | Yes | Source listing URL to scrape |
 | `tmdb_api_key` | No | TMDB API key for posters and filters |
 | `max_pages` | No | Pages to fetch (default `5`) |
-| `initial_pages` | No | Optional advanced — pages loaded first (default `2`) |
-| `download_dir` | No | Server download folder (default `/media`) |
-| `hd_keywords` / `k4_keywords` | No | Optional advanced — quality badge keywords |
+| `initial_pages` | No | Pages loaded first without Redis (default `2`) |
+| `download_dir` | No | Download folder (default `/media`) |
+| `redis_url` | No | Redis URL for listing cache |
+| `emby_url` / `emby_api_key` | No | Emby library refresh after downloads |
+| `hd_keywords` / `k4_keywords` | No | Quality badge keywords |
 
-Downloads are saved under `download_dir` (default HA `/media` folder).
-
-## Optional: Home Assistant integration (sensors)
-
-Copy `custom_components/movie_server` to your HA `config/custom_components/` folder, restart, then add the **Movie Server** integration with URL `http://movie_server:3001`.
-
-Sensors: active downloads, movies on page 1, completed downloads.
+Downloads are saved under `download_dir` (default HA `/media`).
 
 ## Repository layout
 
 ```
-├── repository.yaml          # HA add-on store manifest
-├── movie-server/            # Home Assistant add-on
-│   ├── config.yaml
-│   ├── Dockerfile
-│   ├── rootfs/              # s6 startup scripts
-│   └── CHANGELOG.md
-├── src/movie_server/        # Application source
-│   ├── main.js
-│   ├── public/
-│   └── package.json
-└── custom_components/       # Optional HA sensors integration
+├── hacs.json                 # HACS integration metadata
+├── brand/icon.png            # HACS / HA brand asset
+├── repository.yaml           # HA add-on store manifest
+├── movie-server/             # Home Assistant add-on
+├── src/movie_server/         # Application source
+└── custom_components/        # HACS integration (sensors)
+    └── movie_server/
 ```
 
----
-
 ## Local development (Docker Compose)
-
-For running outside Home Assistant on your PC:
 
 ```powershell
 copy .env.example .env
@@ -79,8 +83,9 @@ copy .env.example .env
 | `MAIN_URL` | — | Source site URL (required) |
 | `PORT` | `3001` | Host port |
 | `MAX_PAGES` | `1` | Listing pages to fetch |
-| `INITIAL_PAGES` | `2` | Pages loaded immediately |
+| `INITIAL_PAGES` | `2` | Pages loaded immediately without cache |
 | `TMDB_API_KEY` | — | Optional TMDB key |
+| `REDIS_URL` | — | Optional Redis listing cache |
 | `DOWNLOAD_DIR` | `/downloads` | Download folder in container |
 | `DOWNLOAD_HOST_PATH` | `D:/HA/PlexMedia` | Host path for Docker volume |
 
@@ -89,11 +94,11 @@ copy .env.example .env
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | Dashboard |
-| `GET` | `/api/config` | Current config |
+| `GET` | `/api/config` | Current config (includes scrape health) |
 | `PUT` | `/api/config` | Update config |
-| `GET` | `/api/movies?from=1&to=2` | Movies for page range (served from Redis cache when configured) |
-| `GET` | `/api/movies?from=1&to=2&refresh=1` | Force live scrape from source site |
-| `GET` | `/api/redirect?url=...` | Resolve HTTP redirects to the final URL |
+| `GET` | `/api/movies?from=1&to=2` | Movies for page range (from Redis when configured) |
+| `GET` | `/api/movies?from=1&to=2&refresh=1` | Force live scrape |
+| `GET` | `/api/redirect?url=...` | Resolve HTTP redirects |
 | `GET` | `/api/downloads?url=...` | Quality download options |
 | `POST` | `/api/downloads/save` | Start background download |
 | `GET` | `/api/downloads/jobs` | Download job status |
@@ -110,22 +115,11 @@ Set in add-on **Configuration** (optional):
 | `emby_url` | `http://192.168.1.10:8096` |
 | `emby_api_key` | From Emby → Dashboard → Advanced → API Keys |
 
-When configured:
-- **After each download** — Movie Server notifies Emby of the new file (falls back to full scan if needed)
-- **Manual refresh** — `POST /api/emby/refresh`
-
-If Emby sees a different filesystem path than `download_dir`, set optional `emby_path_prefix` under advanced options.
+When configured, Movie Server notifies Emby after each download. Use `POST /api/emby/refresh` for a full scan.
 
 ## Redis listing cache (optional)
 
-Set `REDIS_URL` in `.env` (local Docker) or `redis_url` in the HA add-on configuration. The server:
-
-- Caches each listing page in Redis with TMDB metadata
-- Refreshes all pages automatically every 4 hours (`CACHE_REFRESH_HOURS`, default `4`)
-- Serves cached data on normal dashboard loads for fast responses
-- Uses **Refresh** in the UI to scrape live from the source site (`refresh=1`)
-
-Without Redis, behavior is unchanged — every request scrapes the source site directly.
+Set `REDIS_URL` in `.env` (local) or `redis_url` in the HA add-on. The server caches listing pages, refreshes every 4 hours, and serves the full poster grid from cache. **Refresh** in the UI always scrapes live (`refresh=1`).
 
 ## License
 

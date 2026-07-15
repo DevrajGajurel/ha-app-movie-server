@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.7
+
+- Add HACS packaging: `hacs.json`, brand icon, and README install steps for the sensors integration.
+- Fix integration `manifest.json` (`issue_tracker`, `codeowners`) for HACS validation.
+
 ## 1.4.6
 
 - Resume playback: the player now remembers where you left off in a movie and auto-resumes from that position next time you press Play. Position is stored server-side alongside the movie's downloaded file (so it survives app reinstalls), saved every ~10s during playback plus on pause/exit, and cleared automatically once a movie is nearly finished (>95%) so it starts over from the beginning.
