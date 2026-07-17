@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.12
+
+- Simplify `/api/redirect` to return only `{ "url": "..." }` — the final destination if redirected (HTTP or JS), otherwise the original URL.
+
 ## 1.4.11
 
 - Detect FilmyFly-style JavaScript mirror redirects in `/api/redirect` (not just HTTP 301/302), so Home Assistant can alert when `ww2.*` is sent to the canonical domain.

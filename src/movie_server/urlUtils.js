@@ -41,20 +41,6 @@ async function fetchFollowingRedirects(start) {
   return res;
 }
 
-function extractCanonicalUrl(html, baseUrl) {
-  const match = html.match(
-    /<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*>/i
-  ) || html.match(
-    /<link[^>]+href=["']([^"']+)["'][^>]*rel=["']canonical["'][^>]*>/i
-  );
-  if (!match) return null;
-  try {
-    return new URL(match[1], baseUrl).href;
-  } catch {
-    return null;
-  }
-}
-
 function hourlyAnalytisSeed(date = new Date()) {
   return (
     1e6 * date.getFullYear() +
@@ -102,11 +88,7 @@ async function resolveRedirectUrl(inputUrl) {
   const start = new URL(inputUrl).href;
   const res = await fetchFollowingRedirects(start);
   const httpUrl = res?.url || start;
-  const httpRedirected =
-    normalizeUrlForCompare(start) !== normalizeUrlForCompare(httpUrl);
 
-  let html = "";
-  let canonicalUrl = null;
   let javascriptUrl = null;
 
   // Client-side mirror redirects only run on the homepage in their script.
@@ -117,8 +99,7 @@ async function resolveRedirectUrl(inputUrl) {
       redirect: "follow",
       headers: BROWSER_HEADERS,
     });
-    html = await pageRes.text();
-    canonicalUrl = extractCanonicalUrl(html, httpUrl);
+    const html = await pageRes.text();
     try {
       javascriptUrl = await resolveJavascriptMirrorUrl(httpUrl, html);
     } catch (err) {
@@ -126,18 +107,8 @@ async function resolveRedirectUrl(inputUrl) {
     }
   }
 
-  const browserUrl = javascriptUrl || httpUrl;
-
-  return {
-    originalUrl: start,
-    url: browserUrl,
-    redirected:
-      normalizeUrlForCompare(start) !== normalizeUrlForCompare(browserUrl),
-    method: javascriptUrl ? "javascript" : httpRedirected ? "http" : "none",
-    httpUrl,
-    javascriptUrl,
-    canonicalUrl,
-  };
+  // One URL only: redirected destination if any, otherwise the original/HTTP URL.
+  return javascriptUrl || httpUrl || start;
 }
 
 module.exports = { resolveRedirectUrl, normalizeUrlForCompare };
