@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.9
+
+- Polish HACS presentation: compressed brand icon/logo, integration `brand/` assets, and a cleaner integration-focused README.
+- Move add-on and development docs to `docs/`.
+
 ## 1.4.8
 
 - Add a Home Assistant "Source URL redirected" problem binary sensor. It resolves the configured `main_url` through `/api/redirect` and exposes the redirected `final_url` as an attribute for notifications.

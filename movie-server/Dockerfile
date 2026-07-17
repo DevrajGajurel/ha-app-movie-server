@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.4.8
+ARG APP_BUILD_VERSION=1.4.9
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
