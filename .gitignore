@@ -6,3 +6,6 @@ downloads/
 *.p12
 *.pwd
 .buildResult/
+
+__pycache__/
+*.py[cod]
