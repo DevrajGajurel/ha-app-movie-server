@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.8
+
+- Add a Home Assistant "Source URL redirected" problem binary sensor. It resolves the configured `main_url` through `/api/redirect` and exposes the redirected `final_url` as an attribute for notifications.
+
 ## 1.4.7
 
 - Add HACS packaging: `hacs.json`, brand icon, and README install steps for the sensors integration.

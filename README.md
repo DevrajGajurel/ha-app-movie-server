@@ -20,6 +20,7 @@ Use HACS for the custom integration that creates entities like scrape health and
 | Entity | Description |
 |--------|-------------|
 | `binary_sensor.movie_server_scrape_problem` | On when the source site cannot be scraped |
+| `binary_sensor.movie_server_source_url_redirected` | On when `main_url` redirects; `final_url` shows the new URL |
 | `sensor.movie_server_active_downloads` | Queued / in-progress downloads |
 | `sensor.movie_server_movies_on_page_1` | Movies returned for page 1 |
 | `sensor.movie_server_completed_downloads` | Completed download jobs |

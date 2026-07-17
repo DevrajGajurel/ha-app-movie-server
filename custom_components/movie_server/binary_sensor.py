@@ -15,7 +15,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: MovieServerCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([MovieServerScrapeProblemSensor(coordinator, entry.entry_id)])
+    async_add_entities(
+        [
+            MovieServerScrapeProblemSensor(coordinator, entry.entry_id),
+            MovieServerSourceUrlRedirectedSensor(coordinator, entry.entry_id),
+        ]
+    )
 
 
 class MovieServerScrapeProblemSensor(MovieServerEntity, BinarySensorEntity):
@@ -46,4 +51,27 @@ class MovieServerScrapeProblemSensor(MovieServerEntity, BinarySensorEntity):
             "last_error": config.get("scrapeLastError"),
             "last_error_at": config.get("scrapeLastErrorAt"),
             "last_success_at": config.get("scrapeLastSuccessAt"),
+        }
+
+
+class MovieServerSourceUrlRedirectedSensor(MovieServerEntity, BinarySensorEntity):
+    """On when the configured source URL resolves to a different final URL."""
+
+    _attr_name = "Source URL redirected"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry_id}_source_url_redirected"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("source_redirected"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "source_url": self.coordinator.data.get("source_url"),
+            "final_url": self.coordinator.data.get("source_redirect_url"),
+            "last_error": self.coordinator.data.get("source_redirect_error"),
         }
