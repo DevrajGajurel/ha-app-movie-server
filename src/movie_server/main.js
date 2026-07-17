@@ -633,8 +633,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       new URL(targetUrl);
-      const finalUrl = await resolveRedirectUrl(targetUrl);
-      sendJson(res, 200, { url: finalUrl });
+      const result = await resolveRedirectUrl(targetUrl);
+      sendJson(res, 200, result);
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
       sendJson(res, 500, { error: message });

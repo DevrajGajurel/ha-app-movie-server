@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.10
+
+- Clarify source URL redirect monitoring: `/api/redirect` now returns `originalUrl`, `url`, and `redirected`.
+- Add `sensor.movie_server_source_final_url` so Home Assistant always shows the resolved URL, even when no HTTP redirect is detected.
+
 ## 1.4.9
 
 - Polish HACS presentation: compressed brand icon/logo, integration `brand/` assets, and a cleaner integration-focused README.

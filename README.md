@@ -52,7 +52,8 @@ Copy `custom_components/movie_server` into your Home Assistant `config/custom_co
 | Entity | Type | Description |
 |--------|------|-------------|
 | `binary_sensor.movie_server_scrape_problem` | Problem | On when the source site cannot be scraped |
-| `binary_sensor.movie_server_source_url_redirected` | Problem | On when `main_url` redirects; see `final_url` attribute |
+| `binary_sensor.movie_server_source_url_redirected` | Problem | On when `main_url` HTTP-redirects to a different URL |
+| `sensor.movie_server_source_final_url` | Sensor | Always shows the resolved final URL |
 | `sensor.movie_server_active_downloads` | Sensor | Queued / in-progress downloads |
 | `sensor.movie_server_movies_on_page_1` | Sensor | Movies returned for page 1 |
 | `sensor.movie_server_completed_downloads` | Sensor | Completed download jobs |

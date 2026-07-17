@@ -20,6 +20,7 @@ async def async_setup_entry(
             MovieServerActiveDownloadsSensor(coordinator, entry.entry_id),
             MovieServerMoviesSensor(coordinator, entry.entry_id),
             MovieServerCompletedDownloadsSensor(coordinator, entry.entry_id),
+            MovieServerSourceFinalUrlSensor(coordinator, entry.entry_id),
         ]
     )
 
@@ -75,3 +76,28 @@ class MovieServerCompletedDownloadsSensor(MovieServerEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         return self.coordinator.data["completed_downloads"]
+
+
+class MovieServerSourceFinalUrlSensor(MovieServerEntity, SensorEntity):
+    """Always shows where the configured main_url currently resolves."""
+
+    _attr_name = "Source final URL"
+    _attr_icon = "mdi:link-variant"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry_id}_source_final_url"
+
+    @property
+    def native_value(self) -> str | None:
+        return self.coordinator.data.get("source_redirect_url") or self.coordinator.data.get(
+            "source_url"
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "source_url": self.coordinator.data.get("source_url"),
+            "redirected": self.coordinator.data.get("source_redirected"),
+            "last_error": self.coordinator.data.get("source_redirect_error"),
+        }

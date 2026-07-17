@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 import logging
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_URL
@@ -18,7 +18,19 @@ PLATFORMS = ["sensor", "binary_sensor"]
 
 
 def _normalize_redirect_url(value: str | None) -> str:
-    return (value or "").rstrip("/")
+    """Normalize URLs so trailing-slash-only differences are ignored."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+        if path in ("", "/"):
+            return f"{parsed.scheme}://{host}"
+        return f"{parsed.scheme}://{host}{path.rstrip('/')}".lower()
+    except Exception:
+        return raw.rstrip("/").lower()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -87,14 +99,17 @@ class MovieServerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         failed = [job for job in jobs if job.get("status") == "failed"]
         source_url = config.get("mainUrl")
         redirected_url = redirect_payload.get("url")
-
-        return {
-            "config": config,
-            "source_redirected": bool(
+        redirected = redirect_payload.get("redirected")
+        if redirected is None:
+            redirected = bool(
                 source_url
                 and redirected_url
                 and _normalize_redirect_url(source_url) != _normalize_redirect_url(redirected_url)
-            ),
+            )
+
+        return {
+            "config": config,
+            "source_redirected": bool(redirected),
             "source_url": source_url,
             "source_redirect_url": redirected_url,
             "source_redirect_error": redirect_payload.get("error"),

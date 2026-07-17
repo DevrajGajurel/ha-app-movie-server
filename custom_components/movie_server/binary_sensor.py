@@ -74,4 +74,8 @@ class MovieServerSourceUrlRedirectedSensor(MovieServerEntity, BinarySensorEntity
             "source_url": self.coordinator.data.get("source_url"),
             "final_url": self.coordinator.data.get("source_redirect_url"),
             "last_error": self.coordinator.data.get("source_redirect_error"),
+            "note": (
+                "On only for HTTP redirects (301/302). "
+                "If you already set main_url to the final domain, this stays off."
+            ),
         }
