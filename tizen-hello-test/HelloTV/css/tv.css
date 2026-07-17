@@ -46,7 +46,7 @@ select:focus,
 /* ---- 10-foot UI: bump legibility on TV-sized viewports ---- */
 @media (min-width: 1280px) {
   body {
-    font-size: 1.1rem;
+    font-size: 1.15rem;
   }
 
   .grid {
@@ -55,16 +55,16 @@ select:focus,
   }
 
   .card h2 {
-    font-size: 1.05rem;
+    font-size: 1.1rem;
   }
 
   .overview {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
   }
 
   .card-action-btn {
     min-height: 2.75rem;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
   }
 }
 

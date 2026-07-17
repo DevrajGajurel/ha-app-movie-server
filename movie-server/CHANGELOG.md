@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.13
+
+- TV app: slightly increase all text sizes for better 10-foot readability.
+
 ## 1.4.12
 
 - Simplify `/api/redirect` to return only `{ "url": "..." }` — the final destination if redirected (HTTP or JS), otherwise the original URL.

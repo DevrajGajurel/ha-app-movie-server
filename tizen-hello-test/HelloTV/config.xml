@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain.example/MovieServerTV" version="1.4.12" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain.example/MovieServerTV" version="1.4.13" viewmodes="maximized">
 	<tizen:application id="4NhLsB4hhb.HelloTV" package="4NhLsB4hhb" required_version="2.3"/>
 	<name>MovieServerTV</name>
 	<icon src="icon.png"/>
