@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.14
+
+- When local search has no matches, scrape the source site `search.html?search=...` (same `.row-thumb-link` parsing) and show those movies in the web and TV UIs.
+
 ## 1.4.13
 
 - TV app: slightly increase all text sizes for better 10-foot readability.

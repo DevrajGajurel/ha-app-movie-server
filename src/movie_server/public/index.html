@@ -947,6 +947,12 @@
     let loadedThroughPage = 0;
     let totalMaxPages = 1;
     let initialPagesCount = 2;
+    let sourceSearchTimer = null;
+    let sourceSearchGeneration = 0;
+    let sourceSearchQuery = "";
+    let sourceSearchMovies = [];
+    let sourceSearchLoading = false;
+    let sourceSearchError = "";
 
     const searchInput = document.getElementById("search-input");
     const sortSelect = document.getElementById("sort-select");
@@ -1084,7 +1090,55 @@
       }
     }
 
-    function applyFiltersAndRender() {
+    async function fetchSourceSearch(query) {
+      const params = new URLSearchParams({ q: query });
+      const res = await fetch(apiUrl(`movies/search?${params}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function scheduleSourceSearch(query) {
+      const q = query.trim();
+      if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
+
+      if (!q) {
+        sourceSearchQuery = "";
+        sourceSearchMovies = [];
+        sourceSearchLoading = false;
+        sourceSearchError = "";
+        return;
+      }
+
+      // Already fetched this exact query (even if it returned zero hits).
+      if (sourceSearchQuery === q) return;
+
+      sourceSearchLoading = true;
+      sourceSearchError = "";
+      sourceSearchTimer = setTimeout(async () => {
+        const gen = ++sourceSearchGeneration;
+        try {
+          const data = await fetchSourceSearch(q);
+          if (gen !== sourceSearchGeneration) return;
+          sourceSearchQuery = q;
+          sourceSearchMovies = data.movies || [];
+          sourceSearchLoading = false;
+          sourceSearchError = "";
+          mergeMovies(sourceSearchMovies);
+          populateFilterOptions(allMovies);
+          applyFiltersAndRender({ skipSourceSearch: true });
+        } catch (err) {
+          if (gen !== sourceSearchGeneration) return;
+          sourceSearchQuery = q;
+          sourceSearchMovies = [];
+          sourceSearchLoading = false;
+          sourceSearchError = err.message || "Source search failed";
+          applyFiltersAndRender({ skipSourceSearch: true });
+        }
+      }, 450);
+    }
+
+    function applyFiltersAndRender({ skipSourceSearch = false } = {}) {
       let list = [...allMovies];
       const search = searchInput.value.trim().toLowerCase();
       const type = typeFilter.value;
@@ -1159,9 +1213,34 @@
         return getDisplayTitle(a).localeCompare(getDisplayTitle(b));
       });
 
+      const localSearchHits = search
+        ? allMovies.filter((m) => getDisplayTitle(m).toLowerCase().includes(search)).length
+        : allMovies.length;
+
+      if (!skipSourceSearch && search && localSearchHits === 0) {
+        scheduleSourceSearch(searchInput.value.trim());
+      } else if (!search) {
+        scheduleSourceSearch("");
+      }
+
       filterCountEl.textContent = `Showing ${list.length} of ${allMovies.length}`;
-      if (list.length === 0 && search && allMovies.length > 0) {
-        if (loadedThroughPage < totalMaxPages) {
+      if (list.length === 0 && search) {
+        if (sourceSearchLoading || (sourceSearchTimer && localSearchHits === 0)) {
+          filterCountEl.textContent = `Searching source site for "${searchInput.value.trim()}"…`;
+          content.className = "state empty";
+          content.innerHTML = `
+            <p class="empty-hint">
+              No local matches for <strong>${escapeHtml(searchInput.value.trim())}</strong>.
+              Searching <code>search.html</code> on the source site…
+            </p>`;
+        } else if (sourceSearchError && sourceSearchQuery === searchInput.value.trim()) {
+          content.className = "state empty";
+          content.innerHTML = `
+            <p class="empty-hint">
+              Source search failed for <strong>${escapeHtml(searchInput.value.trim())}</strong>:
+              ${escapeHtml(sourceSearchError)}
+            </p>`;
+        } else if (loadedThroughPage < totalMaxPages && localSearchHits === 0 && !sourceSearchQuery) {
           filterCountEl.textContent = `No matches yet in ${allMovies.length} loaded · pages ${loadedThroughPage + 1}-${totalMaxPages} loading…`;
           content.className = "state empty";
           content.innerHTML = `
@@ -1174,6 +1253,9 @@
         }
       } else {
         renderMovies(list, tmdbEnabledFlag);
+        if (search && sourceSearchQuery === searchInput.value.trim() && sourceSearchMovies.length) {
+          filterCountEl.textContent = `Showing ${list.length} of ${allMovies.length} (includes source search)`;
+        }
       }
 
       syncChipActiveStates();

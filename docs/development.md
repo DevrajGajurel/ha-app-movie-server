@@ -38,6 +38,7 @@ copy .env.example .env
 | `PUT` | `/api/config` | Update config |
 | `GET` | `/api/movies?from=1&to=2` | Movies for page range (from Redis when configured) |
 | `GET` | `/api/movies?from=1&to=2&refresh=1` | Force live scrape |
+| `GET` | `/api/movies/search?q=...` | Scrape source `search.html?search=...` and return matches |
 | `GET` | `/api/redirect?url=...` | Resolve HTTP redirects |
 | `GET` | `/api/downloads?url=...` | Quality download options |
 | `POST` | `/api/downloads/save` | Start background download |

@@ -178,6 +178,13 @@ function buildPageUrl(baseUrl, page) {
   return url.href;
 }
 
+function buildSearchUrl(baseUrl, query) {
+  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const url = new URL("search.html", base);
+  url.searchParams.set("search", query);
+  return url.href;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -348,6 +355,32 @@ async function scrapeMoviesRange(fromPage, toPage) {
   return result.map((movie) => tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS));
 }
 
+async function searchSourceMovies(query) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+
+  const searchUrl = buildSearchUrl(mainUrl, q);
+  const pageMovies = await scrapePage(searchUrl);
+  const seen = new Set();
+  const movies = [];
+
+  for (const movie of pageMovies) {
+    const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
+    if (!seen.has(tagged.link)) {
+      seen.add(tagged.link);
+      movies.push(tagged);
+    }
+  }
+
+  const withDownloadLinks = await resolveDownloadLinks(movies);
+  let result = withDownloadLinks;
+  if (TMDB_API_KEY) {
+    result = await enrichMovies(withDownloadLinks, TMDB_API_KEY);
+  }
+
+  return result.map((movie) => tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS));
+}
+
 async function scrapeMovies() {
   return scrapeMoviesRange(1, maxPages);
 }
@@ -453,6 +486,29 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ...result,
         count: result.movies.length,
+      });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if ((url === "/api/movies/search" || url === "/movies/search") && req.method === "GET") {
+    try {
+      const query = new URL(req.url, "http://localhost").searchParams.get("q") || "";
+      if (!String(query).trim()) {
+        sendJson(res, 400, { error: "q query parameter is required" });
+        return;
+      }
+
+      const movies = await searchSourceMovies(query);
+      sendJson(res, 200, {
+        query: String(query).trim(),
+        searchUrl: buildSearchUrl(mainUrl, String(query).trim()),
+        movies,
+        count: movies.length,
+        tmdbEnabled: Boolean(TMDB_API_KEY),
+        source: mainUrl,
       });
     } catch (err) {
       sendJson(res, 500, { error: err.message });

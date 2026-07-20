@@ -1893,9 +1893,25 @@
     }
 
     // ---- Search overlay ----
+    let sourceSearchTimer = null;
+    let sourceSearchGeneration = 0;
+    let sourceSearchQuery = "";
+    let sourceSearchLoading = false;
+
+    async function fetchSourceSearch(query) {
+      const params = new URLSearchParams({ q: query });
+      const res = await fetch(apiUrl(`movies/search?${params}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
     function renderSearchResults(query) {
       const q = query.trim().toLowerCase();
       if (!q) {
+        if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
+        sourceSearchQuery = "";
+        sourceSearchLoading = false;
         searchResults.innerHTML = "";
         searchHint.hidden = false;
         searchHint.textContent = "Start typing to search your library.";
@@ -1903,15 +1919,58 @@
       }
 
       const matches = allMovies.filter((m) => getDisplayTitle(m).toLowerCase().includes(q));
-      if (!matches.length) {
-        searchResults.innerHTML = "";
-        searchHint.hidden = false;
-        searchHint.textContent = `No matches for "${query.trim()}".`;
+      if (matches.length) {
+        if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
+        sourceSearchLoading = false;
+        searchHint.hidden = true;
+        searchResults.innerHTML = matches.map(renderPosterCard).join("");
         return;
       }
 
-      searchHint.hidden = true;
-      searchResults.innerHTML = matches.map(renderPosterCard).join("");
+      if (sourceSearchQuery === query.trim() && !sourceSearchLoading) {
+        searchResults.innerHTML = "";
+        searchHint.hidden = false;
+        searchHint.textContent = `No matches for "${query.trim()}" on the source site.`;
+        return;
+      }
+
+      searchResults.innerHTML = "";
+      searchHint.hidden = false;
+      searchHint.textContent = `No local matches. Searching source site for "${query.trim()}"…`;
+      sourceSearchLoading = true;
+
+      if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
+      sourceSearchTimer = setTimeout(async () => {
+        const gen = ++sourceSearchGeneration;
+        const requestQuery = query.trim();
+        try {
+          const data = await fetchSourceSearch(requestQuery);
+          if (gen !== sourceSearchGeneration) return;
+          sourceSearchQuery = requestQuery;
+          sourceSearchLoading = false;
+          mergeMovies(data.movies || []);
+          if (searchInput.value.trim() !== requestQuery) return;
+          const remoteMatches = allMovies.filter((m) =>
+            getDisplayTitle(m).toLowerCase().includes(requestQuery.toLowerCase())
+          );
+          if (!remoteMatches.length) {
+            searchResults.innerHTML = "";
+            searchHint.hidden = false;
+            searchHint.textContent = `No matches for "${requestQuery}" on the source site.`;
+            return;
+          }
+          searchHint.hidden = true;
+          searchResults.innerHTML = remoteMatches.map(renderPosterCard).join("");
+        } catch (err) {
+          if (gen !== sourceSearchGeneration) return;
+          sourceSearchQuery = requestQuery;
+          sourceSearchLoading = false;
+          if (searchInput.value.trim() !== requestQuery) return;
+          searchResults.innerHTML = "";
+          searchHint.hidden = false;
+          searchHint.textContent = `Source search failed: ${err.message || "unknown error"}`;
+        }
+      }, 450);
     }
 
     function openSearchOverlay() {
