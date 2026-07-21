@@ -62,17 +62,28 @@
 
     .tv-hero-backdrop {
       position: absolute;
-      inset: 0;
+      inset: -4%;
       background-size: cover;
       background-position: center top;
+      transform: scale(1.06);
+      will-change: transform;
+    }
+
+    .tv-hero-backdrop.tv-hero-backdrop--animate {
+      animation: tv-hero-kenburns 32s ease-in-out infinite alternate;
+    }
+
+    @keyframes tv-hero-kenburns {
+      from { transform: scale(1.06) translate3d(0, 0, 0); }
+      to { transform: scale(1.16) translate3d(-1.8%, -1.2%, 0); }
     }
 
     .tv-hero-gradient {
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(to top, var(--bg) 1%, rgba(7, 11, 18, 0.18) 43%, rgba(7, 11, 18, 0.72) 100%),
-        linear-gradient(to right, rgba(7, 11, 18, 0.94) 0%, rgba(7, 11, 18, 0.38) 50%, rgba(7, 11, 18, 0) 76%);
+        linear-gradient(to top, var(--bg) 0%, rgba(7, 11, 18, 0.28) 42%, rgba(7, 11, 18, 0.78) 100%),
+        linear-gradient(to right, rgba(7, 11, 18, 0.96) 0%, rgba(7, 11, 18, 0.45) 46%, rgba(7, 11, 18, 0.05) 78%);
     }
 
     .tv-hero-content {
@@ -81,6 +92,23 @@
       margin-top: auto;
       padding: 0 4.75rem 3.3rem;
       max-width: 47rem;
+      animation: tv-hero-content-in 0.45s ease-out;
+    }
+
+    .tv-hero-content[hidden] {
+      display: none;
+      animation: none;
+    }
+
+    @keyframes tv-hero-content-in {
+      from {
+        opacity: 0;
+        transform: translateY(14px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .tv-hero-meta {
@@ -93,22 +121,24 @@
     }
 
     .tv-hero-title {
-      font-size: 3rem;
+      font-size: 3.15rem;
       font-weight: 800;
       margin-bottom: 0.85rem;
-      line-height: 1.1;
-      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
     }
 
     .tv-hero-overview {
-      font-size: 1.05rem;
-      color: var(--text);
+      font-size: 1.08rem;
+      color: rgba(232, 234, 239, 0.92);
       margin-bottom: 1.4rem;
       display: -webkit-box;
       -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+      text-shadow: 0 1px 12px rgba(0, 0, 0, 0.75);
+      max-width: 42rem;
     }
 
     .tv-hero-actions {
@@ -128,6 +158,7 @@
       color: var(--text);
       border: 1px solid rgba(255, 255, 255, 0.25);
       cursor: pointer;
+      transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
     }
 
     /* A class-level "display" rule has the same specificity as the
@@ -151,6 +182,28 @@
 
     .tv-hero-btn.primary:hover {
       background: #fff;
+    }
+
+    .tv-hero-btn.tv-focused,
+    .tv-hero-btn:focus {
+      outline: none;
+      transform: scale(1.04);
+      box-shadow: 0 0 0 3px rgba(0, 168, 225, 0.7), 0 10px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tv-hero-backdrop.tv-hero-backdrop--animate {
+        animation: none;
+      }
+
+      .tv-hero-content {
+        animation: none;
+      }
+
+      .tv-hero-btn,
+      .tv-poster-card {
+        transition: none;
+      }
     }
 
     /* ---- Top bar ---- */
@@ -294,6 +347,7 @@
          .tv-poster-card.tv-focused below) never actually reaches it. */
       padding: 1.9rem 4.5rem 1.8rem;
       scroll-behavior: smooth;
+      scroll-snap-type: x mandatory;
       scrollbar-width: none;
     }
 
@@ -304,13 +358,16 @@
       width: 220px;
       cursor: pointer;
       border-radius: 6px;
-      transition: transform 0.18s ease;
+      transition: transform 0.2s ease, opacity 0.2s ease;
       position: relative;
+      scroll-snap-align: start;
+      opacity: 0.86;
     }
 
     .tv-poster-card.tv-focused,
     .tv-poster-card:focus {
-      transform: scale(1.1);
+      transform: scale(1.14);
+      opacity: 1;
       z-index: 3;
       outline: none;
     }
@@ -328,6 +385,7 @@
       font-size: 0.8rem;
       text-align: center;
       padding: 0.5rem;
+      transition: box-shadow 0.2s ease;
     }
 
     .tv-poster-card.tv-focused .tv-poster-wrap,
@@ -344,13 +402,20 @@
 
     .tv-poster-title {
       margin-top: 0.55rem;
-      font-size: 0.85rem;
+      font-size: 0.88rem;
       font-weight: 500;
       text-align: center;
       display: -webkit-box;
       -webkit-line-clamp: 1;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      transition: color 0.2s ease, font-weight 0.2s ease;
+    }
+
+    .tv-poster-card.tv-focused .tv-poster-title,
+    .tv-poster-card:focus .tv-poster-title {
+      color: #fff;
+      font-weight: 600;
     }
 
     .tv-poster-year {
@@ -1494,6 +1559,7 @@
     function renderHero(movies) {
       if (!movies.length) {
         featuredMovie = null;
+        heroBackdrop.classList.remove("tv-hero-backdrop--animate");
         heroBackdrop.style.backgroundImage = "none";
         heroContent.hidden = true;
         return;
@@ -1506,7 +1572,15 @@
       const t = featuredMovie.tmdb;
       const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
       const backdropUrl = t?.backdrop || t?.poster;
-      heroBackdrop.style.backgroundImage = backdropUrl ? `url("${backdropUrl}")` : "none";
+      heroBackdrop.classList.remove("tv-hero-backdrop--animate");
+      if (backdropUrl) {
+        heroBackdrop.style.backgroundImage = `url("${backdropUrl}")`;
+        // Restart Ken Burns when the featured backdrop changes.
+        void heroBackdrop.offsetWidth;
+        heroBackdrop.classList.add("tv-hero-backdrop--animate");
+      } else {
+        heroBackdrop.style.backgroundImage = "none";
+      }
       heroTitle.textContent = displayTitle;
       heroOverview.textContent = t?.overview || "";
       heroMeta.innerHTML = `

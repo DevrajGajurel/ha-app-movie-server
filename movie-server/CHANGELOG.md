@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.17
+
+- Skip three.js for the Movie Server UI (wrong tool for a 2D poster browser on Tizen); polish the TV app with CSS-only hero Ken Burns, stronger focus scale on posters, and horizontal scroll-snap.
+
 ## 1.4.16
 
 - TV app: keep recent search queries when reopening Search and add a Library menu that shows downloaded movies for direct playback.
