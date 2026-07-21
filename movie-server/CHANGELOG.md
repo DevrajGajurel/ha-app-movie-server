@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.15
+
+- TV app: make poster rails slightly larger and restyle the browse screen with a darker Prime Video-inspired look, cyan accents, pill hero actions, and stronger focus rings.
+
 ## 1.4.14
 
 - When local search has no matches, scrape the source site `search.html?search=...` (same `.row-thumb-link` parsing) and show those movies in the web and TV UIs.
