@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.16
+
+- TV app: keep recent search queries when reopening Search and add a Library menu that shows downloaded movies for direct playback.
+
 ## 1.4.15
 
 - TV app: make poster rails slightly larger and restyle the browse screen with a darker Prime Video-inspired look, cyan accents, pill hero actions, and stronger focus rings.

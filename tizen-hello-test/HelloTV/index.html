@@ -243,6 +243,11 @@
       background: rgba(255, 255, 255, 0.1);
     }
 
+    .tv-sidenav-btn.active {
+      background: rgba(0, 168, 225, 0.22);
+      color: #fff;
+    }
+
     .tv-sidenav-icon {
       width: 1.5rem;
       text-align: center;
@@ -985,6 +990,26 @@
       border-color: var(--accent);
     }
 
+    .tv-search-history {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 1.2rem 4.5rem 0;
+    }
+
+    .tv-search-history-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      color: var(--text);
+      padding: 0.55rem 1.05rem;
+      font-size: 0.9rem;
+    }
+
+    .tv-search-history-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
     .download-save-hint {
       font-size: 0.82rem;
       color: var(--muted);
@@ -1028,8 +1053,14 @@
   <nav class="tv-sidenav" id="sidenav">
     <div class="tv-sidenav-brand">Movie Server</div>
     <div class="tv-sidenav-items">
+      <button class="tv-sidenav-btn active" id="nav-home-btn" type="button">
+        <span class="tv-sidenav-icon">⌂</span> Home
+      </button>
       <button class="tv-sidenav-btn" id="nav-search-btn" type="button">
         <span class="tv-sidenav-icon">🔍</span> Search
+      </button>
+      <button class="tv-sidenav-btn" id="nav-library-btn" type="button">
+        <span class="tv-sidenav-icon">▶</span> Library
       </button>
       <button class="tv-sidenav-btn" id="refresh" type="button">
         <span class="tv-sidenav-icon">⟳</span> Refresh
@@ -1083,6 +1114,7 @@
   <div class="tv-search-overlay" id="search-overlay" hidden>
     <input class="tv-search-input" type="search" id="search-input" placeholder="Search titles…" />
     <div class="tv-search-hint" id="search-hint">Start typing to search your library.</div>
+    <div class="tv-search-history" id="search-history"></div>
     <div class="tv-search-results" id="search-results"></div>
   </div>
 
@@ -1142,6 +1174,9 @@
     let featuredMovie = null;
     let preModalFocus = null;
     let allMovies = [];
+    let currentView = "home";
+    let visibleMovies = [];
+    let downloadedLibraryItems = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
     let loadGeneration = 0;
@@ -1171,8 +1206,15 @@
     const searchOverlay = document.getElementById("search-overlay");
     const searchInput = document.getElementById("search-input");
     const searchHint = document.getElementById("search-hint");
+    const searchHistory = document.getElementById("search-history");
     const searchResults = document.getElementById("search-results");
+    const navHomeBtn = document.getElementById("nav-home-btn");
     const navSearchBtn = document.getElementById("nav-search-btn");
+    const navLibraryBtn = document.getElementById("nav-library-btn");
+
+    const SEARCH_HISTORY_KEY = "movieServerTvSearchHistory";
+    let lastSearchQuery = "";
+    let searchHistoryItems = loadSearchHistory();
 
     function apiUrl(path) {
       const base = window.MOVIE_SERVER_API_BASE || "";
@@ -1187,6 +1229,44 @@
         .trim();
     }
 
+    function loadSearchHistory() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 8) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function rememberSearchQuery(query) {
+      const clean = query.trim();
+      if (!clean) return;
+      searchHistoryItems = [clean, ...searchHistoryItems.filter((item) => item.toLowerCase() !== clean.toLowerCase())].slice(0, 8);
+      try {
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(searchHistoryItems));
+      } catch {
+        // History is a convenience only.
+      }
+    }
+
+    function renderSearchHistory() {
+      if (!searchHistoryItems.length) {
+        searchHistory.innerHTML = "";
+        searchHistory.hidden = true;
+        return;
+      }
+      searchHistory.hidden = false;
+      searchHistory.innerHTML = searchHistoryItems
+        .map(
+          (query) => `
+        <button type="button" class="tv-search-history-btn" data-query="${escapeAttr(query)}">
+          ${escapeHtml(query)}
+        </button>
+      `
+        )
+        .join("");
+    }
+
     async function refreshDownloadLibrary() {
       try {
         const res = await fetch(apiUrl("downloads/library"));
@@ -1194,6 +1274,7 @@
         if (!res.ok) return;
         downloadedTmdbIds = new Set((data.tmdbIds || []).map(String));
         downloadedTitles = new Set(data.titles || []);
+        downloadedLibraryItems = data.items || [];
       } catch {
         // Ignore transient failures; downloads still work.
       }
@@ -1205,6 +1286,102 @@
       const title = t?.tmdbTitle || movie?.title || "";
       const norm = normalizeTitle(title);
       return norm ? downloadedTitles.has(norm) : false;
+    }
+
+    function getMovieKey(movie) {
+      const t = movie?.tmdb;
+      if (t?.tmdbId) return `tmdb:${t.tmdbId}`;
+      return `title:${normalizeTitle(t?.tmdbTitle || movie?.title || "")}`;
+    }
+
+    function getMoviePageLink(movie) {
+      if (!movie) return "";
+      if (movie.sourceLink) return movie.sourceLink;
+      return movie.link && !String(movie.link).startsWith("library:") ? movie.link : "";
+    }
+
+    function libraryItemToMovie(item) {
+      const norm = normalizeTitle(item.title || item.folder || "");
+      const existing = allMovies.find((movie) => {
+        const t = movie.tmdb;
+        if (item.tmdbId && t?.tmdbId && String(t.tmdbId) === String(item.tmdbId)) return true;
+        return norm && normalizeTitle(t?.tmdbTitle || movie.title || "") === norm;
+      });
+
+      if (existing) {
+        return {
+          ...existing,
+          link: `library:${item.tmdbId || norm || item.folder}`,
+          sourceLink: existing.link,
+          libraryFolder: item.folder,
+        };
+      }
+
+      const title = item.title || item.folder || "Downloaded movie";
+      return {
+        title,
+        link: `library:${item.tmdbId || norm || item.folder}`,
+        sourceLink: "",
+        libraryFolder: item.folder,
+        quality: {},
+        tmdb: item.tmdbId
+          ? {
+              tmdbId: item.tmdbId,
+              tmdbTitle: title,
+              type: "movie",
+            }
+          : null,
+      };
+    }
+
+    function getLibraryMovies() {
+      const seen = new Set();
+      return downloadedLibraryItems
+        .map(libraryItemToMovie)
+        .filter((movie) => {
+          const key = getMovieKey(movie);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => getDisplayTitle(a).localeCompare(getDisplayTitle(b)));
+    }
+
+    function setActiveNav() {
+      navHomeBtn.classList.toggle("active", currentView === "home");
+      navLibraryBtn.classList.toggle("active", currentView === "library");
+    }
+
+    function uniqueMovies(movies) {
+      const seen = new Set();
+      return movies.filter((movie) => {
+        const key = movie.link || getMovieKey(movie);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function getSearchableMovies() {
+      return uniqueMovies([...allMovies, ...getLibraryMovies()]);
+    }
+
+    function renderCurrentView() {
+      renderRows(currentView === "library" ? getLibraryMovies() : allMovies);
+    }
+
+    function showHomeView() {
+      currentView = "home";
+      renderCurrentView();
+      window.TVFocusManager?.closeSidenav?.();
+      window.TVFocusManager?.focusFirst();
+    }
+
+    function showLibraryView() {
+      currentView = "library";
+      renderCurrentView();
+      window.TVFocusManager?.closeSidenav?.();
+      window.TVFocusManager?.focusFirst();
     }
 
     async function fetchPageRange(from, to, { refresh = false } = {}) {
@@ -1249,7 +1426,7 @@
         }
       }
 
-      if (mergedAny && gen === loadGeneration) renderRows(allMovies);
+      if (mergedAny && gen === loadGeneration) renderCurrentView();
     }
 
     function getDisplayTitle(movie) {
@@ -1315,7 +1492,12 @@
     }
 
     function renderHero(movies) {
-      if (!movies.length) return;
+      if (!movies.length) {
+        featuredMovie = null;
+        heroBackdrop.style.backgroundImage = "none";
+        heroContent.hidden = true;
+        return;
+      }
       if (!featuredMovie || !movies.some((m) => m.link === featuredMovie.link)) {
         featuredMovie = pickFeaturedMovie(movies);
       }
@@ -1334,9 +1516,11 @@
       `;
 
       const downloaded = isAlreadyDownloaded(featuredMovie);
+      const sourcePageLink = getMoviePageLink(featuredMovie);
       heroPlayBtn.hidden = !downloaded;
+      heroDownloadBtn.hidden = !sourcePageLink;
       heroPlayBtn.classList.toggle("primary", downloaded);
-      heroDownloadBtn.classList.toggle("primary", !downloaded);
+      heroDownloadBtn.classList.toggle("primary", !downloaded && Boolean(sourcePageLink));
 
       heroContent.hidden = false;
     }
@@ -1425,7 +1609,11 @@
 
     function renderRows(movies) {
       if (!movies.length) {
-        rowsContainer.innerHTML = `<div class="state" id="status-state">Loading movies…</div>`;
+        visibleMovies = [];
+        renderHero([]);
+        const message = currentView === "library" ? "No downloaded movies found." : "Loading movies...";
+        rowsContainer.innerHTML = `<div class="state" id="status-state">${message}</div>`;
+        setActiveNav();
         return;
       }
 
@@ -1442,9 +1630,10 @@
       const priorRows = [...rowsContainer.querySelectorAll(".tv-row")];
       const focusedRowIndex = focusedCard ? priorRows.indexOf(focusedCard.closest(".tv-row")) : -1;
 
+      visibleMovies = movies;
       renderHero(movies);
 
-      const rows = buildRows(movies);
+      const rows = currentView === "library" ? [{ title: "Library", items: movies }] : buildRows(movies);
       rowsContainer.innerHTML = rows
         .map(
           (row) => `
@@ -1473,12 +1662,14 @@
       }
 
       window.TVFocusManager?.getFocusable();
+      setActiveNav();
     }
 
     // ---- Detail page ----
     function openDetailOverlay(movie) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+      const sourcePageLink = getMoviePageLink(movie);
 
       const bannerImage = t?.backdrop || t?.poster;
       detailPageBackdrop.style.backgroundImage = bannerImage ? `url("${bannerImage}")` : "none";
@@ -1518,7 +1709,7 @@
         ${statusHtml}
         <div class="tv-detail-actions">
           ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
-          <a class="tv-hero-btn${isAlreadyDownloaded(movie) ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(movie.link)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>
+          ${sourcePageLink ? `<a class="tv-hero-btn${isAlreadyDownloaded(movie) ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
           ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
         </div>
       `;
@@ -1914,11 +2105,14 @@
         sourceSearchLoading = false;
         searchResults.innerHTML = "";
         searchHint.hidden = false;
-        searchHint.textContent = "Start typing to search your library.";
+        searchHint.textContent = searchHistoryItems.length ? "Recent searches" : "Start typing to search your library.";
+        renderSearchHistory();
         return;
       }
 
-      const matches = allMovies.filter((m) => getDisplayTitle(m).toLowerCase().includes(q));
+      searchHistory.hidden = true;
+
+      const matches = getSearchableMovies().filter((m) => getDisplayTitle(m).toLowerCase().includes(q));
       if (matches.length) {
         if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
         sourceSearchLoading = false;
@@ -1950,7 +2144,7 @@
           sourceSearchLoading = false;
           mergeMovies(data.movies || []);
           if (searchInput.value.trim() !== requestQuery) return;
-          const remoteMatches = allMovies.filter((m) =>
+          const remoteMatches = getSearchableMovies().filter((m) =>
             getDisplayTitle(m).toLowerCase().includes(requestQuery.toLowerCase())
           );
           if (!remoteMatches.length) {
@@ -1976,13 +2170,15 @@
     function openSearchOverlay() {
       preModalFocus = document.activeElement;
       searchOverlay.hidden = false;
-      searchInput.value = "";
-      renderSearchResults("");
+      searchInput.value = lastSearchQuery;
+      renderSearchResults(lastSearchQuery);
       searchInput.focus();
       searchInput.classList.add("tv-focused");
     }
 
     function closeSearchOverlay() {
+      lastSearchQuery = searchInput.value;
+      rememberSearchQuery(lastSearchQuery);
       searchOverlay.hidden = true;
       if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
         preModalFocus.classList.add("tv-focused");
@@ -2043,7 +2239,7 @@
       button.textContent = `${label} — Queued…`;
       await refreshDownloadJobs();
       startJobPolling(data.job.id, button, label, () => {
-        refreshDownloadLibrary().then(() => renderRows(allMovies));
+        refreshDownloadLibrary().then(renderCurrentView);
       });
     }
 
@@ -2195,7 +2391,7 @@
           completedNow.size !== lastCompletedTitles.size || [...completedNow].some((title) => !lastCompletedTitles.has(title));
         lastCompletedTitles = completedNow;
 
-        if (rerender && completedChanged) renderRows(allMovies);
+        if (rerender && completedChanged) renderCurrentView();
         updateDownloadJobsPoller();
       } catch {
         // Ignore transient polling failures.
@@ -2257,7 +2453,7 @@
         tmdbEnabledFlag = data.tmdbEnabled;
         await refreshDownloadLibrary();
         await refreshDownloadJobs({ rerender: false });
-        renderRows(allMovies);
+        renderCurrentView();
         refreshBtn.disabled = false;
         hasLoadedOnce = true;
         splash.hidden = true;
@@ -2282,7 +2478,8 @@
       if (!featuredMovie) return;
       const t = featuredMovie.tmdb;
       const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
-      openDownloadModal(featuredMovie.link, displayTitle, t?.tmdbId || null);
+      const sourcePageLink = getMoviePageLink(featuredMovie);
+      if (sourcePageLink) openDownloadModal(sourcePageLink, displayTitle, t?.tmdbId || null);
     });
 
     heroInfoBtn.addEventListener("click", () => {
@@ -2306,21 +2503,38 @@
     rowsContainer.addEventListener("click", (e) => {
       const card = e.target.closest(".tv-poster-card");
       if (!card) return;
-      const movie = allMovies.find((m) => m.link === card.dataset.link);
+      const movie = visibleMovies.find((m) => m.link === card.dataset.link);
       if (movie) openDetailOverlay(movie);
     });
+
+    navHomeBtn.addEventListener("click", showHomeView);
 
     navSearchBtn.addEventListener("click", () => {
       window.TVFocusManager?.closeSidenav?.();
       openSearchOverlay();
     });
 
-    searchInput.addEventListener("input", () => renderSearchResults(searchInput.value));
+    navLibraryBtn.addEventListener("click", showLibraryView);
+
+    searchInput.addEventListener("input", () => {
+      lastSearchQuery = searchInput.value;
+      renderSearchResults(searchInput.value);
+    });
+
+    searchHistory.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-query]");
+      if (!btn) return;
+      searchInput.value = btn.dataset.query || "";
+      lastSearchQuery = searchInput.value;
+      renderSearchResults(searchInput.value);
+      searchInput.focus();
+    });
 
     searchResults.addEventListener("click", (e) => {
       const card = e.target.closest(".tv-poster-card");
       if (!card) return;
-      const movie = allMovies.find((m) => m.link === card.dataset.link);
+      rememberSearchQuery(searchInput.value);
+      const movie = getSearchableMovies().find((m) => m.link === card.dataset.link);
       if (movie) openDetailOverlay(movie);
     });
 
