@@ -548,10 +548,14 @@ function listProgress() {
       try {
         const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
         if (!tmdbId && marker.tmdbId != null) tmdbId = String(marker.tmdbId);
-        if (!title && marker.title) title = marker.title;
+        if (!title && (marker.movieTitle || marker.title)) title = marker.movieTitle || marker.title;
       } catch {
         // ignore
       }
+    }
+    if (!tmdbId) {
+      const match = /\(tmdb-(\d+)\)/i.exec(entry.name);
+      if (match) tmdbId = match[1];
     }
     if (!title) {
       title = entry.name.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim() || entry.name;
