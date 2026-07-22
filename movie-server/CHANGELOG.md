@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.18
+
+- TV app: focused poster updates the hero (backdrop, title, meta, Play/Download) with a short debounce — Jellyfin/Netflix-style spotlight browsing.
+
 ## 1.4.17
 
 - Skip three.js for the Movie Server UI (wrong tool for a 2D poster browser on Tizen); polish the TV app with CSS-only hero Ken Burns, stronger focus scale on posters, and horizontal scroll-snap.

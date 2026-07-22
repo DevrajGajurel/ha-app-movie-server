@@ -100,6 +100,10 @@
       animation: none;
     }
 
+    .tv-hero-content.tv-hero-content--refresh {
+      animation: tv-hero-content-in 0.35s ease-out;
+    }
+
     @keyframes tv-hero-content-in {
       from {
         opacity: 0;
@@ -1550,15 +1554,69 @@
     }
 
     // ---- Hero ----
+    let lastHeroBackdropUrl = "";
+    let heroSpotlightTimer = null;
+
     function pickFeaturedMovie(movies) {
       const withBackdrop = movies.filter((m) => m.tmdb?.backdrop);
       const pool = withBackdrop.length ? withBackdrop : movies;
       return [...pool].sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0))[0] || null;
     }
 
+    function showMovieInHero(movie) {
+      if (!movie) return;
+      featuredMovie = movie;
+
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+      const backdropUrl = t?.backdrop || t?.poster || "";
+
+      if (backdropUrl !== lastHeroBackdropUrl) {
+        lastHeroBackdropUrl = backdropUrl;
+        heroBackdrop.classList.remove("tv-hero-backdrop--animate");
+        if (backdropUrl) {
+          heroBackdrop.style.backgroundImage = `url("${backdropUrl}")`;
+          void heroBackdrop.offsetWidth;
+          heroBackdrop.classList.add("tv-hero-backdrop--animate");
+        } else {
+          heroBackdrop.style.backgroundImage = "none";
+        }
+      }
+
+      heroContent.classList.remove("tv-hero-content--refresh");
+      void heroContent.offsetWidth;
+      heroContent.classList.add("tv-hero-content--refresh");
+
+      heroTitle.textContent = displayTitle;
+      heroOverview.textContent = t?.overview || "";
+      heroMeta.innerHTML = `
+        ${t ? `<span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>` : ""}
+        ${t?.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+        ${t?.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+      `;
+
+      const downloaded = isAlreadyDownloaded(movie);
+      const sourcePageLink = getMoviePageLink(movie);
+      heroPlayBtn.hidden = !downloaded;
+      heroDownloadBtn.hidden = !sourcePageLink;
+      heroPlayBtn.classList.toggle("primary", downloaded);
+      heroDownloadBtn.classList.toggle("primary", !downloaded && Boolean(sourcePageLink));
+
+      heroContent.hidden = false;
+    }
+
+    function scheduleHeroSpotlight(movie) {
+      if (!movie) return;
+      if (heroSpotlightTimer) clearTimeout(heroSpotlightTimer);
+      // Short debounce so Left/Right scrubbing across a row doesn't thrash the backdrop.
+      heroSpotlightTimer = setTimeout(() => showMovieInHero(movie), 140);
+    }
+
     function renderHero(movies) {
       if (!movies.length) {
         featuredMovie = null;
+        lastHeroBackdropUrl = "";
+        if (heroSpotlightTimer) clearTimeout(heroSpotlightTimer);
         heroBackdrop.classList.remove("tv-hero-backdrop--animate");
         heroBackdrop.style.backgroundImage = "none";
         heroContent.hidden = true;
@@ -1568,35 +1626,7 @@
         featuredMovie = pickFeaturedMovie(movies);
       }
       if (!featuredMovie) return;
-
-      const t = featuredMovie.tmdb;
-      const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
-      const backdropUrl = t?.backdrop || t?.poster;
-      heroBackdrop.classList.remove("tv-hero-backdrop--animate");
-      if (backdropUrl) {
-        heroBackdrop.style.backgroundImage = `url("${backdropUrl}")`;
-        // Restart Ken Burns when the featured backdrop changes.
-        void heroBackdrop.offsetWidth;
-        heroBackdrop.classList.add("tv-hero-backdrop--animate");
-      } else {
-        heroBackdrop.style.backgroundImage = "none";
-      }
-      heroTitle.textContent = displayTitle;
-      heroOverview.textContent = t?.overview || "";
-      heroMeta.innerHTML = `
-        ${t ? `<span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>` : ""}
-        ${t?.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
-        ${t?.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
-      `;
-
-      const downloaded = isAlreadyDownloaded(featuredMovie);
-      const sourcePageLink = getMoviePageLink(featuredMovie);
-      heroPlayBtn.hidden = !downloaded;
-      heroDownloadBtn.hidden = !sourcePageLink;
-      heroPlayBtn.classList.toggle("primary", downloaded);
-      heroDownloadBtn.classList.toggle("primary", !downloaded && Boolean(sourcePageLink));
-
-      heroContent.hidden = false;
+      showMovieInHero(featuredMovie);
     }
 
     // ---- Row grouping ----
@@ -2580,6 +2610,24 @@
       const movie = visibleMovies.find((m) => m.link === card.dataset.link);
       if (movie) openDetailOverlay(movie);
     });
+
+    // Jellyfin/Netflix-style spotlight: focused poster drives the hero.
+    document.addEventListener(
+      "focus",
+      (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        if (searchOverlay && !searchOverlay.hidden) return;
+        if (detailPage && !detailPage.hidden) return;
+        const card = target.closest(".tv-poster-card");
+        if (!card || !rowsContainer.contains(card)) return;
+        const movie =
+          visibleMovies.find((m) => m.link === card.dataset.link) ||
+          allMovies.find((m) => m.link === card.dataset.link);
+        if (movie) scheduleHeroSpotlight(movie);
+      },
+      true
+    );
 
     navHomeBtn.addEventListener("click", showHomeView);
 
