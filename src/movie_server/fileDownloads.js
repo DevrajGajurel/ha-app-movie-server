@@ -514,6 +514,74 @@ function scanLibrary() {
   };
 }
 
+/**
+ * Scan download folders for in-progress resume markers.
+ * Returns newest-first entries still considered "continue watching".
+ */
+function listProgress() {
+  const root = getDownloadDir();
+  if (!fs.existsSync(root)) return [];
+
+  const items = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    const progressPath = path.join(dir, PROGRESS_FILE);
+    if (!fs.existsSync(progressPath)) continue;
+
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(progressPath, "utf8"));
+    } catch {
+      continue;
+    }
+
+    const position = Number(data.positionSeconds) || 0;
+    const duration = Number(data.durationSeconds) || 0;
+    if (position < RESUME_MIN_SECONDS) continue;
+    if (duration > 0 && position / duration >= RESUME_DONE_RATIO) continue;
+
+    let tmdbId = data.tmdbId != null ? String(data.tmdbId) : null;
+    let title = data.title || "";
+    const markerPath = path.join(dir, MARKER_FILE);
+    if (fs.existsSync(markerPath)) {
+      try {
+        const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+        if (!tmdbId && marker.tmdbId != null) tmdbId = String(marker.tmdbId);
+        if (!title && marker.title) title = marker.title;
+      } catch {
+        // ignore
+      }
+    }
+    if (!title) {
+      title = entry.name.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim() || entry.name;
+    }
+
+    const percent =
+      duration > 0
+        ? Math.min(99, Math.max(1, Math.round((position / duration) * 100)))
+        : 0;
+
+    items.push({
+      folder: entry.name,
+      tmdbId,
+      title,
+      positionSeconds: position,
+      durationSeconds: duration,
+      percent,
+      updatedAt: data.updatedAt || null,
+    });
+  }
+
+  items.sort((a, b) => {
+    const ta = Date.parse(a.updatedAt || "") || 0;
+    const tb = Date.parse(b.updatedAt || "") || 0;
+    return tb - ta;
+  });
+
+  return items;
+}
+
 module.exports = {
   getDownloadDir,
   startDownload,
@@ -521,6 +589,7 @@ module.exports = {
   listJobs,
   initDownloadDir,
   scanLibrary,
+  listProgress,
   normalizeTitle,
   findMediaFile,
   findMediaFiles,

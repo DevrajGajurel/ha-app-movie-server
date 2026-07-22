@@ -404,6 +404,23 @@
       display: block;
     }
 
+    .tv-poster-progress {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 2;
+    }
+
+    .tv-poster-progress span {
+      display: block;
+      height: 100%;
+      background: #00a8e1;
+      box-shadow: 0 0 8px rgba(0, 168, 225, 0.55);
+    }
+
     .tv-poster-title {
       margin-top: 0.55rem;
       font-size: 0.88rem;
@@ -1267,6 +1284,8 @@
     let downloadJobsPoller = null;
     let downloadedTmdbIds = new Set();
     let downloadedTitles = new Set();
+    let playbackProgressItems = [];
+    let playbackProgressByKey = new Map();
 
     const versionModal = document.getElementById("version-modal");
     const versionModalContent = document.getElementById("version-modal-content");
@@ -1347,6 +1366,70 @@
       } catch {
         // Ignore transient failures; downloads still work.
       }
+    }
+
+    async function refreshPlaybackProgress() {
+      try {
+        const res = await fetch(apiUrl("downloads/progress"));
+        const data = await res.json();
+        if (!res.ok) return;
+        playbackProgressItems = Array.isArray(data.items) ? data.items : [];
+        playbackProgressByKey = new Map();
+        for (const item of playbackProgressItems) {
+          const percent = Number(item.percent) || 0;
+          if (item.tmdbId) playbackProgressByKey.set(`tmdb:${item.tmdbId}`, percent);
+          const titleKey = normalizeTitle(item.title || "");
+          if (titleKey) playbackProgressByKey.set(`title:${titleKey}`, percent);
+        }
+      } catch {
+        // Resume UI is best-effort.
+      }
+    }
+
+    function getResumePercent(movie) {
+      const t = movie?.tmdb;
+      if (t?.tmdbId && playbackProgressByKey.has(`tmdb:${t.tmdbId}`)) {
+        return playbackProgressByKey.get(`tmdb:${t.tmdbId}`);
+      }
+      const titleKey = normalizeTitle(t?.tmdbTitle || movie?.title || "");
+      return titleKey ? playbackProgressByKey.get(`title:${titleKey}`) || 0 : 0;
+    }
+
+    function renderProgressStrip(movie) {
+      const percent = getResumePercent(movie);
+      if (!percent) return "";
+      return `<div class="tv-poster-progress" aria-hidden="true"><span style="width:${percent}%"></span></div>`;
+    }
+
+    function getContinueWatchingMovies() {
+      const pool = getSearchableMovies();
+      const out = [];
+      const seen = new Set();
+
+      for (const item of playbackProgressItems) {
+        let movie = pool.find((m) => {
+          const t = m.tmdb;
+          if (item.tmdbId && t?.tmdbId && String(t.tmdbId) === String(item.tmdbId)) return true;
+          const itemTitle = normalizeTitle(item.title || "");
+          return itemTitle && normalizeTitle(t?.tmdbTitle || m.title || "") === itemTitle;
+        });
+
+        if (!movie) {
+          const lib = downloadedLibraryItems.find((entry) => {
+            if (item.tmdbId && entry.tmdbId && String(entry.tmdbId) === String(item.tmdbId)) return true;
+            return normalizeTitle(item.title) && normalizeTitle(entry.title || entry.folder) === normalizeTitle(item.title);
+          });
+          if (lib) movie = libraryItemToMovie(lib);
+        }
+
+        if (!movie) continue;
+        const key = getMovieKey(movie);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(movie);
+      }
+
+      return out;
     }
 
     function isAlreadyDownloaded(movie) {
@@ -1632,6 +1715,12 @@
     // ---- Row grouping ----
     function buildRows(movies) {
       const rows = [];
+
+      const continueWatching = getContinueWatchingMovies();
+      if (continueWatching.length) {
+        rows.push({ title: "Continue Watching", items: continueWatching });
+      }
+
       const bySource = [...movies].sort((a, b) => (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0));
       rows.push({ title: "Recently Added", items: bySource });
 
@@ -1675,6 +1764,7 @@
             ${poster}
             ${qualityBadges}
             ${renderDownloadedBadge(m, displayTitle)}
+            ${renderProgressStrip(m)}
           </div>
           <div class="tv-poster-title">${escapeHtml(displayTitle)}</div>
           ${t?.year ? `<div class="tv-poster-year">${escapeHtml(t.year)}</div>` : ""}
@@ -1703,6 +1793,7 @@
               ${poster}
               ${qualityBadges}
               ${renderDownloadedBadge(m, displayTitle)}
+              ${renderProgressStrip(m)}
             </div>
           </div>
           <div class="tv-poster-title">${escapeHtml(displayTitle)}</div>
@@ -2149,13 +2240,18 @@
       playerOverlay.hidden = true;
       if (controlsHideTimer) clearTimeout(controlsHideTimer);
       playerSpinner.classList.remove("show");
-      if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
-        preModalFocus.classList.add("tv-focused");
-        preModalFocus.focus({ preventScroll: true });
-      } else {
-        window.TVFocusManager?.focusFirst();
-      }
+
+      const focusEl = preModalFocus;
       preModalFocus = null;
+      refreshPlaybackProgress().then(() => {
+        renderCurrentView();
+        if (focusEl && document.contains(focusEl) && focusEl.offsetParent !== null) {
+          focusEl.classList.add("tv-focused");
+          focusEl.focus({ preventScroll: true });
+        } else {
+          window.TVFocusManager?.focusFirst();
+        }
+      });
     }
 
     // ---- Download modal (behavior unchanged from previous version) ----
@@ -2556,6 +2652,7 @@
         loadedThroughPage = data.to;
         tmdbEnabledFlag = data.tmdbEnabled;
         await refreshDownloadLibrary();
+        await refreshPlaybackProgress();
         await refreshDownloadJobs({ rerender: false });
         renderCurrentView();
         refreshBtn.disabled = false;

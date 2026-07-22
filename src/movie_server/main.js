@@ -28,6 +28,7 @@ const {
   streamAudioTrackRemux,
   saveProgress,
   getProgress,
+  listProgress,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
@@ -630,6 +631,12 @@ const server = http.createServer(async (req, res) => {
       const tmdbId = searchParams.get("tmdbId") || null;
       const title = searchParams.get("title") || null;
       const file = searchParams.get("file") || null;
+
+      // No identifiers → Continue Watching list for home rails.
+      if (!tmdbId && !title && !file) {
+        sendJson(res, 200, { items: listProgress() });
+        return;
+      }
 
       if (!tmdbId && !title) {
         sendJson(res, 400, { error: "tmdbId or title is required" });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.19
+
+- TV app: Continue Watching home row (newest resume first) and cyan progress strips on posters with saved playback position.
+- API: `GET /api/downloads/progress` with no query params returns all in-progress resume entries for Continue Watching.
+
 ## 1.4.18
 
 - TV app: focused poster updates the hero (backdrop, title, meta, Play/Download) with a short debounce — Jellyfin/Netflix-style spotlight browsing.
