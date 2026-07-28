@@ -366,6 +366,13 @@
       position: relative;
       scroll-snap-align: start;
       opacity: 0.86;
+      outline: none;
+      /* Tizen's WebKit draws its own tap/focus highlight around the whole
+         focused element (image + title) independent of outline/box-shadow —
+         this is what was showing as a border around the title text, since
+         our custom focus ring below is deliberately scoped to just the
+         poster image. */
+      -webkit-tap-highlight-color: transparent;
     }
 
     .tv-poster-card.tv-focused,
@@ -2929,7 +2936,14 @@
       const card = e.target.closest(".tv-poster-card");
       if (!card) return;
       const movie = visibleMovies.find((m) => m.link === card.dataset.link);
-      if (movie) openDetailOverlay(movie);
+      if (!movie) return;
+      // Already downloaded: OK/click plays right away instead of making
+      // you open the detail page and press Play again.
+      if (isAlreadyDownloaded(movie)) {
+        playMovie(movie);
+      } else {
+        openDetailOverlay(movie);
+      }
     });
 
     // Jellyfin/Netflix-style spotlight: focused poster drives the hero.
@@ -2978,7 +2992,12 @@
       if (!card) return;
       rememberSearchQuery(searchInput.value);
       const movie = getSearchableMovies().find((m) => m.link === card.dataset.link);
-      if (movie) openDetailOverlay(movie);
+      if (!movie) return;
+      if (isAlreadyDownloaded(movie)) {
+        playMovie(movie);
+      } else {
+        openDetailOverlay(movie);
+      }
     });
 
     document.addEventListener("tv-close-search", closeSearchOverlay);

@@ -259,14 +259,18 @@
         window.TVPlayer?.togglePlayPause();
         return;
       }
-      // Enter: native <a>/<button>/<select>/<input> already activate on
-      // their own; only step in for elements that rely on our synthetic
-      // focus ring instead of native keyboard activation (e.g. poster
-      // cards, download badges — anything with tabindex="0" that isn't
-      // one of those natively-activating tags).
+      // Enter: don't rely on the platform auto-activating a focused
+      // <button>/<a> on Enter — confirmed unreliable on Tizen's WebKit
+      // (this is the same category of issue as the native video controls:
+      // assumed-native remote/keyboard behavior that doesn't actually
+      // happen on this platform). Click it ourselves instead. Leave real
+      // text inputs alone so Enter doesn't do anything unexpected there.
       const el = document.activeElement;
-      const nativelyActivates = el && ["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"].includes(el.tagName);
-      if (el && el.getAttribute("tabindex") === "0" && !nativelyActivates) {
+      if (!el) return;
+      if (el.tagName === "BUTTON" || el.tagName === "A") {
+        e.preventDefault();
+        el.click();
+      } else if (el.getAttribute("tabindex") === "0") {
         e.preventDefault();
         window.TVFocusManager?.activateFocused();
       }

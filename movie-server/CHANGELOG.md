@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.23
+
+- Fixed Enter/OK not activating focused buttons (e.g. the exit-confirmation dialog): confirmed a synthetic Enter keydown doesn't trigger a browser's native "click the focused button" behavior, and Tizen's WebKit isn't reliable here either — same class of issue as the native video controls. Enter now explicitly calls `.click()` on the focused button/link itself instead of assuming the platform will.
+- TV app: selecting a poster for a movie that's already downloaded now plays it directly instead of opening the detail page first (still opens detail page for movies you haven't downloaded yet).
+- Poster focus outline: suppressed WebKit's own tap/focus highlight overlay (`-webkit-tap-highlight-color`), which was drawing around the whole card (image + title) independent of our custom focus ring that's meant to wrap just the poster image.
+
 ## 1.4.22
 
 - Removed the on-screen debug log now that the media-key privilege fix is confirmed working.
