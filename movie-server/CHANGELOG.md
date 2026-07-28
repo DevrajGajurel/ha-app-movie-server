@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.25
+
+- Hero is now truly fixed at the top (Prime Video-style) — only the rows list scrolls independently beneath it, so the hero never scrolls out of view no matter how far down you browse. Previously the whole page scrolled as one unit, so navigating into later rows scrolled the hero off-screen entirely.
+- Fixed the real cause of the poster focus border still wrapping the title text: a separate stylesheet (css/tv.css, loaded after the main styles) has a generic `[tabindex="0"]:focus` rule for every other focusable element, which matches poster cards too with equal CSS specificity — and being loaded later, it was winning over our own override and drawing round the whole card. Poster cards' own outline-suppression is now `!important` so their custom ring (scoped to just the image) always wins.
+
 ## 1.4.24
 
 - TV app: reworked the hero to match Prime Video's actual behavior — removed the Play/Download/More Info buttons from the hero entirely (Enter on a poster still opens its detail page as before; the dedicated remote Play/Pause button now plays a focused, already-downloaded poster directly without opening detail page first). The hero now reliably reflects whatever poster is currently focused in *any* row, not just Continue Watching.
