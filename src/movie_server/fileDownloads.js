@@ -321,25 +321,27 @@ function progressDirsFor({ tmdbId, title, fileToken }) {
   return findMatchingDirs({ tmdbId, title });
 }
 
-function saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds }) {
+function saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds, audioTrack, subtitleTrack }) {
   const dirs = progressDirsFor({ tmdbId, title, fileToken });
   if (!dirs.length) return false;
 
-  // Treat "nearly finished" as complete: clear progress so the next play
-  // starts from the beginning instead of resuming at 98%.
+  // Treat "nearly finished" as complete: reset the resume position so the
+  // next play starts from the beginning instead of resuming at 98%. The
+  // audio/subtitle track choice is a standing preference for this title,
+  // not a resume point, so it's kept even when the position resets.
   const nearlyDone = durationSeconds > 0 && positionSeconds / durationSeconds > RESUME_DONE_RATIO;
-  const payload = nearlyDone
-    ? null
-    : { positionSeconds, durationSeconds, updatedAt: new Date().toISOString() };
+  const payload = {
+    positionSeconds: nearlyDone ? 0 : positionSeconds,
+    durationSeconds: nearlyDone ? 0 : durationSeconds,
+    audioTrack: Number.isInteger(audioTrack) ? audioTrack : 0,
+    subtitleTrack: Number.isInteger(subtitleTrack) ? subtitleTrack : null,
+    updatedAt: new Date().toISOString(),
+  };
 
   for (const dir of dirs) {
     const file = path.join(dir, PROGRESS_FILE);
     try {
-      if (payload) {
-        fs.writeFileSync(file, JSON.stringify(payload));
-      } else {
-        fs.rmSync(file, { force: true });
-      }
+      fs.writeFileSync(file, JSON.stringify(payload));
     } catch {
       // Best-effort — a failed write here shouldn't break playback.
     }
@@ -351,7 +353,12 @@ function getProgress({ tmdbId, title, fileToken }) {
   for (const dir of progressDirsFor({ tmdbId, title, fileToken })) {
     try {
       const data = JSON.parse(fs.readFileSync(path.join(dir, PROGRESS_FILE), "utf8"));
-      if (data.positionSeconds >= RESUME_MIN_SECONDS) return data;
+      // Resume position only counts past a minimum threshold, but a
+      // remembered track choice should still be returned even for a
+      // freshly-reset (finished) file, so replaying it still uses the last
+      // language/subtitles picked regardless of position.
+      const hasTrackPreference = Boolean(data.audioTrack) || data.subtitleTrack != null;
+      if (data.positionSeconds >= RESUME_MIN_SECONDS || hasTrackPreference) return data;
     } catch {
       // No progress file in this folder, or it's unreadable — keep looking.
     }

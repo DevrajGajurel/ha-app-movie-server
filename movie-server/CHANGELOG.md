@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.34
+
+- The player now remembers the last audio track and subtitles picked for each movie and re-applies them automatically the next time you play it, instead of always resetting to the file's default track and no subtitles. Stored alongside the existing per-movie resume position, so it survives app/server restarts. Note: resuming mid-movie on a non-default audio track may still restart from the beginning — the audio-track remux stream isn't byte-range seekable, a pre-existing limitation this doesn't fix.
+
 ## 1.4.33
 
 - Replaced the TV app's placeholder icon (a plain blue square with "MS" text) with the actual Movie Server brand icon — the same clapperboard glyph used for the Home Assistant integration/add-on — resized to Tizen's recommended 117×117 dev icon size.

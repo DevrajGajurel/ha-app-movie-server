@@ -745,13 +745,15 @@ const server = http.createServer(async (req, res) => {
       const fileToken = body.file ? String(body.file) : null;
       const positionSeconds = Number(body.positionSeconds);
       const durationSeconds = Number(body.durationSeconds);
+      const audioTrack = Number.isInteger(body.audioTrack) ? body.audioTrack : 0;
+      const subtitleTrack = Number.isInteger(body.subtitleTrack) ? body.subtitleTrack : null;
 
       if ((!tmdbId && !title) || !Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds)) {
         sendJson(res, 400, { error: "tmdbId/title and numeric positionSeconds/durationSeconds are required" });
         return;
       }
 
-      saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds });
+      saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSeconds, audioTrack, subtitleTrack });
       sendJson(res, 200, { ok: true });
     } catch (err) {
       sendJson(res, 500, { error: err.message });

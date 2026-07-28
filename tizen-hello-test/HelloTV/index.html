@@ -2293,6 +2293,8 @@
           file: playbackContext.fileToken,
           positionSeconds: playerVideo.currentTime,
           durationSeconds: duration,
+          audioTrack: selectedAudioTrack,
+          subtitleTrack: selectedSubtitleTrack,
         }),
       }).catch(() => {
         // Best-effort — a failed save shouldn't interrupt playback.
@@ -2426,7 +2428,7 @@
       closeTracksPanel,
     };
 
-    function startPlayer(movie, fileToken, audioTrack) {
+    async function startPlayer(movie, fileToken, audioTrack) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
 
@@ -2451,12 +2453,35 @@
       playerTimeDuration.textContent = "0:00";
       playerOverlay.classList.remove("controls-hidden");
       playerOverlay.hidden = false;
+      playerSpinner.classList.add("show");
+
+      // Look up the last position/audio-track/subtitle-track remembered for
+      // this title *before* starting playback. Audio track selection needs
+      // a server-side remux (see streamAudioTrackRemux), so which track to
+      // request has to be known up front — it can't be switched after the
+      // fact the way a manual mid-playback change can (switchAudioTrack),
+      // without racing the video's own metadata-load event. This puts one
+      // request in the critical path before the video starts loading, but
+      // it's a local server call, so the added delay is negligible.
+      let resumeSeconds = null;
+      try {
+        const res = await fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`));
+        const data = await res.json();
+        const progress = data?.progress;
+        if (progress?.positionSeconds >= RESUME_MIN_SECONDS) resumeSeconds = progress.positionSeconds;
+        if (Number.isInteger(progress?.audioTrack)) selectedAudioTrack = progress.audioTrack;
+        if (progress?.subtitleTrack != null) selectedSubtitleTrack = progress.subtitleTrack;
+      } catch {
+        // No saved progress/preferences available — play from the start
+        // with this file's default track.
+      }
+      pendingResumeSeconds = resumeSeconds;
 
       const params = new URLSearchParams();
       if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
       params.set("title", displayTitle);
       if (fileToken) params.set("file", fileToken);
-      if (audioTrack) params.set("audioTrack", String(audioTrack));
+      if (selectedAudioTrack) params.set("audioTrack", String(selectedAudioTrack));
       playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
       playerVideo.focus();
       playerVideo.play().catch(() => {
@@ -2465,23 +2490,7 @@
       });
       showPlayerControls();
 
-      // Look up a saved resume position in parallel with playback starting;
-      // applied once loadedmetadata fires above (seeking before the video
-      // has metadata doesn't stick).
-      fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`))
-        .then((res) => res.json())
-        .then((data) => {
-          if (data?.progress?.positionSeconds >= RESUME_MIN_SECONDS) {
-            pendingResumeSeconds = data.progress.positionSeconds;
-            if (playerVideo.readyState >= 1) {
-              playerVideo.currentTime = pendingResumeSeconds;
-              pendingResumeSeconds = null;
-            }
-          }
-        })
-        .catch(() => {
-          // No resume position available — play from the start.
-        });
+      if (selectedSubtitleTrack != null) selectSubtitleTrack(selectedSubtitleTrack);
 
       // Find this exact file's track list (for the in-player Audio &
       // Subtitles panel) from the same versions info the picker uses.
