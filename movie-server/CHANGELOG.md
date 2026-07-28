@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.22
+
+- Removed the on-screen debug log now that the media-key privilege fix is confirmed working.
+- Stopped registering `"Return"` as a TV input key — it isn't a valid key name (was throwing `InvalidValuesError`), and per Samsung's docs Back/arrows/Enter are delivered automatically without registration anyway, so it was a no-op that only produced log noise.
+- TV app: pressing Back on the main posters page (nothing else open) now shows an "Exit Movie Server?" confirmation instead of exiting immediately, so an accidental extra Back press doesn't kick you out of the app.
+
+## 1.4.21
+
+- Fixed the remote's dedicated media keys (Play/Pause, Rewind, Fast-Forward, Stop) not working at all: config.xml declared the privilege as `tvinputdevice` (missing a dot), which isn't a real Tizen privilege string, so `tizen.tvinputdevice.registerKey()` silently failed for every key. Corrected to `http://tizen.org/privilege/tv.inputdevice` per Samsung's docs — this is a public-level privilege, no Partner certificate needed.
+- Removed the temporary on-screen debug log used to diagnose the above.
+
 ## 1.4.20
 
 - TV app: audio and subtitle tracks are now chosen DURING playback (press Up to open the panel) instead of on a screen before pressing Play. Subtitles switch instantly (just an overlay track); switching audio reloads the stream with the new track and seeks back to where you were, since it's not adaptive streaming.

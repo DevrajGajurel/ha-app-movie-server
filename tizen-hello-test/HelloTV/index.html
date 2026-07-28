@@ -1190,22 +1190,6 @@
   <link rel="stylesheet" href="css/tv.css">
 </head>
 <body>
-  <!-- TEMPORARY: diagnosing why the remote's dedicated Play/Pause button
-       doesn't work. Remove this whole block once resolved. -->
-  <div id="debug-log" style="position:fixed; bottom:0; left:0; right:0; max-height:36vh; overflow-y:auto; background:rgba(0,0,0,0.88); color:#4ade80; font-family:monospace; font-size:15px; z-index:99999; padding:10px; white-space:pre-wrap; line-height:1.4;"></div>
-  <script>
-    (function () {
-      var logEl = document.getElementById("debug-log");
-      var lines = [];
-      window.__tvDebugLog = function (msg) {
-        var stamp = new Date().toISOString().slice(11, 19);
-        lines.push(stamp + " " + msg);
-        if (lines.length > 50) lines.shift();
-        logEl.textContent = lines.join("\n");
-        logEl.scrollTop = logEl.scrollHeight;
-      };
-    })();
-  </script>
   <script src="js/tv-config.js"></script>
   <script src="js/network-status.js"></script>
   <script src="js/focus-manager.js"></script>
@@ -1324,6 +1308,16 @@
       <div id="version-modal-content" class="download-state">Loading…</div>
       <div class="modal-actions">
         <button class="btn-secondary" id="version-modal-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="exit-confirm-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="exit-confirm-title">
+      <h2 id="exit-confirm-title">Exit Movie Server?</h2>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="exit-confirm-cancel" type="button">Cancel</button>
+        <button class="btn-secondary" id="exit-confirm-yes" type="button">Exit App</button>
       </div>
     </div>
   </div>

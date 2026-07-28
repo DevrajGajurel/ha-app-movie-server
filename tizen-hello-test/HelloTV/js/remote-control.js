@@ -7,27 +7,19 @@
 
   const hasTizenInput = typeof tizen !== "undefined" && tizen.tvinputdevice;
 
-  // Return and the media transport keys are not delivered to the app unless
-  // explicitly registered. Arrow keys and Enter are always delivered.
-  const KEYS_TO_REGISTER = [
-    "Return",
-    "MediaPlay",
-    "MediaPause",
-    "MediaStop",
-    "MediaRewind",
-    "MediaFastForward",
-    "MediaPlayPause",
-  ];
+  // Arrows, Enter, and Back are delivered automatically per Samsung's docs
+  // and need no registration ("Return" isn't even a valid key name here —
+  // trying to register it throws InvalidValuesError). Only the media
+  // transport keys actually need explicit registration to be delivered.
+  const KEYS_TO_REGISTER = ["MediaPlay", "MediaPause", "MediaStop", "MediaRewind", "MediaFastForward", "MediaPlayPause"];
 
   function registerTizenKeys() {
     if (!hasTizenInput) return; // running in a regular browser (dev/preview)
     for (const key of KEYS_TO_REGISTER) {
       try {
         tizen.tvinputdevice.registerKey(key);
-        window.__tvDebugLog?.(`registerKey('${key}'): OK`);
       } catch (err) {
         console.warn(`[remote-control] could not register key "${key}":`, err.message);
-        window.__tvDebugLog?.(`registerKey('${key}') FAILED: ${err.name} - ${err.message}`);
       }
     }
   }
@@ -62,6 +54,8 @@
   }
 
   function openModal() {
+    const exitConfirm = document.getElementById("exit-confirm-modal");
+    if (exitConfirm && !exitConfirm.hidden) return exitConfirm;
     const tracksPanel = document.getElementById("player-tracks-panel");
     if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
@@ -86,6 +80,10 @@
     if (!modal) return;
     if (modal.id === "search-overlay") {
       document.dispatchEvent(new CustomEvent("tv-close-search"));
+      return;
+    }
+    if (modal.id === "exit-confirm-modal") {
+      closeExitConfirm();
       return;
     }
     if (modal.id === "player-tracks-panel") {
@@ -120,8 +118,39 @@
     } else if (sidenavOpen) {
       window.TVFocusManager.closeSidenav();
     } else {
-      exitApp();
+      showExitConfirm();
     }
+  }
+
+  // Back on the main posters page (nothing else open) asks for
+  // confirmation instead of exiting immediately, so an accidental extra
+  // Back press doesn't kick you out of the app.
+  let preExitConfirmFocus = null;
+
+  function showExitConfirm() {
+    const modal = document.getElementById("exit-confirm-modal");
+    if (!modal) {
+      exitApp();
+      return;
+    }
+    preExitConfirmFocus = document.activeElement;
+    modal.hidden = false;
+    const yesBtn = document.getElementById("exit-confirm-yes");
+    document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+    yesBtn?.classList.add("tv-focused");
+    yesBtn?.focus();
+  }
+
+  function closeExitConfirm() {
+    const modal = document.getElementById("exit-confirm-modal");
+    if (modal) modal.hidden = true;
+    if (preExitConfirmFocus && document.contains(preExitConfirmFocus) && preExitConfirmFocus.offsetParent !== null) {
+      preExitConfirmFocus.classList.add("tv-focused");
+      preExitConfirmFocus.focus({ preventScroll: true });
+    } else {
+      window.TVFocusManager?.focusFirst();
+    }
+    preExitConfirmFocus = null;
   }
 
   function exitApp() {
@@ -171,7 +200,6 @@
   }
 
   function dispatchMediaEvent(action) {
-    window.__tvDebugLog?.(`dispatchMediaEvent: ${action}`);
     document.dispatchEvent(new CustomEvent("tv-media-command", { detail: { action } }));
 
     // If the app ever adds a <video> element, wire the transport keys to it
@@ -200,7 +228,6 @@
   }
 
   function handleKeydown(e) {
-    window.__tvDebugLog?.(`keydown: keyCode=${e.keyCode} key=${e.key} repeat=${e.repeat}`);
     const player = document.getElementById("player-overlay");
     const playerOpen = Boolean(player && !player.hidden);
 
@@ -274,7 +301,6 @@
   // "tizenhwkey" event instead of (or in addition to) a keydown; handle
   // both so the app behaves the same across TV firmware versions.
   function handleHwKey(e) {
-    window.__tvDebugLog?.(`tizenhwkey: keyName=${e.keyName}`);
     if (e.keyName === "back") backOut();
   }
 
@@ -286,4 +312,6 @@
   document.addEventListener("keydown", handleKeydown);
   document.addEventListener("keyup", handleKeyup);
   document.addEventListener("tizenhwkey", handleHwKey);
+  document.getElementById("exit-confirm-yes")?.addEventListener("click", exitApp);
+  document.getElementById("exit-confirm-cancel")?.addEventListener("click", closeExitConfirm);
 })();

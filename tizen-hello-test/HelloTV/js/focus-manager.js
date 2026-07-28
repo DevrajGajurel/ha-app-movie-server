@@ -44,6 +44,8 @@
   }
 
   function focusScope() {
+    const exitConfirm = document.getElementById("exit-confirm-modal");
+    if (exitConfirm && !exitConfirm.hidden) return exitConfirm;
     const tracksPanel = document.getElementById("player-tracks-panel");
     if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
@@ -138,7 +140,8 @@
         el.closest("#detail-page") ||
         el.closest("#search-overlay") ||
         el.closest("#version-modal") ||
-        el.closest("#player-tracks-panel")
+        el.closest("#player-tracks-panel") ||
+        el.closest("#exit-confirm-modal")
     );
     if (modalPreferred) {
       setFocused(modalPreferred);
