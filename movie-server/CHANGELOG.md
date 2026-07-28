@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.28
+
+- Fixed the TV app icon not showing on the home screen/app list: `icon.png` was 128×128, but Tizen's documented recommended size for the sideloaded/development app icon is 117×117 — resized accordingly.
+
 ## 1.4.27
 
 - Poster cards slightly smaller (225px, down from 250px) with a larger gap between them (1.5rem, up from 1.15rem). Top 10 row's ranked cards scaled down to match. Also leaves more breathing room below the fixed hero, since a row's height shrinks along with the posters.
