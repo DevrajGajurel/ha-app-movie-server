@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.27
+
+- Poster cards slightly smaller (225px, down from 250px) with a larger gap between them (1.5rem, up from 1.15rem). Top 10 row's ranked cards scaled down to match. Also leaves more breathing room below the fixed hero, since a row's height shrinks along with the posters.
+
 ## 1.4.26
 
 - Fixed the row title and poster bottoms getting clipped after pinning the hero: measured it precisely — a single row (title + poster) needs ~550px at the current poster size, but the 66vh hero only left 367px for rows. Rebalanced to a 44vh hero / 44vh-to-bottom rows split, which leaves ~605px — enough for one full row plus a peek of the next row's title, verified against the actual measured row height rather than guessing.
