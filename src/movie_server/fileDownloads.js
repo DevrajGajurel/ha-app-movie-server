@@ -278,6 +278,21 @@ function findMediaFile({ tmdbId, title }) {
   return files.length ? files[0].path : null;
 }
 
+// Removes every downloaded folder matching a movie (all versions, plus the
+// marker/progress files living alongside them) — the same granularity
+// findMatchingDirs already groups things at, so "delete this movie" removes
+// exactly what "is this movie downloaded" considers to be its download.
+function deleteMedia({ tmdbId, title }) {
+  const dirs = findMatchingDirs({ tmdbId, title });
+  if (!dirs.length) return { deletedDirs: 0, deletedFiles: [] };
+
+  const deletedFiles = findMediaFiles({ tmdbId, title }).map((file) => file.path);
+  for (const dir of dirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  return { deletedDirs: dirs.length, deletedFiles };
+}
+
 // Resolves a token from findMediaFiles() back to an absolute path, refusing
 // anything that escapes the download root or isn't a video file.
 function resolveMediaToken(token) {
@@ -639,6 +654,7 @@ module.exports = {
   normalizeTitle,
   findMediaFile,
   findMediaFiles,
+  deleteMedia,
   resolveMediaToken,
   probeMediaFile,
   streamFile,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.31
+
+- Added a Delete option to the movie detail page for already-downloaded titles, with a confirmation dialog before anything is removed. Backend: new `DELETE /api/downloads/media` endpoint removes every downloaded folder matching the movie (all versions, plus its marker/progress files) and notifies Emby of the removal.
+
 ## 1.4.30
 
 - Fixed a row's first poster losing its alignment with its row title after the row had been scrolled once: `.tv-row-track` uses mandatory scroll-snap but never told the browser about its own left padding, so snapping settled on "first card flush to the edge" instead of "card indented behind the padding" — added matching `scroll-padding` so the padded position is a stable snap point again. Also, each row now snaps back to its scroll start the moment focus leaves it (Netflix/Prime-style), so a row you scrolled through earlier doesn't stay scrolled away from the beginning forever.

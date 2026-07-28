@@ -22,6 +22,7 @@ const {
   scanLibrary,
   findMediaFile,
   findMediaFiles,
+  deleteMedia,
   resolveMediaToken,
   probeMediaFile,
   streamFile,
@@ -31,7 +32,7 @@ const {
   getProgress,
   listProgress,
 } = require("./fileDownloads");
-const { isEmbyConfigured, refreshLibrary, refreshAfterDownload } = require("./emby");
+const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -444,7 +445,7 @@ const server = http.createServer(async (req, res) => {
   // Allows a locally-packaged client (e.g. the Tizen TV app in tizen/)
   // to call this server's API from a different origin.
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
@@ -567,6 +568,36 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/media" && req.method === "DELETE") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+
+      if (!tmdbId && !title) {
+        sendJson(res, 400, { error: "tmdbId or title is required" });
+        return;
+      }
+
+      const { deletedDirs, deletedFiles } = deleteMedia({ tmdbId, title });
+      if (!deletedDirs) {
+        sendJson(res, 404, { error: "No downloaded media found for this title" });
+        return;
+      }
+
+      for (const filePath of deletedFiles) {
+        notifyAfterDelete(filePath).catch((err) => {
+          console.warn(`[delete] Emby notify failed: ${err.message}`);
+        });
+      }
+
+      sendJson(res, 200, { deletedDirs });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

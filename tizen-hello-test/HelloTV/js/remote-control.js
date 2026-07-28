@@ -56,6 +56,8 @@
   function openModal() {
     const exitConfirm = document.getElementById("exit-confirm-modal");
     if (exitConfirm && !exitConfirm.hidden) return exitConfirm;
+    const deleteConfirm = document.getElementById("delete-confirm-modal");
+    if (deleteConfirm && !deleteConfirm.hidden) return deleteConfirm;
     const tracksPanel = document.getElementById("player-tracks-panel");
     if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
@@ -84,6 +86,10 @@
     }
     if (modal.id === "exit-confirm-modal") {
       closeExitConfirm();
+      return;
+    }
+    if (modal.id === "delete-confirm-modal") {
+      document.dispatchEvent(new CustomEvent("tv-close-delete-confirm"));
       return;
     }
     if (modal.id === "player-tracks-panel") {

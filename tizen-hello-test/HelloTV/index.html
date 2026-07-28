@@ -189,12 +189,22 @@
       border-color: transparent;
     }
 
+    .tv-hero-btn.danger {
+      background: rgba(255, 107, 107, 0.12);
+      color: var(--danger);
+      border-color: rgba(255, 107, 107, 0.4);
+    }
+
     .tv-hero-btn:hover {
       background: rgba(255, 255, 255, 0.22);
     }
 
     .tv-hero-btn.primary:hover {
       background: #fff;
+    }
+
+    .tv-hero-btn.danger:hover {
+      background: rgba(255, 107, 107, 0.22);
     }
 
     .tv-hero-btn.tv-focused,
@@ -1357,6 +1367,17 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="delete-confirm-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="delete-confirm-title">
+      <h2 id="delete-confirm-title">Delete downloaded movie?</h2>
+      <p id="delete-confirm-body" class="overview"></p>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="delete-confirm-cancel" type="button">Cancel</button>
+        <button class="btn-secondary" id="delete-confirm-yes" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const rowsContainer = document.getElementById("rows-container");
     const statusStateEl = document.getElementById("status-state");
@@ -1414,6 +1435,10 @@
     const versionModal = document.getElementById("version-modal");
     const versionModalContent = document.getElementById("version-modal-content");
     let versionModalMovie = null;
+
+    const deleteConfirmModal = document.getElementById("delete-confirm-modal");
+    const deleteConfirmBody = document.getElementById("delete-confirm-body");
+    let deleteConfirmMovie = null;
 
     const searchOverlay = document.getElementById("search-overlay");
     const searchInput = document.getElementById("search-input");
@@ -2023,6 +2048,7 @@
           ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
           ${sourcePageLink ? `<a class="tv-hero-btn${isAlreadyDownloaded(movie) ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
           ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
+          ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn danger" id="detail-delete-btn" type="button">🗑 Delete</button>` : ""}
         </div>
       `;
 
@@ -2034,6 +2060,7 @@
         const el = e.currentTarget;
         openDownloadModal(el.dataset.link, el.dataset.title, el.dataset.tmdbId || null);
       });
+      document.getElementById("detail-delete-btn")?.addEventListener("click", () => openDeleteConfirm(movie));
 
       // Land focus on the primary action (Play if downloaded, otherwise
       // Download) rather than the back button, which is what the generic
@@ -2522,7 +2549,7 @@
       // not another overlay blocking restoration — closing that nested
       // modal should restore focus to preModalFocus (e.g. the Play button)
       // inside the still-open detail page, not wait for it to close too.
-      if (!downloadModal.hidden || !versionModal.hidden) return; // another modal still open
+      if (!downloadModal.hidden || !versionModal.hidden || !deleteConfirmModal.hidden) return; // another modal still open
       if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
         preModalFocus.classList.add("tv-focused");
         preModalFocus.focus({ preventScroll: true });
@@ -2531,6 +2558,66 @@
       }
       preModalFocus = null;
     }
+
+    // ---- Delete confirmation (nested inside the detail page, like the
+    // download/version modals) ----
+    function openDeleteConfirm(movie) {
+      deleteConfirmMovie = movie;
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "this movie";
+      deleteConfirmBody.textContent = `Remove "${displayTitle}" and its downloaded file(s) from this device? This can't be undone.`;
+
+      if (deleteConfirmModal.hidden) preModalFocus = document.activeElement;
+      deleteConfirmModal.hidden = false;
+      const yesBtn = document.getElementById("delete-confirm-yes");
+      document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+      yesBtn?.classList.add("tv-focused");
+      yesBtn?.focus();
+    }
+
+    function closeDeleteConfirm() {
+      deleteConfirmModal.hidden = true;
+      deleteConfirmMovie = null;
+      restoreFocusAfterModalClose();
+    }
+
+    async function confirmDeleteMovie() {
+      const movie = deleteConfirmMovie;
+      if (!movie) return;
+
+      const t = movie.tmdb;
+      const displayTitle = t?.tmdbTitle || movie.title || "";
+      const yesBtn = document.getElementById("delete-confirm-yes");
+      if (yesBtn) {
+        yesBtn.disabled = true;
+        yesBtn.textContent = "Deleting…";
+      }
+
+      try {
+        const params = new URLSearchParams();
+        if (t?.tmdbId) params.set("tmdbId", t.tmdbId);
+        if (displayTitle) params.set("title", displayTitle);
+        const res = await fetch(`${apiUrl("downloads/media")}?${params.toString()}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        deleteConfirmModal.hidden = true;
+        deleteConfirmMovie = null;
+        closeDetailOverlay();
+        await refreshDownloadLibrary();
+        renderCurrentView();
+      } catch (err) {
+        console.warn("[delete] failed:", err.message);
+        if (yesBtn) {
+          yesBtn.disabled = false;
+          yesBtn.textContent = "Delete";
+        }
+      }
+    }
+
+    document.getElementById("delete-confirm-yes").addEventListener("click", confirmDeleteMovie);
+    document.getElementById("delete-confirm-cancel").addEventListener("click", closeDeleteConfirm);
+    document.addEventListener("tv-close-delete-confirm", closeDeleteConfirm);
 
     // ---- Search overlay ----
     let sourceSearchTimer = null;

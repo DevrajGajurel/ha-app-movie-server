@@ -93,9 +93,21 @@ async function refreshAfterDownload(filePath) {
   }
 }
 
+async function notifyAfterDelete(filePath) {
+  if (!isEmbyConfigured()) return null;
+
+  try {
+    return await notifyMediaUpdated(filePath, "Deleted");
+  } catch (err) {
+    console.warn(`[emby] delete notify failed (${err.message}), falling back to full refresh`);
+    return refreshLibrary();
+  }
+}
+
 module.exports = {
   isEmbyConfigured,
   refreshLibrary,
   notifyMediaUpdated,
   refreshAfterDownload,
+  notifyAfterDelete,
 };

@@ -47,6 +47,8 @@
   function focusScope() {
     const exitConfirm = document.getElementById("exit-confirm-modal");
     if (exitConfirm && !exitConfirm.hidden) return exitConfirm;
+    const deleteConfirm = document.getElementById("delete-confirm-modal");
+    if (deleteConfirm && !deleteConfirm.hidden) return deleteConfirm;
     const tracksPanel = document.getElementById("player-tracks-panel");
     if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
@@ -166,7 +168,8 @@
         el.closest("#search-overlay") ||
         el.closest("#version-modal") ||
         el.closest("#player-tracks-panel") ||
-        el.closest("#exit-confirm-modal")
+        el.closest("#exit-confirm-modal") ||
+        el.closest("#delete-confirm-modal")
     );
     if (modalPreferred) {
       setFocused(modalPreferred);
