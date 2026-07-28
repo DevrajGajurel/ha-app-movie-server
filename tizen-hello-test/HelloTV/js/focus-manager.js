@@ -44,6 +44,8 @@
   }
 
   function focusScope() {
+    const tracksPanel = document.getElementById("player-tracks-panel");
+    if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
     if (player && !player.hidden) return player;
     const version = document.getElementById("version-modal");
@@ -135,7 +137,8 @@
         el.closest("#download-modal") ||
         el.closest("#detail-page") ||
         el.closest("#search-overlay") ||
-        el.closest("#version-modal")
+        el.closest("#version-modal") ||
+        el.closest("#player-tracks-panel")
     );
     if (modalPreferred) {
       setFocused(modalPreferred);

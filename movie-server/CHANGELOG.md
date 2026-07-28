@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.20
+
+- TV app: audio and subtitle tracks are now chosen DURING playback (press Up to open the panel) instead of on a screen before pressing Play. Subtitles switch instantly (just an overlay track); switching audio reloads the stream with the new track and seeks back to where you were, since it's not adaptive streaming.
+- API: `GET /api/downloads/versions` now also lists text-based subtitle tracks (SRT/ASS/SSA/mov_text — bitmap formats like PGS can't convert to WebVTT so aren't offered). New `GET /api/downloads/subtitle?file=&track=` extracts and converts one subtitle stream to WebVTT.
+- Fixed non-default audio track playback failing with "unsupported container/codec": the remux was outputting fragmented MP4, which Tizen's player rejected outright even for codecs it plays fine via direct passthrough. Switched to Matroska remuxing instead, which streams to a pipe without needing fragmentation and matches the container these downloads already are.
+- Poster cards are ~14% larger in both regular rows and the Top 10 row.
+- Seek step reduced from 30s to 10s per press (still accelerates up to 60s while held).
+- Temporary: added an on-screen debug log to diagnose the remote's dedicated Play/Pause button not responding — will be removed once resolved.
+
 ## 1.4.19
 
 - TV app: Continue Watching home row (newest resume first) and cyan progress strips on posters with saved playback position.

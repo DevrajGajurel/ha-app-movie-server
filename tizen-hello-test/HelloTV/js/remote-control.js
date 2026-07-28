@@ -24,8 +24,10 @@
     for (const key of KEYS_TO_REGISTER) {
       try {
         tizen.tvinputdevice.registerKey(key);
+        window.__tvDebugLog?.(`registerKey('${key}'): OK`);
       } catch (err) {
         console.warn(`[remote-control] could not register key "${key}":`, err.message);
+        window.__tvDebugLog?.(`registerKey('${key}') FAILED: ${err.name} - ${err.message}`);
       }
     }
   }
@@ -60,6 +62,8 @@
   }
 
   function openModal() {
+    const tracksPanel = document.getElementById("player-tracks-panel");
+    if (tracksPanel && !tracksPanel.hidden) return tracksPanel;
     const player = document.getElementById("player-overlay");
     if (player && !player.hidden) return player;
     const version = document.getElementById("version-modal");
@@ -82,6 +86,10 @@
     if (!modal) return;
     if (modal.id === "search-overlay") {
       document.dispatchEvent(new CustomEvent("tv-close-search"));
+      return;
+    }
+    if (modal.id === "player-tracks-panel") {
+      window.TVPlayer?.closeTracksPanel();
       return;
     }
     if (modal.id === "player-overlay") {
@@ -134,8 +142,8 @@
   // e.repeat=true) and each repeat jumps a bit further, so a long press
   // feels like it's fast-forwarding/rewinding quicker rather than just
   // taking many identical small steps.
-  const SEEK_STEP_SECONDS = 30;
-  const SEEK_MAX_STEP_SECONDS = 120;
+  const SEEK_STEP_SECONDS = 10;
+  const SEEK_MAX_STEP_SECONDS = 60;
   let seekRepeatDirection = null;
   let seekRepeatCount = 0;
 
@@ -163,6 +171,7 @@
   }
 
   function dispatchMediaEvent(action) {
+    window.__tvDebugLog?.(`dispatchMediaEvent: ${action}`);
     document.dispatchEvent(new CustomEvent("tv-media-command", { detail: { action } }));
 
     // If the app ever adds a <video> element, wire the transport keys to it
@@ -191,6 +200,7 @@
   }
 
   function handleKeydown(e) {
+    window.__tvDebugLog?.(`keydown: keyCode=${e.keyCode} key=${e.key} repeat=${e.repeat}`);
     const player = document.getElementById("player-overlay");
     const playerOpen = Boolean(player && !player.hidden);
 
@@ -203,8 +213,11 @@
         if (direction === "left" || direction === "right") {
           e.preventDefault();
           handlePlayerSeek(direction, e.repeat);
+        } else if (direction === "up") {
+          e.preventDefault();
+          window.TVPlayer?.openTracksPanel();
         }
-        return; // up/down while the player is open: no-op for now
+        return; // down while the player is open: no-op for now
       }
       e.preventDefault();
       window.TVFocusManager?.moveFocus(direction);
@@ -261,6 +274,7 @@
   // "tizenhwkey" event instead of (or in addition to) a keydown; handle
   // both so the app behaves the same across TV firmware versions.
   function handleHwKey(e) {
+    window.__tvDebugLog?.(`tizenhwkey: keyName=${e.keyName}`);
     if (e.keyName === "back") backOut();
   }
 

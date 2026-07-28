@@ -26,6 +26,7 @@ const {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  extractSubtitleTrack,
   saveProgress,
   getProgress,
   listProgress,
@@ -591,6 +592,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === "/api/downloads/subtitle" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const fileToken = searchParams.get("file") || null;
+      const trackParam = searchParams.get("track");
+      const track = trackParam !== null ? Number.parseInt(trackParam, 10) : NaN;
+
+      const filePath = fileToken ? resolveMediaToken(fileToken) : null;
+      if (!filePath || !Number.isInteger(track) || track < 0) {
+        sendJson(res, 400, { error: "file and a non-negative track index are required" });
+        return;
+      }
+
+      const vtt = await extractSubtitleTrack(filePath, track);
+      res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8" });
+      res.end(vtt);
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
   if (url === "/api/downloads/versions" && req.method === "GET") {
     try {
       const searchParams = new URL(req.url, "http://localhost").searchParams;
@@ -614,6 +637,7 @@ const server = http.createServer(async (req, res) => {
             width: probe?.width ?? null,
             height: probe?.height ?? null,
             audioTracks: probe?.audioTracks ?? [],
+            subtitleTracks: probe?.subtitleTracks ?? [],
           };
         })
       );

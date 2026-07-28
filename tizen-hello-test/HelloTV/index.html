@@ -359,7 +359,7 @@
 
     .tv-poster-card {
       flex: 0 0 auto;
-      width: 220px;
+      width: 250px;
       cursor: pointer;
       border-radius: 6px;
       transition: transform 0.2s ease, opacity 0.2s ease;
@@ -452,7 +452,7 @@
     }
 
     .tv-ranked-card {
-      width: 286px;
+      width: 325px;
     }
 
     .tv-ranked-visual {
@@ -477,7 +477,7 @@
       position: relative;
       z-index: 1;
       flex-shrink: 0;
-      width: 165px;
+      width: 188px;
     }
 
     .quality-badges {
@@ -722,6 +722,72 @@
       display: flex;
       align-items: center;
       gap: 1rem;
+    }
+
+    .tv-player-tracks-hint {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .tv-player-tracks-hint[hidden] { display: none; }
+
+    .tv-player-tracks-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 3;
+      width: min(28rem, 40%);
+      background: rgba(10, 12, 18, 0.92);
+      backdrop-filter: blur(8px);
+      padding: 2.5rem 2rem;
+      overflow-y: auto;
+      transition: transform 0.2s ease;
+    }
+
+    .tv-player-tracks-panel[hidden] { display: none; }
+
+    .tv-player-tracks-panel h2 {
+      font-size: 1.3rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .tv-player-tracks-section {
+      margin-bottom: 2rem;
+    }
+
+    .tv-player-tracks-section h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .tv-track-option {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+    }
+
+    .tv-track-option.tv-focused,
+    .tv-track-option:focus {
+      border-color: var(--accent);
+      outline: none;
+    }
+
+    .tv-track-option.selected {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
     }
 
     .tv-player-center-icon {
@@ -1124,6 +1190,22 @@
   <link rel="stylesheet" href="css/tv.css">
 </head>
 <body>
+  <!-- TEMPORARY: diagnosing why the remote's dedicated Play/Pause button
+       doesn't work. Remove this whole block once resolved. -->
+  <div id="debug-log" style="position:fixed; bottom:0; left:0; right:0; max-height:36vh; overflow-y:auto; background:rgba(0,0,0,0.88); color:#4ade80; font-family:monospace; font-size:15px; z-index:99999; padding:10px; white-space:pre-wrap; line-height:1.4;"></div>
+  <script>
+    (function () {
+      var logEl = document.getElementById("debug-log");
+      var lines = [];
+      window.__tvDebugLog = function (msg) {
+        var stamp = new Date().toISOString().slice(11, 19);
+        lines.push(stamp + " " + msg);
+        if (lines.length > 50) lines.shift();
+        logEl.textContent = lines.join("\n");
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+    })();
+  </script>
   <script src="js/tv-config.js"></script>
   <script src="js/network-status.js"></script>
   <script src="js/focus-manager.js"></script>
@@ -1194,6 +1276,18 @@
         <span id="player-time-elapsed">0:00</span>
         <span id="player-time-duration">0:00</span>
       </div>
+      <div class="tv-player-tracks-hint" id="player-tracks-hint" hidden>▲ Audio &amp; Subtitles</div>
+    </div>
+    <div class="tv-player-tracks-panel" id="player-tracks-panel" hidden>
+      <h2>Audio &amp; Subtitles</h2>
+      <div class="tv-player-tracks-section">
+        <h3>Audio</h3>
+        <div id="player-audio-tracks"></div>
+      </div>
+      <div class="tv-player-tracks-section">
+        <h3>Subtitles</h3>
+        <div id="player-subtitle-tracks"></div>
+      </div>
     </div>
   </div>
 
@@ -1257,6 +1351,10 @@
     const playerProgressFill = document.getElementById("player-progress-fill");
     const playerTimeElapsed = document.getElementById("player-time-elapsed");
     const playerTimeDuration = document.getElementById("player-time-duration");
+    const playerTracksHint = document.getElementById("player-tracks-hint");
+    const playerTracksPanel = document.getElementById("player-tracks-panel");
+    const playerAudioTracksEl = document.getElementById("player-audio-tracks");
+    const playerSubtitleTracksEl = document.getElementById("player-subtitle-tracks");
     let featuredMovie = null;
     let preModalFocus = null;
     let allMovies = [];
@@ -1971,37 +2069,21 @@
       return `Track ${track.index + 1}`;
     }
 
+    // Only the choice of FILE happens here (e.g. separate HD/4K/language
+    // downloads) — always starts on that file's default audio track.
+    // Audio/subtitle track selection for whichever file plays happens in
+    // the in-player tracks panel (press Up during playback) instead, so
+    // Play never blocks on an extra screen just because a file happens to
+    // have multiple embedded tracks.
     function renderVersionOptions(versions) {
       return versions
         .map((version) => {
-          const tracks = version.audioTracks || [];
           const metaParts = [version.height ? `${version.height}p` : "", formatBytes(version.size), formatDuration(version.duration)].filter(
             Boolean
           );
-
-          if (tracks.length > 1) {
-            return `
-              <div class="version-option">
-                <span class="version-filename">${escapeHtml(version.filename)}</span>
-                <span class="version-meta">${escapeHtml(metaParts.join(" · "))}</span>
-                <div class="version-tracks">
-                  ${tracks
-                    .map(
-                      (track) => `
-                    <button type="button" class="version-track-btn" data-token="${escapeAttr(version.token)}" data-track="${track.index}">
-                      ${escapeHtml(audioTrackLabel(track))}
-                    </button>
-                  `
-                    )
-                    .join("")}
-                </div>
-              </div>
-            `;
-          }
-
           return `
             <div class="version-option">
-              <button type="button" class="download-option" data-token="${escapeAttr(version.token)}" data-track="0">
+              <button type="button" class="download-option" data-token="${escapeAttr(version.token)}">
                 <span class="version-filename">${escapeHtml(version.filename)}</span>
                 <span class="version-meta">${escapeHtml(metaParts.join(" · "))}</span>
               </button>
@@ -2029,9 +2111,8 @@
         // to direct-play, same as before this feature existed.
       }
 
-      const onlyVersion = versions.length === 1 ? versions[0] : null;
-      if (versions.length <= 1 && (onlyVersion?.audioTracks || []).length <= 1) {
-        startPlayer(movie, onlyVersion?.token, 0);
+      if (versions.length <= 1) {
+        startPlayer(movie, versions[0]?.token, 0);
         return;
       }
 
@@ -2052,10 +2133,9 @@
       if (!btn || !versionModalMovie) return;
       const movie = versionModalMovie;
       const token = btn.dataset.token || null;
-      const track = Number(btn.dataset.track || 0);
       versionModal.hidden = true;
       versionModalMovie = null;
-      startPlayer(movie, token, track);
+      startPlayer(movie, token, 0);
     });
 
     document.getElementById("version-modal-close").addEventListener("click", closeVersionModal);
@@ -2183,6 +2263,123 @@
       }
     });
 
+    // ---- Audio & subtitle tracks (chosen DURING playback, not before) ----
+    // Press Up while the player is focused to open this panel — see
+    // remote-control.js for the key wiring. Audio track switches reload the
+    // stream with the new track (see switchAudioTrack's comment for why);
+    // subtitles just add/replace a <track> element, no reload needed.
+    let currentAudioTracks = [];
+    let currentSubtitleTracks = [];
+    let selectedAudioTrack = 0;
+    let selectedSubtitleTrack = null; // null = off
+    let activeSubtitleTrackEl = null;
+
+    function renderTracksPanel() {
+      playerAudioTracksEl.innerHTML = currentAudioTracks.length
+        ? currentAudioTracks
+            .map(
+              (t) => `
+          <button type="button" class="tv-track-option${t.index === selectedAudioTrack ? " selected" : ""}" data-kind="audio" data-track="${t.index}">
+            ${escapeHtml(audioTrackLabel(t))}
+          </button>
+        `
+            )
+            .join("")
+        : `<p style="color: var(--muted); font-size: 0.85rem;">Only one audio track</p>`;
+
+      const offBtn = `<button type="button" class="tv-track-option${selectedSubtitleTrack == null ? " selected" : ""}" data-kind="subtitle" data-track="off">Off</button>`;
+      const subtitleBtns = currentSubtitleTracks
+        .map(
+          (t) => `
+        <button type="button" class="tv-track-option${t.index === selectedSubtitleTrack ? " selected" : ""}" data-kind="subtitle" data-track="${t.index}">
+          ${escapeHtml(audioTrackLabel(t))}
+        </button>
+      `
+        )
+        .join("");
+      playerSubtitleTracksEl.innerHTML = offBtn + subtitleBtns;
+    }
+
+    function openTracksPanel() {
+      if (currentAudioTracks.length <= 1 && currentSubtitleTracks.length === 0) return;
+      renderTracksPanel();
+      playerTracksPanel.hidden = false;
+      window.TVFocusManager?.focusFirst();
+    }
+
+    function closeTracksPanel() {
+      playerTracksPanel.hidden = true;
+      document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+      playerVideo.focus();
+    }
+
+    // Direct-play only serves the file's default audio track — switching to
+    // any other embedded track requires the server to remux that track in
+    // (see streamAudioTrackRemux), which means reloading the <video> src.
+    // We capture the current position/pause-state first and restore it once
+    // the reloaded stream is ready, so it feels like a track switch rather
+    // than starting the movie over.
+    function switchAudioTrack(trackIndex) {
+      if (!playbackContext) return;
+      const resumeAt = playerVideo.currentTime;
+      const wasPaused = playerVideo.paused;
+      selectedAudioTrack = trackIndex;
+      pendingResumeSeconds = null; // don't let a stale saved-progress resume clobber this
+
+      const params = new URLSearchParams();
+      if (playbackContext.tmdbId) params.set("tmdbId", String(playbackContext.tmdbId));
+      params.set("title", playbackContext.title);
+      if (playbackContext.fileToken) params.set("file", playbackContext.fileToken);
+      if (trackIndex) params.set("audioTrack", String(trackIndex));
+
+      const resumeOnceReady = () => {
+        playerVideo.currentTime = resumeAt;
+        if (!wasPaused) playerVideo.play().catch(() => {});
+        playerVideo.removeEventListener("loadedmetadata", resumeOnceReady);
+      };
+      playerVideo.addEventListener("loadedmetadata", resumeOnceReady);
+      playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
+    }
+
+    // Subtitles are just an overlay <track> — no reload, switches instantly.
+    function selectSubtitleTrack(subtitleIndex) {
+      if (activeSubtitleTrackEl) {
+        activeSubtitleTrackEl.remove();
+        activeSubtitleTrackEl = null;
+      }
+      selectedSubtitleTrack = subtitleIndex;
+      if (subtitleIndex == null || !playbackContext?.fileToken) return;
+
+      const trackEl = document.createElement("track");
+      trackEl.kind = "subtitles";
+      trackEl.default = true;
+      const params = new URLSearchParams({ file: playbackContext.fileToken, track: String(subtitleIndex) });
+      trackEl.src = apiUrl(`downloads/subtitle?${params.toString()}`);
+      trackEl.addEventListener("load", () => {
+        if (trackEl.track) trackEl.track.mode = "showing";
+      });
+      playerVideo.appendChild(trackEl);
+      activeSubtitleTrackEl = trackEl;
+    }
+
+    playerTracksPanel.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tv-track-option");
+      if (!btn) return;
+      if (btn.dataset.kind === "audio") {
+        switchAudioTrack(Number(btn.dataset.track));
+      } else {
+        selectSubtitleTrack(btn.dataset.track === "off" ? null : Number(btn.dataset.track));
+      }
+      closeTracksPanel();
+    });
+
+    window.TVPlayer = {
+      togglePlayPause,
+      showControls: showPlayerControls,
+      openTracksPanel,
+      closeTracksPanel,
+    };
+
     function startPlayer(movie, fileToken, audioTrack) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
@@ -2190,6 +2387,16 @@
       playbackContext = { tmdbId: t?.tmdbId || null, title: displayTitle, fileToken: fileToken || null };
       pendingResumeSeconds = null;
       lastProgressSaveAt = 0;
+      currentAudioTracks = [];
+      currentSubtitleTracks = [];
+      selectedAudioTrack = audioTrack || 0;
+      selectedSubtitleTrack = null;
+      if (activeSubtitleTrackEl) {
+        activeSubtitleTrackEl.remove();
+        activeSubtitleTrackEl = null;
+      }
+      playerTracksHint.hidden = true;
+      playerTracksPanel.hidden = true;
 
       playerStatus.hidden = true;
       playerTitle.textContent = displayTitle;
@@ -2229,6 +2436,24 @@
         .catch(() => {
           // No resume position available — play from the start.
         });
+
+      // Find this exact file's track list (for the in-player Audio &
+      // Subtitles panel) from the same versions info the picker uses.
+      const versionsParams = new URLSearchParams();
+      if (t?.tmdbId) versionsParams.set("tmdbId", String(t.tmdbId));
+      versionsParams.set("title", displayTitle);
+      fetch(apiUrl(`downloads/versions?${versionsParams.toString()}`))
+        .then((res) => res.json())
+        .then((data) => {
+          const versions = data?.versions || [];
+          const match = (fileToken && versions.find((v) => v.token === fileToken)) || versions[0];
+          currentAudioTracks = match?.audioTracks || [];
+          currentSubtitleTracks = match?.subtitleTracks || [];
+          playerTracksHint.hidden = currentAudioTracks.length <= 1 && currentSubtitleTracks.length === 0;
+        })
+        .catch(() => {
+          // No track info available — the panel just won't offer anything.
+        });
     }
 
     function closePlayer() {
@@ -2240,6 +2465,11 @@
       playerOverlay.hidden = true;
       if (controlsHideTimer) clearTimeout(controlsHideTimer);
       playerSpinner.classList.remove("show");
+      playerTracksPanel.hidden = true;
+      if (activeSubtitleTrackEl) {
+        activeSubtitleTrackEl.remove();
+        activeSubtitleTrackEl = null;
+      }
 
       const focusEl = preModalFocus;
       preModalFocus = null;

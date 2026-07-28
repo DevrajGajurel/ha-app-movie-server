@@ -347,6 +347,15 @@ function getProgress({ tmdbId, title, fileToken }) {
 // Inspects a file's streams via ffprobe. Resolves to null (rather than
 // throwing) when ffprobe isn't installed or the file can't be parsed, so
 // callers can degrade to filename/size-only version info.
+//
+// Subtitle tracks are filtered to text-based codecs only (subrip/ass/ssa/
+// mov_text/webvtt) — those are the only ones ffmpeg can convert to WebVTT
+// for <track> playback. Bitmap subtitle formats (PGS, DVD sub/VobSub) are
+// pre-rendered images, not text, so there's no text to extract; they're
+// left out of the list rather than offered as a subtitle option that would
+// fail when selected.
+const TEXT_SUBTITLE_CODECS = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt"]);
+
 function probeMediaFile(filePath) {
   return new Promise((resolve) => {
     execFile(
@@ -371,15 +380,41 @@ function probeMediaFile(filePath) {
               codec: s.codec_name || null,
               channels: s.channels || null,
             }));
+          const subtitleTracks = streams
+            .filter((s) => s.codec_type === "subtitle")
+            .map((s, index) => ({ index, codec: s.codec_name || null, language: s.tags?.language || null, title: s.tags?.title || null }))
+            .filter((s) => TEXT_SUBTITLE_CODECS.has(s.codec));
           resolve({
             durationSeconds: data.format?.duration ? Math.round(Number(data.format.duration)) : null,
             width: videoStream?.width || null,
             height: videoStream?.height || null,
             audioTracks,
+            subtitleTracks,
           });
         } catch {
           resolve(null);
         }
+      }
+    );
+  });
+}
+
+// Extracts one text-based subtitle stream, converted to WebVTT, as a plain
+// string. This is a one-shot conversion (not a live stream like
+// streamAudioTrackRemux) since subtitle files are tiny — simplest to
+// buffer the whole thing rather than pipe it.
+function extractSubtitleTrack(filePath, subtitleTrackIndex) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "ffmpeg",
+      ["-v", "error", "-i", filePath, "-map", `0:s:${subtitleTrackIndex}`, "-f", "webvtt", "pipe:1"],
+      { maxBuffer: 20 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(stdout);
       }
     );
   });
@@ -391,6 +426,15 @@ function probeMediaFile(filePath) {
 // seeking the output. This is a live process, so unlike streamFile() above
 // it can't honor Range requests / precise seeking.
 function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
+  // Matroska, not fragmented MP4: MP4's moov atom normally has to be
+  // written after all the media data, so streaming MP4 to a pipe requires
+  // fragmentation flags (frag_keyframe+empty_moov) to work around that —
+  // but Tizen's player was rejecting that fragmented-MP4 output outright
+  // ("unsupported container/codec") even for a video/audio codec pair that
+  // plays fine via direct byte-range passthrough of the original file.
+  // Matroska has no such limitation (its clusters stream progressively by
+  // design), and since these downloads are already .mkv in practice, this
+  // just re-wraps the same codecs Tizen already proved it can play.
   const ffmpeg = spawn("ffmpeg", [
     "-v",
     "error",
@@ -402,10 +446,8 @@ function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
     `0:a:${audioTrackIndex}`,
     "-c",
     "copy",
-    "-movflags",
-    "frag_keyframe+empty_moov+default_base_moof",
     "-f",
-    "mp4",
+    "matroska",
     "pipe:1",
   ]);
 
@@ -413,7 +455,7 @@ function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
   // event) so a missing ffmpeg binary or other launch failure surfaces as a
   // real error response instead of a 200 with an empty body.
   ffmpeg.on("spawn", () => {
-    res.writeHead(200, { "Content-Type": "video/mp4" });
+    res.writeHead(200, { "Content-Type": "video/x-matroska" });
     ffmpeg.stdout.pipe(res);
   });
 
@@ -601,6 +643,7 @@ module.exports = {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  extractSubtitleTrack,
   saveProgress,
   getProgress,
 };
