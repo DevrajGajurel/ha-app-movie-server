@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.26
+
+- Fixed the row title and poster bottoms getting clipped after pinning the hero: measured it precisely — a single row (title + poster) needs ~550px at the current poster size, but the 66vh hero only left 367px for rows. Rebalanced to a 44vh hero / 44vh-to-bottom rows split, which leaves ~605px — enough for one full row plus a peek of the next row's title, verified against the actual measured row height rather than guessing.
+
 ## 1.4.25
 
 - Hero is now truly fixed at the top (Prime Video-style) — only the rows list scrolls independently beneath it, so the hero never scrolls out of view no matter how far down you browse. Previously the whole page scrolled as one unit, so navigating into later rows scrolled the hero off-screen entirely.

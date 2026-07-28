@@ -59,8 +59,14 @@
       left: 0;
       right: 0;
       z-index: 1;
-      height: 66vh;
-      min-height: 470px;
+      /* A single row (title + track) measures ~550px tall at 1080p with
+         the current poster size — 66vh (713px) only left 367px for rows,
+         clipping the title and the bottom of every poster. 44vh leaves
+         ~605px, enough for one full row plus a peek of the next one's
+         title, matching the reference (see .tv-rows below — its "top"
+         must stay equal to this height). */
+      height: 44vh;
+      min-height: 400px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -317,9 +323,10 @@
     /* ---- Rows ---- */
     .tv-rows {
       /* Starts right below the fixed hero and scrolls independently within
-         that region, so the hero above never scrolls out of view. */
+         that region, so the hero above never scrolls out of view. "top"
+         must match .tv-hero's height exactly (see its comment). */
       position: fixed;
-      top: 66vh;
+      top: 44vh;
       left: 0;
       right: 0;
       bottom: 0;
