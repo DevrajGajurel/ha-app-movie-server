@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.33
+
+- Replaced the TV app's placeholder icon (a plain blue square with "MS" text) with the actual Movie Server brand icon — the same clapperboard glyph used for the Home Assistant integration/add-on — resized to Tizen's recommended 117×117 dev icon size.
+
 ## 1.4.32
 
 - Fixed the "Latest Movies" scrape filter (added in 1.4.29) still letting the source site's "Trending" section through: it relied on linkedom's `Node.compareDocumentPosition`, which turns out to be an unreliable heuristic that gives wrong answers for elements in different subtrees at different nesting depths — it was placing the Trending section's movie links "after" the Latest Movies heading when they're actually before it. Replaced with a document-order index built from `querySelectorAll("*")` (spec-guaranteed tree order), which correctly excludes the Trending section now.
