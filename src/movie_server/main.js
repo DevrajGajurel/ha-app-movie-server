@@ -199,17 +199,29 @@ function readBody(req) {
   });
 }
 
-// The homepage/listing pages render a handful of ad/banner divs (reused
-// "A10" class both above and below) before the actual movie grid, headed by
-// a "Latest Movies" heading. Filtering by class alone can't tell those apart
-// since the class repeats on both sides, so instead find the heading and
-// only keep .row-thumb-link anchors that come after it in document order.
-const DOCUMENT_POSITION_FOLLOWING = 0x04;
-
+// The homepage/listing pages render a "Trending"/ad section before the
+// actual "Latest Movies" grid, and both sections reuse the same anchor
+// class, so filtering by class alone can't tell them apart — find the
+// heading and only keep .row-thumb-link anchors that come after it.
+//
+// linkedom's Node.compareDocumentPosition is NOT a reliable document-order
+// check: it's a heuristic based on ancestor depth / sibling index that only
+// works when both nodes share a parent or are directly nested, and gives
+// wrong answers for elements in different subtrees at different nesting
+// depths (confirmed: it placed the Trending section's anchors "after" the
+// Latest Movies heading, which they weren't). document.querySelectorAll("*")
+// is spec-guaranteed to return elements in true document order, so build an
+// index from that instead of trusting compareDocumentPosition.
 function findLatestMoviesMarker(document) {
   return [...document.querySelectorAll("h1, h2, h3, h4")].find((el) =>
     /latest\s*movies/i.test(el.textContent || "")
   );
+}
+
+function documentOrderIndex(document) {
+  const index = new Map();
+  [...document.querySelectorAll("*")].forEach((el, i) => index.set(el, i));
+  return index;
 }
 
 function scrapePage(pageUrl) {
@@ -223,8 +235,10 @@ function scrapePage(pageUrl) {
       const { document } = parseHTML(html);
 
       const marker = findLatestMoviesMarker(document);
+      const order = marker ? documentOrderIndex(document) : null;
+      const markerIndex = order?.get(marker);
       const anchors = [...document.querySelectorAll(".row-thumb-link")].filter(
-        (a) => !marker || (marker.compareDocumentPosition(a) & DOCUMENT_POSITION_FOLLOWING) !== 0
+        (a) => markerIndex === undefined || order.get(a) > markerIndex
       );
 
       const results = anchors.map((a) => ({

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.32
+
+- Fixed the "Latest Movies" scrape filter (added in 1.4.29) still letting the source site's "Trending" section through: it relied on linkedom's `Node.compareDocumentPosition`, which turns out to be an unreliable heuristic that gives wrong answers for elements in different subtrees at different nesting depths — it was placing the Trending section's movie links "after" the Latest Movies heading when they're actually before it. Replaced with a document-order index built from `querySelectorAll("*")` (spec-guaranteed tree order), which correctly excludes the Trending section now.
+
 ## 1.4.31
 
 - Added a Delete option to the movie detail page for already-downloaded titles, with a confirmation dialog before anything is removed. Backend: new `DELETE /api/downloads/media` endpoint removes every downloaded folder matching the movie (all versions, plus its marker/progress files) and notifies Emby of the removal.
