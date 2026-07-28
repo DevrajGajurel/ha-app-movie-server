@@ -369,6 +369,19 @@
       padding: 1.9rem 4.5rem 1.8rem;
       scroll-behavior: smooth;
       scroll-snap-type: x mandatory;
+      /* Without this, mandatory snapping ignores the track's own left
+         padding: it settles on scrollLeft that puts the first card flush
+         against the viewport edge (the actual snap point for its
+         scroll-snap-align: start) rather than the resting position that
+         keeps the padding visible, which is what makes a row's first
+         poster stay indented level with its row title only until the row
+         is scrolled once — after that it can never snap back to showing
+         the padding again, even via script (verified: setting
+         scrollLeft = 0 directly gets silently overridden back). Matching
+         scroll-padding to the track's own padding makes "padding visible,
+         card 1 indented" the actual snap point instead. */
+      scroll-padding-left: 4.5rem;
+      scroll-padding-right: 4.5rem;
       scrollbar-width: none;
     }
 

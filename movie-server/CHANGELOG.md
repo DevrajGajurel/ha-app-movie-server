@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.30
+
+- Fixed a row's first poster losing its alignment with its row title after the row had been scrolled once: `.tv-row-track` uses mandatory scroll-snap but never told the browser about its own left padding, so snapping settled on "first card flush to the edge" instead of "card indented behind the padding" — added matching `scroll-padding` so the padded position is a stable snap point again. Also, each row now snaps back to its scroll start the moment focus leaves it (Netflix/Prime-style), so a row you scrolled through earlier doesn't stay scrolled away from the beginning forever.
+
 ## 1.4.29
 
 - Scraper: only collect movie listings after the "Latest Movies" heading on the source site's homepage/listing pages. The page renders several ad/banner divs before that heading reusing the same class names as the ones below it, so class-based selectors alone couldn't tell them apart — now finds the heading and filters `.row-thumb-link` anchors to only those that come after it in document order.

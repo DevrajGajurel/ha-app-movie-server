@@ -33,6 +33,7 @@
 
   let lastMainFocus = null;
   let lastSidenavFocus = null;
+  let lastFocusedTrack = null;
 
   function isVisible(el) {
     if (!el || el.hasAttribute("disabled")) return false;
@@ -127,6 +128,23 @@
       lastSidenavFocus = el;
     } else if (focusScope() === document) {
       lastMainFocus = el;
+    }
+
+    // Each row scrolls horizontally on its own and nothing else resets that
+    // position when you leave the row, so a row scrolled through earlier
+    // stayed scrolled forever even though its title above the track never
+    // moved (the row-track CSS now also defines scroll-padding matching its
+    // own padding, which is what makes 0 a stable resting position at all —
+    // without it, mandatory scroll-snap silently fought back any attempt to
+    // reset scrollLeft). Snap whichever row we're leaving back to its start,
+    // same as Netflix/Prime, so only the currently focused row is ever
+    // scrolled away from the beginning.
+    const track = el.closest(MAIN_GROUP_SELECTOR);
+    if (track !== lastFocusedTrack) {
+      if (lastFocusedTrack && lastFocusedTrack.scrollLeft !== 0) {
+        lastFocusedTrack.scrollLeft = 0;
+      }
+      lastFocusedTrack = track;
     }
 
     // Native "focus" events depend on the document/window actually having
