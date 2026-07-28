@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.29
+
+- Scraper: only collect movie listings after the "Latest Movies" heading on the source site's homepage/listing pages. The page renders several ad/banner divs before that heading reusing the same class names as the ones below it, so class-based selectors alone couldn't tell them apart — now finds the heading and filters `.row-thumb-link` anchors to only those that come after it in document order.
+
 ## 1.4.28
 
 - Fixed the TV app icon not showing on the home screen/app list: `icon.png` was 128×128, but Tizen's documented recommended size for the sideloaded/development app icon is 117×117 — resized accordingly.

@@ -198,6 +198,19 @@ function readBody(req) {
   });
 }
 
+// The homepage/listing pages render a handful of ad/banner divs (reused
+// "A10" class both above and below) before the actual movie grid, headed by
+// a "Latest Movies" heading. Filtering by class alone can't tell those apart
+// since the class repeats on both sides, so instead find the heading and
+// only keep .row-thumb-link anchors that come after it in document order.
+const DOCUMENT_POSITION_FOLLOWING = 0x04;
+
+function findLatestMoviesMarker(document) {
+  return [...document.querySelectorAll("h1, h2, h3, h4")].find((el) =>
+    /latest\s*movies/i.test(el.textContent || "")
+  );
+}
+
 function scrapePage(pageUrl) {
   return fetch(pageUrl)
     .then(async (response) => {
@@ -208,7 +221,12 @@ function scrapePage(pageUrl) {
       const html = await response.text();
       const { document } = parseHTML(html);
 
-      const results = [...document.querySelectorAll(".row-thumb-link")].map((a) => ({
+      const marker = findLatestMoviesMarker(document);
+      const anchors = [...document.querySelectorAll(".row-thumb-link")].filter(
+        (a) => !marker || (marker.compareDocumentPosition(a) & DOCUMENT_POSITION_FOLLOWING) !== 0
+      );
+
+      const results = anchors.map((a) => ({
         title: a.querySelector("img")?.alt ?? "",
         link: new URL(a.getAttribute("href"), pageUrl).href,
       }));
