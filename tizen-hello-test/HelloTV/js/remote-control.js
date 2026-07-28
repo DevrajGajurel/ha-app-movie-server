@@ -322,6 +322,21 @@
   document.addEventListener("keydown", handleKeydown);
   document.addEventListener("keyup", handleKeyup);
   document.addEventListener("tizenhwkey", handleHwKey);
-  document.getElementById("exit-confirm-yes")?.addEventListener("click", exitApp);
-  document.getElementById("exit-confirm-cancel")?.addEventListener("click", closeExitConfirm);
+
+  // Delegated on document rather than bound directly to the buttons: this
+  // script tag loads at the very top of <body>, before the exit-confirm
+  // modal's own HTML further down has been parsed, so getElementById here
+  // would find nothing and silently attach to null. Delegation only looks
+  // the buttons up once a real click event happens, long after the DOM is
+  // fully built — this is the actual reason Enter (which dispatches a
+  // synthetic click via el.click(), see the keyCode 13 handler above) never
+  // did anything on this dialog: the click fired into a pair of buttons
+  // with no listener at all, not a problem with Enter itself.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#exit-confirm-yes")) {
+      exitApp();
+    } else if (e.target.closest("#exit-confirm-cancel")) {
+      closeExitConfirm();
+    }
+  });
 })();

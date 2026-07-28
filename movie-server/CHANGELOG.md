@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.35
+
+- Fixed Enter never actually doing anything on the exit-confirmation dialog's Cancel/Exit App buttons. Root cause: `remote-control.js` loads via `<script src>` as the very first thing in `<body>`, before the dialog's own HTML further down the page has been parsed — so its `document.getElementById("exit-confirm-yes")`/`"-cancel"` calls at script load time found nothing and silently attached no listener at all. Pressing Back to open the dialog worked (that's a direct function call), but Enter's synthetic click landed on buttons nobody was listening to. Switched to event delegation on `document`, which works regardless of when the buttons are added to the DOM.
+
 ## 1.4.34
 
 - The player now remembers the last audio track and subtitles picked for each movie and re-applies them automatically the next time you play it, instead of always resetting to the file's default track and no subtitles. Stored alongside the existing per-movie resume position, so it survives app/server restarts. Note: resuming mid-movie on a non-default audio track may still restart from the beginning — the audio-track remux stream isn't byte-range seekable, a pre-existing limitation this doesn't fix.
