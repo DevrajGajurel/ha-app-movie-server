@@ -145,10 +145,6 @@
       max-width: 42rem;
     }
 
-    .tv-hero-actions {
-      display: flex;
-      gap: 0.9rem;
-    }
 
     .tv-hero-btn {
       display: inline-flex;
@@ -1239,11 +1235,6 @@
       <div class="tv-hero-meta" id="hero-meta"></div>
       <h1 class="tv-hero-title" id="hero-title"></h1>
       <p class="tv-hero-overview" id="hero-overview"></p>
-      <div class="tv-hero-actions">
-        <button class="tv-hero-btn primary" id="hero-play-btn" type="button" hidden>▶ Play</button>
-        <button class="tv-hero-btn primary" id="hero-download-btn" type="button">⬇ Download</button>
-        <button class="tv-hero-btn" id="hero-info-btn" type="button">ⓘ More Info</button>
-      </div>
     </div>
   </section>
 
@@ -1340,9 +1331,6 @@
     const heroMeta = document.getElementById("hero-meta");
     const heroTitle = document.getElementById("hero-title");
     const heroOverview = document.getElementById("hero-overview");
-    const heroPlayBtn = document.getElementById("hero-play-btn");
-    const heroDownloadBtn = document.getElementById("hero-download-btn");
-    const heroInfoBtn = document.getElementById("hero-info-btn");
     const playerOverlay = document.getElementById("player-overlay");
     const playerVideo = document.getElementById("player-video");
     const playerStatus = document.getElementById("player-status");
@@ -1776,13 +1764,6 @@
         ${t?.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
         ${t?.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
       `;
-
-      const downloaded = isAlreadyDownloaded(movie);
-      const sourcePageLink = getMoviePageLink(movie);
-      heroPlayBtn.hidden = !downloaded;
-      heroDownloadBtn.hidden = !sourcePageLink;
-      heroPlayBtn.classList.toggle("primary", downloaded);
-      heroDownloadBtn.classList.toggle("primary", !downloaded && Boolean(sourcePageLink));
 
       heroContent.hidden = false;
     }
@@ -2902,22 +2883,6 @@
 
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
 
-    heroPlayBtn.addEventListener("click", () => {
-      if (featuredMovie) playMovie(featuredMovie);
-    });
-
-    heroDownloadBtn.addEventListener("click", () => {
-      if (!featuredMovie) return;
-      const t = featuredMovie.tmdb;
-      const displayTitle = t?.tmdbTitle || featuredMovie.title || "Untitled";
-      const sourcePageLink = getMoviePageLink(featuredMovie);
-      if (sourcePageLink) openDownloadModal(sourcePageLink, displayTitle, t?.tmdbId || null);
-    });
-
-    heroInfoBtn.addEventListener("click", () => {
-      if (featuredMovie) openDetailOverlay(featuredMovie);
-    });
-
     document.getElementById("player-close-btn").addEventListener("click", closePlayer);
 
     playerVideo.addEventListener("error", () => {
@@ -2936,33 +2901,27 @@
       const card = e.target.closest(".tv-poster-card");
       if (!card) return;
       const movie = visibleMovies.find((m) => m.link === card.dataset.link);
-      if (!movie) return;
-      // Already downloaded: OK/click plays right away instead of making
-      // you open the detail page and press Play again.
-      if (isAlreadyDownloaded(movie)) {
-        playMovie(movie);
-      } else {
-        openDetailOverlay(movie);
-      }
+      if (movie) openDetailOverlay(movie);
     });
 
-    // Jellyfin/Netflix-style spotlight: focused poster drives the hero.
-    document.addEventListener(
-      "focus",
-      (e) => {
-        const target = e.target;
-        if (!(target instanceof Element)) return;
-        if (searchOverlay && !searchOverlay.hidden) return;
-        if (detailPage && !detailPage.hidden) return;
-        const card = target.closest(".tv-poster-card");
-        if (!card || !rowsContainer.contains(card)) return;
-        const movie =
-          visibleMovies.find((m) => m.link === card.dataset.link) ||
-          allMovies.find((m) => m.link === card.dataset.link);
-        if (movie) scheduleHeroSpotlight(movie);
-      },
-      true
-    );
+    // Prime Video-style spotlight: the hero always reflects whatever
+    // poster is currently focused, in every row. Driven by our own
+    // "tv-focus-changed" event (dispatched from focus-manager.js's
+    // setFocused) rather than the native "focus" DOM event — confirmed
+    // that native focus events aren't reliably delivered on every
+    // platform/state, so we don't depend on the platform for this.
+    document.addEventListener("tv-focus-changed", (e) => {
+      const target = e.detail?.element;
+      if (!(target instanceof Element)) return;
+      if (searchOverlay && !searchOverlay.hidden) return;
+      if (detailPage && !detailPage.hidden) return;
+      const card = target.closest(".tv-poster-card");
+      if (!card || !rowsContainer.contains(card)) return;
+      const movie =
+        visibleMovies.find((m) => m.link === card.dataset.link) ||
+        allMovies.find((m) => m.link === card.dataset.link);
+      if (movie) scheduleHeroSpotlight(movie);
+    });
 
     navHomeBtn.addEventListener("click", showHomeView);
 
@@ -2992,15 +2951,23 @@
       if (!card) return;
       rememberSearchQuery(searchInput.value);
       const movie = getSearchableMovies().find((m) => m.link === card.dataset.link);
-      if (!movie) return;
-      if (isAlreadyDownloaded(movie)) {
-        playMovie(movie);
-      } else {
-        openDetailOverlay(movie);
-      }
+      if (movie) openDetailOverlay(movie);
     });
 
     document.addEventListener("tv-close-search", closeSearchOverlay);
+
+    // Dedicated remote Play/Pause button (see remote-control.js): if a
+    // poster is focused and the player isn't already open, play that movie
+    // directly — Enter/OK on the poster still opens the detail page as
+    // before. Nothing to do if it hasn't been downloaded yet.
+    document.addEventListener("tv-media-command", (e) => {
+      if (!playerOverlay.hidden) return; // remote-control.js already handles this when the player is open
+      if (e.detail?.action !== "play" && e.detail?.action !== "play-pause") return;
+      const card = document.activeElement?.closest?.(".tv-poster-card");
+      if (!card) return;
+      const movie = visibleMovies.find((m) => m.link === card.dataset.link) || allMovies.find((m) => m.link === card.dataset.link);
+      if (movie && isAlreadyDownloaded(movie)) playMovie(movie);
+    });
 
     document.getElementById("detail-page-close").addEventListener("click", closeDetailOverlay);
 

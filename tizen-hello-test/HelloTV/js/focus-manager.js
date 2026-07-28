@@ -1,8 +1,8 @@
 // Focus navigation for D-pad remotes.
 //
 // Three ideas combined:
-//   1. Row-aware: inside a horizontal group (hero action buttons, or a
-//      movie row), Left/Right moves to the DOM sibling and Up/Down jumps
+//   1. Row-aware: inside a horizontal group (a movie row), Left/Right
+//      moves to the DOM sibling and Up/Down jumps
 //      to the same column position in the group above/below. This is how
 //      every real TV browse UI (Netflix, Apple TV, etc.) behaves —
 //      predictable and unaffected by the focused card's own scale-up
@@ -28,7 +28,7 @@
   ].join(",");
 
   const SIDENAV_SELECTOR = ".tv-sidenav-items";
-  const MAIN_GROUP_SELECTOR = ".tv-hero-actions, .tv-row-track";
+  const MAIN_GROUP_SELECTOR = ".tv-row-track";
   const GROUP_SELECTOR = `${SIDENAV_SELECTOR}, ${MAIN_GROUP_SELECTOR}`;
 
   let lastMainFocus = null;
@@ -128,6 +128,13 @@
     } else if (focusScope() === document) {
       lastMainFocus = el;
     }
+
+    // Native "focus" events depend on the document/window actually having
+    // real focus, which isn't guaranteed on every platform/state (and this
+    // app has already hit several cases of relying on native platform
+    // behavior that Tizen's WebKit doesn't deliver consistently) — dispatch
+    // our own event directly instead of hoping "focus" fires.
+    document.dispatchEvent(new CustomEvent("tv-focus-changed", { detail: { element: el } }));
   }
 
   function focusFirst() {
@@ -148,15 +155,8 @@
       return;
     }
 
-    // Prefer the hero, then the first row, over the sidenav — a fresh
-    // load or a lost focus should land you back browsing, not on Refresh.
-    const heroActions = document.querySelector(".tv-hero-actions");
-    const heroChildren = heroActions ? getGroupChildren(heroActions) : [];
-    if (heroChildren.length) {
-      setFocused(heroChildren[0]);
-      return;
-    }
-
+    // Prefer the first row over the sidenav — a fresh load or a lost
+    // focus should land you back browsing, not on Refresh.
     const firstRow = document.querySelector(".tv-row-track");
     const rowChildren = firstRow ? getGroupChildren(firstRow) : [];
     if (rowChildren.length) {

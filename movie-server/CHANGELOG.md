@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.24
+
+- TV app: reworked the hero to match Prime Video's actual behavior — removed the Play/Download/More Info buttons from the hero entirely (Enter on a poster still opens its detail page as before; the dedicated remote Play/Pause button now plays a focused, already-downloaded poster directly without opening detail page first). The hero now reliably reflects whatever poster is currently focused in *any* row, not just Continue Watching.
+- Fixed the actual cause of that: the hero-follows-focus feature depended on the native browser `focus` event, which isn't reliably delivered in every state (confirmed `document.hasFocus()` can be false while `document.activeElement` still updates correctly) — the same class of "don't trust native platform behavior" issue as the video controls and Enter-activation fixes. `focus-manager.js` now dispatches its own `tv-focus-changed` event directly whenever it moves focus, so the hero (and anything else that needs to react to focus) no longer depends on the platform delivering a native event.
+
 ## 1.4.23
 
 - Fixed Enter/OK not activating focused buttons (e.g. the exit-confirmation dialog): confirmed a synthetic Enter keydown doesn't trigger a browser's native "click the focused button" behavior, and Tizen's WebKit isn't reliable here either — same class of issue as the native video controls. Enter now explicitly calls `.click()` on the focused button/link itself instead of assuming the platform will.
