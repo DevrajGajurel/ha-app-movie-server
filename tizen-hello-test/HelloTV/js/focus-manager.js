@@ -57,6 +57,8 @@
     if (version && !version.hidden) return version;
     const modal = document.getElementById("download-modal");
     if (modal && !modal.hidden) return modal;
+    const trailer = document.getElementById("trailer-overlay");
+    if (trailer && !trailer.hidden) return trailer;
     const detail = document.getElementById("detail-page");
     if (detail && !detail.hidden) return detail;
     const search = document.getElementById("search-overlay");
@@ -169,7 +171,8 @@
         el.closest("#version-modal") ||
         el.closest("#player-tracks-panel") ||
         el.closest("#exit-confirm-modal") ||
-        el.closest("#delete-confirm-modal")
+        el.closest("#delete-confirm-modal") ||
+        el.closest("#trailer-overlay")
     );
     if (modalPreferred) {
       setFocused(modalPreferred);

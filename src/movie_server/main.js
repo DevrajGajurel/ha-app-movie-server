@@ -699,6 +699,7 @@ const server = http.createServer(async (req, res) => {
             duration: probe?.durationSeconds ?? null,
             width: probe?.width ?? null,
             height: probe?.height ?? null,
+            videoCodec: probe?.videoCodec ?? null,
             audioTracks: probe?.audioTracks ?? [],
             subtitleTracks: probe?.subtitleTracks ?? [],
           };

@@ -410,6 +410,7 @@ function probeMediaFile(filePath) {
             durationSeconds: data.format?.duration ? Math.round(Number(data.format.duration)) : null,
             width: videoStream?.width || null,
             height: videoStream?.height || null,
+            videoCodec: videoStream?.codec_name || null,
             audioTracks,
             subtitleTracks,
           });

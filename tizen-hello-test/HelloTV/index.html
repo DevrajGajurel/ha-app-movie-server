@@ -1089,6 +1089,134 @@
       padding: 0.7rem 1.4rem;
     }
 
+    .cert-badge {
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      padding: 0.05rem 0.4rem;
+      font-size: 0.78rem;
+    }
+
+    .tagline {
+      font-style: italic;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .director-line {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.75rem;
+    }
+
+    .director-line strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* ---- Downloaded-file info row: video quality plus the same audio/
+       subtitle track choice the in-player panel offers, but available
+       before pressing Play. Cycle buttons rather than native <select>s —
+       this app has already hit several cases of native form-control
+       behavior not working reliably via D-pad on Tizen's WebKit, so track
+       picking everywhere else in the app (in-player panel) uses plain
+       buttons too; this stays consistent with that instead of introducing
+       a different, less-trusted interaction pattern just for this row. */
+    .tv-detail-info-row {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.1rem;
+      font-size: 0.85rem;
+    }
+
+    .tv-detail-info-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--muted);
+    }
+
+    .tv-track-cycle-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 0.3rem 0.7rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
+
+    .tv-track-cycle-btn.tv-focused,
+    .tv-track-cycle-btn:focus {
+      outline: none;
+      transform: scale(1.04);
+      box-shadow: 0 0 0 3px rgba(0, 168, 225, 0.7);
+    }
+
+    /* Circular icon-only action (e.g. Delete) alongside the labeled pill
+       buttons, matching a Plex/Jellyfin-style detail page's mix of primary
+       labeled actions and small icon-only secondary ones. */
+    .tv-icon-circle-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3.1rem;
+      height: 3.1rem;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .tv-icon-circle-btn.danger {
+      background: rgba(255, 107, 107, 0.12);
+      color: var(--danger);
+      border-color: rgba(255, 107, 107, 0.4);
+    }
+
+    .tv-icon-circle-btn.tv-focused,
+    .tv-icon-circle-btn:focus {
+      outline: none;
+      transform: scale(1.08);
+      box-shadow: 0 0 0 3px rgba(0, 168, 225, 0.7), 0 10px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    /* ---- Trailer overlay: a YouTube embed, kept deliberately separate
+       from the main <video> player overlay rather than shoehorned into it
+       — that overlay's controls/progress/track-panel logic is all wired
+       specifically to a <video> element and reusing it for an iframe would
+       mean fighting that coupling instead of a small, self-contained
+       overlay. The iframe itself is never given D-pad focus (it isn't in
+       FOCUSABLE_SELECTOR), since key events inside an iframe's own
+       document don't bubble to ours — only the close button is reachable,
+       so Back/Enter to exit always works regardless. */
+    .tv-trailer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 260;
+      background: #000;
+    }
+
+    .tv-trailer-overlay[hidden] { display: none; }
+
+    .tv-trailer-overlay iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .tv-trailer-close {
+      position: fixed;
+      top: 1.5rem;
+      left: 1.5rem;
+      z-index: 2;
+    }
+
     /* ---- Download quality/option picker (unchanged behavior) ---- */
     .download-list {
       list-style: none;
@@ -1320,6 +1448,11 @@
     </div>
   </div>
 
+  <div class="tv-trailer-overlay" id="trailer-overlay" hidden>
+    <button class="tv-icon-btn tv-trailer-close" id="trailer-close-btn" type="button" aria-label="Close trailer">←</button>
+    <iframe id="trailer-iframe" title="Trailer" allow="autoplay; encrypted-media" allowfullscreen frameborder="0"></iframe>
+  </div>
+
   <div class="tv-search-overlay" id="search-overlay" hidden>
     <input class="tv-search-input" type="search" id="search-input" placeholder="Search titles…" />
     <div class="tv-search-hint" id="search-hint">Start typing to search your library.</div>
@@ -1419,6 +1552,15 @@
     const detailPageTitle = document.getElementById("detail-page-title");
     const detailPageBody = document.getElementById("detail-page-body");
     const detailPageBackdrop = document.getElementById("detail-page-backdrop");
+    // Populated (when the movie is already downloaded) with the first
+    // version's track lists, so the detail-page Audio/Subtitle cycle
+    // buttons have something to cycle through before Play is ever pressed.
+    let detailVersionInfo = null;
+    let detailAudioTrackIndex = 0;
+    let detailSubtitleTrackIndex = null;
+
+    const trailerOverlay = document.getElementById("trailer-overlay");
+    const trailerIframe = document.getElementById("trailer-iframe");
 
     const downloadModal = document.getElementById("download-modal");
     const downloadModalTitle = document.getElementById("download-modal-title");
@@ -1435,6 +1577,7 @@
     const versionModal = document.getElementById("version-modal");
     const versionModalContent = document.getElementById("version-modal-content");
     let versionModalMovie = null;
+    let versionModalOverrides = null;
 
     const deleteConfirmModal = document.getElementById("delete-confirm-modal");
     const deleteConfirmBody = document.getElementById("delete-confirm-body");
@@ -2003,10 +2146,69 @@
     }
 
     // ---- Detail page ----
+    function formatRuntime(minutes) {
+      if (!minutes) return "";
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return h ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function formatEndsAt(minutes) {
+      if (!minutes) return "";
+      const end = new Date(Date.now() + minutes * 60000);
+      return end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function videoQualityLabel(version) {
+      if (!version) return "";
+      const res = version.height >= 2160 ? "4K" : version.height >= 1080 ? "1080p" : version.height >= 720 ? "720p" : version.height ? `${version.height}p` : "";
+      const codec = version.videoCodec ? version.videoCodec.toUpperCase() : "";
+      return [res, codec].filter(Boolean).join(" ");
+    }
+
+    // Cycle buttons rather than a <select> — see the .tv-track-cycle-btn
+    // CSS comment for why. Re-renders just the two info-row buttons in
+    // place so cycling doesn't disturb the rest of the detail page or
+    // require refocusing.
+    function renderDetailTrackButtons() {
+      const audioBtn = document.getElementById("detail-audio-btn");
+      const subtitleBtn = document.getElementById("detail-subtitle-btn");
+      const audioTracks = detailVersionInfo?.audioTracks || [];
+      const subtitleTracks = detailVersionInfo?.subtitleTracks || [];
+
+      if (audioBtn) {
+        const track = audioTracks.find((a) => a.index === detailAudioTrackIndex) || audioTracks[0];
+        audioBtn.textContent = `Audio: ${track ? audioTrackLabel(track) : "Default"}`;
+      }
+      if (subtitleBtn) {
+        const track = subtitleTracks.find((s) => s.index === detailSubtitleTrackIndex);
+        subtitleBtn.textContent = `Subtitles: ${track ? audioTrackLabel(track) : "Off"}`;
+      }
+    }
+
+    function cycleDetailAudioTrack() {
+      const tracks = detailVersionInfo?.audioTracks || [];
+      if (tracks.length <= 1) return;
+      const idx = tracks.findIndex((a) => a.index === detailAudioTrackIndex);
+      detailAudioTrackIndex = tracks[(idx + 1) % tracks.length].index;
+      renderDetailTrackButtons();
+    }
+
+    function cycleDetailSubtitleTrack() {
+      const tracks = detailVersionInfo?.subtitleTracks || [];
+      if (!tracks.length) return;
+      // Cycle through [off, track0, track1, ...].
+      const idx = detailSubtitleTrackIndex == null ? -1 : tracks.findIndex((s) => s.index === detailSubtitleTrackIndex);
+      const nextIdx = idx + 1;
+      detailSubtitleTrackIndex = nextIdx >= tracks.length ? null : tracks[nextIdx].index;
+      renderDetailTrackButtons();
+    }
+
     function openDetailOverlay(movie) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
       const sourcePageLink = getMoviePageLink(movie);
+      const downloaded = isAlreadyDownloaded(movie);
 
       const bannerImage = t?.backdrop || t?.poster;
       detailPageBackdrop.style.backgroundImage = bannerImage ? `url("${bannerImage}")` : "none";
@@ -2027,34 +2229,50 @@
         </div>`;
       }
 
+      detailVersionInfo = null;
+      detailAudioTrackIndex = 0;
+      detailSubtitleTrackIndex = null;
+
       detailPageBody.innerHTML = `
         ${
           t
             ? `
           <div class="meta-row">
             <span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>
-            ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
             ${t.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+            ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+            ${t.runtimeMinutes ? `<span>${escapeHtml(formatRuntime(t.runtimeMinutes))}</span>` : ""}
+            ${t.certification ? `<span class="cert-badge">${escapeHtml(t.certification)}</span>` : ""}
+            ${t.runtimeMinutes ? `<span>Ends at ${escapeHtml(formatEndsAt(t.runtimeMinutes))}</span>` : ""}
           </div>
           ${t.genres?.length ? `<div class="genre-tags">${t.genres.map((g) => `<span class="genre-tag">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
-          ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
         `
             : tmdbEnabledFlag
             ? `<p class="overview">No TMDB match</p>`
             : ""
         }
         ${statusHtml}
-        <div class="tv-detail-actions">
-          ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
-          ${sourcePageLink ? `<a class="tv-hero-btn${isAlreadyDownloaded(movie) ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
-          ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
-          ${isAlreadyDownloaded(movie) ? `<button class="tv-hero-btn danger" id="detail-delete-btn" type="button">🗑 Delete</button>` : ""}
+        <div class="tv-detail-info-row" id="detail-info-row" hidden>
+          <span class="tv-detail-info-item" id="detail-video-info"></span>
         </div>
+        <div class="tv-detail-actions">
+          ${downloaded ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
+          ${t?.trailerKey ? `<button class="tv-hero-btn" id="detail-trailer-btn" type="button">🎬 Trailer</button>` : ""}
+          ${sourcePageLink ? `<a class="tv-hero-btn${downloaded ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
+          ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
+          ${downloaded ? `<button class="tv-icon-circle-btn danger" id="detail-delete-btn" type="button" aria-label="Delete downloaded movie">🗑</button>` : ""}
+        </div>
+        ${t?.tagline ? `<p class="tagline">${escapeHtml(t.tagline)}</p>` : ""}
+        ${t?.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
+        ${t?.director ? `<p class="director-line">Director: <strong>${escapeHtml(t.director)}</strong></p>` : ""}
       `;
 
       if (detailPage.hidden && downloadModal.hidden) preModalFocus = document.activeElement;
       detailPage.hidden = false;
-      document.getElementById("detail-play-btn")?.addEventListener("click", () => playMovie(movie));
+      document.getElementById("detail-play-btn")?.addEventListener("click", () =>
+        playMovie(movie, { audioTrack: detailAudioTrackIndex, subtitleTrack: detailSubtitleTrackIndex })
+      );
+      document.getElementById("detail-trailer-btn")?.addEventListener("click", () => openTrailer(t.trailerKey));
       document.getElementById("detail-download-link")?.addEventListener("click", (e) => {
         e.preventDefault();
         const el = e.currentTarget;
@@ -2073,6 +2291,52 @@
       } else {
         window.TVFocusManager?.focusFirst();
       }
+
+      // The video/audio/subtitle info row needs this exact file's track
+      // list, which requires probing the downloaded file server-side — not
+      // available until this resolves, so it's populated in after the rest
+      // of the page is already showing rather than blocking on it.
+      if (downloaded) {
+        const versionsParams = new URLSearchParams();
+        if (t?.tmdbId) versionsParams.set("tmdbId", String(t.tmdbId));
+        versionsParams.set("title", displayTitle);
+        fetch(apiUrl(`downloads/versions?${versionsParams.toString()}`))
+          .then((res) => res.json())
+          .then((data) => {
+            const version = data?.versions?.[0];
+            if (!version || detailPage.hidden) return;
+            detailVersionInfo = version;
+
+            const infoRow = document.getElementById("detail-info-row");
+            const videoInfo = document.getElementById("detail-video-info");
+            if (!infoRow || !videoInfo) return;
+
+            const qualityLabel = videoQualityLabel(version);
+            videoInfo.textContent = qualityLabel ? `Video: ${qualityLabel}` : "";
+
+            if (version.audioTracks?.length > 1) {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "tv-track-cycle-btn";
+              btn.id = "detail-audio-btn";
+              infoRow.appendChild(btn);
+              btn.addEventListener("click", cycleDetailAudioTrack);
+            }
+            if (version.subtitleTracks?.length) {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "tv-track-cycle-btn";
+              btn.id = "detail-subtitle-btn";
+              infoRow.appendChild(btn);
+              btn.addEventListener("click", cycleDetailSubtitleTrack);
+            }
+            renderDetailTrackButtons();
+            infoRow.hidden = false;
+          })
+          .catch(() => {
+            // No track info available — info row just stays hidden.
+          });
+      }
     }
 
     function closeDetailOverlay() {
@@ -2080,14 +2344,38 @@
       restoreFocusAfterModalClose();
     }
 
+    // ---- Trailer (YouTube embed) ----
+    function openTrailer(youtubeKey) {
+      if (!youtubeKey) return;
+      preModalFocus = document.activeElement;
+      trailerIframe.src = `https://www.youtube.com/embed/${encodeURIComponent(youtubeKey)}?autoplay=1&rel=0`;
+      trailerOverlay.hidden = false;
+      document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
+      const closeBtn = document.getElementById("trailer-close-btn");
+      closeBtn.classList.add("tv-focused");
+      closeBtn.focus();
+    }
+
+    function closeTrailer() {
+      trailerOverlay.hidden = true;
+      trailerIframe.src = ""; // stop playback
+      restoreFocusAfterModalClose();
+    }
+
+    document.getElementById("trailer-close-btn").addEventListener("click", closeTrailer);
+
     // ---- Player ----
     // Entry point for both the hero and detail-page Play buttons. Captures
     // focus once, up front — startPlayer() below never touches
     // preModalFocus, so it stays correct whether or not the version picker
-    // ends up showing in between.
-    function playMovie(movie) {
+    // ends up showing in between. overrides (audioTrack/subtitleTrack) come
+    // from the detail page's own track cycle buttons when playback starts
+    // there; every other entry point (hero, dedicated remote Play key,
+    // Continue Watching) omits them, leaving startPlayer to fall back to
+    // whatever was remembered from the last time this movie played.
+    function playMovie(movie, overrides) {
       preModalFocus = document.activeElement;
-      choosePlaybackVersion(movie);
+      choosePlaybackVersion(movie, overrides);
     }
 
     function formatBytes(bytes) {
@@ -2139,7 +2427,7 @@
         .join("");
     }
 
-    async function choosePlaybackVersion(movie) {
+    async function choosePlaybackVersion(movie, overrides) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
 
@@ -2158,11 +2446,12 @@
       }
 
       if (versions.length <= 1) {
-        startPlayer(movie, versions[0]?.token, 0);
+        startPlayer(movie, versions[0]?.token, overrides);
         return;
       }
 
       versionModalMovie = movie;
+      versionModalOverrides = overrides;
       versionModalContent.innerHTML = renderVersionOptions(versions);
       versionModal.hidden = false;
       window.TVFocusManager?.focusFirst();
@@ -2171,6 +2460,7 @@
     function closeVersionModal() {
       versionModal.hidden = true;
       versionModalMovie = null;
+      versionModalOverrides = null;
       restoreFocusAfterModalClose();
     }
 
@@ -2178,10 +2468,12 @@
       const btn = e.target.closest("[data-token]");
       if (!btn || !versionModalMovie) return;
       const movie = versionModalMovie;
+      const overrides = versionModalOverrides;
       const token = btn.dataset.token || null;
       versionModal.hidden = true;
       versionModalMovie = null;
-      startPlayer(movie, token, 0);
+      versionModalOverrides = null;
+      startPlayer(movie, token, overrides);
     });
 
     document.getElementById("version-modal-close").addEventListener("click", closeVersionModal);
@@ -2428,17 +2720,19 @@
       closeTracksPanel,
     };
 
-    async function startPlayer(movie, fileToken, audioTrack) {
+    async function startPlayer(movie, fileToken, overrides) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
+      const audioOverride = overrides?.audioTrack;
+      const subtitleOverride = overrides?.subtitleTrack;
 
       playbackContext = { tmdbId: t?.tmdbId || null, title: displayTitle, fileToken: fileToken || null };
       pendingResumeSeconds = null;
       lastProgressSaveAt = 0;
       currentAudioTracks = [];
       currentSubtitleTracks = [];
-      selectedAudioTrack = audioTrack || 0;
-      selectedSubtitleTrack = null;
+      selectedAudioTrack = Number.isInteger(audioOverride) ? audioOverride : 0;
+      selectedSubtitleTrack = subtitleOverride !== undefined ? subtitleOverride : null;
       if (activeSubtitleTrackEl) {
         activeSubtitleTrackEl.remove();
         activeSubtitleTrackEl = null;
@@ -2455,22 +2749,30 @@
       playerOverlay.hidden = false;
       playerSpinner.classList.add("show");
 
-      // Look up the last position/audio-track/subtitle-track remembered for
-      // this title *before* starting playback. Audio track selection needs
-      // a server-side remux (see streamAudioTrackRemux), so which track to
-      // request has to be known up front — it can't be switched after the
-      // fact the way a manual mid-playback change can (switchAudioTrack),
-      // without racing the video's own metadata-load event. This puts one
-      // request in the critical path before the video starts loading, but
-      // it's a local server call, so the added delay is negligible.
+      // Look up the last position remembered for this title *before*
+      // starting playback (audio/subtitle track too, but only as a
+      // fallback — see below). Audio track selection needs a server-side
+      // remux (see streamAudioTrackRemux), so which track to request has
+      // to be known up front — it can't be switched after the fact the way
+      // a manual mid-playback change can (switchAudioTrack), without
+      // racing the video's own metadata-load event. This puts one request
+      // in the critical path before the video starts loading, but it's a
+      // local server call, so the added delay is negligible.
       let resumeSeconds = null;
       try {
         const res = await fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`));
         const data = await res.json();
         const progress = data?.progress;
         if (progress?.positionSeconds >= RESUME_MIN_SECONDS) resumeSeconds = progress.positionSeconds;
-        if (Number.isInteger(progress?.audioTrack)) selectedAudioTrack = progress.audioTrack;
-        if (progress?.subtitleTrack != null) selectedSubtitleTrack = progress.subtitleTrack;
+        // The caller (e.g. the detail page's own track cycle buttons)
+        // already resolved which track to use — don't let the remembered
+        // one override an explicit choice made just now.
+        if (audioOverride === undefined && Number.isInteger(progress?.audioTrack)) {
+          selectedAudioTrack = progress.audioTrack;
+        }
+        if (subtitleOverride === undefined && progress?.subtitleTrack != null) {
+          selectedSubtitleTrack = progress.subtitleTrack;
+        }
       } catch {
         // No saved progress/preferences available — play from the start
         // with this file's default track.
@@ -2558,7 +2860,7 @@
       // not another overlay blocking restoration — closing that nested
       // modal should restore focus to preModalFocus (e.g. the Play button)
       // inside the still-open detail page, not wait for it to close too.
-      if (!downloadModal.hidden || !versionModal.hidden || !deleteConfirmModal.hidden) return; // another modal still open
+      if (!downloadModal.hidden || !versionModal.hidden || !deleteConfirmModal.hidden || !trailerOverlay.hidden) return; // another modal still open
       if (preModalFocus && document.contains(preModalFocus) && preModalFocus.offsetParent !== null) {
         preModalFocus.classList.add("tv-focused");
         preModalFocus.focus({ preventScroll: true });

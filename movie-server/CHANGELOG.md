@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.36
+
+- Redesigned the movie detail page in a Plex/Jellyfin style: rating, year, runtime, content certification (e.g. PG-13), and an "Ends at HH:MM" estimate now sit in the meta row; tagline and director are shown below the overview when TMDB has them. For already-downloaded titles, a new info row shows the file's video quality (e.g. "4K HEVC") plus Audio/Subtitle cycle buttons — pressing one before Play now sends that exact choice straight into playback instead of only being changeable from the in-player panel after the fact. Delete is now a small icon-only circle button instead of a labeled pill, and a new Trailer button (YouTube embed, when TMDB has one) sits alongside Play and Download.
+- Backend: TMDB enrichment now fetches runtime, tagline, director, US content certification, and a trailer key alongside the existing title/genre/rating lookup (one extra request per title, via `append_to_response`). The downloads/versions endpoint also now reports each file's video codec.
+
 ## 1.4.35
 
 - Fixed Enter never actually doing anything on the exit-confirmation dialog's Cancel/Exit App buttons. Root cause: `remote-control.js` loads via `<script src>` as the very first thing in `<body>`, before the dialog's own HTML further down the page has been parsed — so its `document.getElementById("exit-confirm-yes")`/`"-cancel"` calls at script load time found nothing and silently attached no listener at all. Pressing Back to open the dialog worked (that's a direct function call), but Enter's synthetic click landed on buttons nobody was listening to. Switched to event delegation on `document`, which works regardless of when the buttons are added to the DOM.

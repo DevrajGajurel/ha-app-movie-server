@@ -308,8 +308,57 @@ function mapGenres(match, genres) {
     .filter(Boolean);
 }
 
-function mapResult(match, genres) {
-  if (match.media_type === "tv") {
+// Search results (used for matching) don't carry runtime, tagline, director,
+// content certification, or a trailer — those need a separate per-title
+// detail fetch. append_to_response bundles credits/videos/(release_dates or
+// content_ratings, movie vs tv use different endpoints for the same idea)
+// into that one request rather than three.
+async function fetchTmdbDetails(apiKey, id, mediaType) {
+  const append = mediaType === "tv" ? "videos,credits,content_ratings" : "videos,credits,release_dates";
+  const url = new URL(`${TMDB_BASE}/${mediaType}/${id}`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("append_to_response", append);
+
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function extractDirector(details) {
+  return details?.credits?.crew?.find((c) => c.job === "Director")?.name || null;
+}
+
+function extractCertification(details, isTv) {
+  if (isTv) {
+    return details?.content_ratings?.results?.find((r) => r.iso_3166_1 === "US")?.rating || null;
+  }
+  const usEntry = details?.release_dates?.results?.find((r) => r.iso_3166_1 === "US");
+  return usEntry?.release_dates?.find((rd) => rd.certification)?.certification || null;
+}
+
+function extractTrailerKey(details) {
+  const videos = details?.videos?.results || [];
+  const trailer =
+    videos.find((v) => v.site === "YouTube" && v.type === "Trailer" && v.official) ||
+    videos.find((v) => v.site === "YouTube" && v.type === "Trailer") ||
+    videos.find((v) => v.site === "YouTube");
+  return trailer?.key || null;
+}
+
+async function mapResult(apiKey, match, genres) {
+  const isTv = match.media_type === "tv";
+  const mediaType = isTv ? "tv" : "movie";
+  const details = await fetchTmdbDetails(apiKey, match.id, mediaType).catch(() => null);
+
+  const extras = {
+    runtimeMinutes: (isTv ? details?.episode_run_time?.[0] : details?.runtime) || null,
+    tagline: details?.tagline || null,
+    director: extractDirector(details),
+    certification: extractCertification(details, isTv),
+    trailerKey: extractTrailerKey(details),
+  };
+
+  if (isTv) {
     return {
       type: "tv",
       tmdbId: match.id,
@@ -322,6 +371,7 @@ function mapResult(match, genres) {
       poster: match.poster_path ? `${POSTER_BASE}${match.poster_path}` : null,
       backdrop: match.backdrop_path ? `${BACKDROP_BASE}${match.backdrop_path}` : null,
       tmdbUrl: `https://www.themoviedb.org/tv/${match.id}`,
+      ...extras,
     };
   }
 
@@ -337,6 +387,7 @@ function mapResult(match, genres) {
     poster: match.poster_path ? `${POSTER_BASE}${match.poster_path}` : null,
     backdrop: match.backdrop_path ? `${BACKDROP_BASE}${match.backdrop_path}` : null,
     tmdbUrl: `https://www.themoviedb.org/movie/${match.id}`,
+    ...extras,
   };
 }
 
@@ -420,7 +471,7 @@ async function searchMedia(apiKey, title, genres) {
     match = pickBestMatch(candidates, parsed, { searchRanks });
   }
 
-  const meta = match ? mapResult(match, genres) : null;
+  const meta = match ? await mapResult(apiKey, match, genres) : null;
   cache.set(cacheKey, meta);
   return meta;
 }

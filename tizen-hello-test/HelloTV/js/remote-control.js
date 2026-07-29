@@ -66,6 +66,8 @@
     if (version && !version.hidden) return version;
     const download = document.getElementById("download-modal");
     if (download && !download.hidden) return download;
+    const trailer = document.getElementById("trailer-overlay");
+    if (trailer && !trailer.hidden) return trailer;
     const detail = document.getElementById("detail-page");
     if (detail && !detail.hidden) return detail;
     const search = document.getElementById("search-overlay");
@@ -100,7 +102,7 @@
       document.getElementById("player-close-btn")?.click();
       return;
     }
-    const closeBtn = modal.querySelector("#download-modal-close, #detail-page-close, #version-modal-close");
+    const closeBtn = modal.querySelector("#download-modal-close, #detail-page-close, #version-modal-close, #trailer-close-btn");
     if (closeBtn) closeBtn.click();
   }
 
