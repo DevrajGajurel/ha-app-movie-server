@@ -681,7 +681,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url === "/api/trailer" && req.method === "GET") {
     const searchParams = new URL(req.url, "http://localhost").searchParams;
-    streamYoutubeTrailer(req, res, searchParams.get("key") || "");
+    await streamYoutubeTrailer(req, res, searchParams.get("key") || "");
     return;
   }
 

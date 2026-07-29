@@ -174,7 +174,23 @@
     console.info("[remote-control] exit requested (no-op outside Tizen)");
   }
 
-  // Left/Right while the player is open seeks instead of moving focus.
+  // Whichever of the two <video>s (main player or trailer) is actually
+  // open right now — used by both the D-pad seek handling below and the
+  // hardware remote's dedicated transport keys, neither of which can just
+  // grab "the first <video> in the document" (that used to be a real bug
+  // here: with the trailer added, document.querySelector("video") always
+  // matched player-video regardless of which overlay was actually open,
+  // so the physical Play/Pause and fast-forward/rewind buttons silently
+  // controlled the wrong, hidden player whenever a trailer was showing).
+  function activeVideoElement() {
+    const trailer = document.getElementById("trailer-overlay");
+    if (trailer && !trailer.hidden) return document.getElementById("trailer-video");
+    const player = document.getElementById("player-overlay");
+    if (player && !player.hidden) return document.getElementById("player-video");
+    return null;
+  }
+
+  // Left/Right while a video is open seeks instead of moving focus.
   // Holding the key repeats (browser key-repeat fires keydown with
   // e.repeat=true) and each repeat jumps a bit further, so a long press
   // feels like it's fast-forwarding/rewinding quicker rather than just
@@ -184,13 +200,17 @@
   let seekRepeatDirection = null;
   let seekRepeatCount = 0;
 
-  function seekPlayer(deltaSeconds) {
-    const video = document.getElementById("player-video");
-    if (!video || !Number.isFinite(video.duration)) return;
-    video.currentTime = Math.min(Math.max(0, video.currentTime + deltaSeconds), video.duration);
+  function seekActiveVideo(deltaSeconds) {
+    const video = activeVideoElement();
+    if (!video) return;
+    // The trailer stream is a live server-side mux with no known total
+    // length up front, so video.duration is often not a finite number yet
+    // — don't require one just to clamp the lower bound.
+    const maxTime = Number.isFinite(video.duration) ? video.duration : Infinity;
+    video.currentTime = Math.min(Math.max(0, video.currentTime + deltaSeconds), maxTime);
   }
 
-  function handlePlayerSeek(direction, isRepeat) {
+  function handleSeekKey(direction, isRepeat) {
     if (!isRepeat || seekRepeatDirection !== direction) {
       seekRepeatDirection = direction;
       seekRepeatCount = 0;
@@ -198,7 +218,7 @@
       seekRepeatCount += 1;
     }
     const step = Math.min(SEEK_STEP_SECONDS * (1 + seekRepeatCount), SEEK_MAX_STEP_SECONDS);
-    seekPlayer(direction === "right" ? step : -step);
+    seekActiveVideo(direction === "right" ? step : -step);
     window.TVPlayer?.showControls();
   }
 
@@ -210,14 +230,16 @@
   function dispatchMediaEvent(action) {
     document.dispatchEvent(new CustomEvent("tv-media-command", { detail: { action } }));
 
-    // If the app ever adds a <video> element, wire the transport keys to it
-    // for free; harmless no-op otherwise.
-    const video = document.querySelector("video");
+    const video = activeVideoElement();
     if (!video) return;
     switch (action) {
       case "play":
       case "play-pause":
-        window.TVPlayer ? window.TVPlayer.togglePlayPause() : (video.paused ? video.play() : video.pause());
+        if (video.id === "trailer-video") {
+          window.TVTrailer ? window.TVTrailer.togglePlayPause() : (video.paused ? video.play() : video.pause());
+        } else {
+          window.TVPlayer ? window.TVPlayer.togglePlayPause() : (video.paused ? video.play() : video.pause());
+        }
         break;
       case "pause":
         video.pause();
@@ -247,12 +269,19 @@
       if (playerOpen && document.activeElement === document.getElementById("player-video")) {
         if (direction === "left" || direction === "right") {
           e.preventDefault();
-          handlePlayerSeek(direction, e.repeat);
+          handleSeekKey(direction, e.repeat);
         } else if (direction === "up") {
           e.preventDefault();
           window.TVPlayer?.openTracksPanel();
         }
         return; // down while the player is open: no-op for now
+      }
+      if (document.activeElement === document.getElementById("trailer-video")) {
+        if (direction === "left" || direction === "right") {
+          e.preventDefault();
+          handleSeekKey(direction, e.repeat);
+        }
+        return;
       }
       e.preventDefault();
       window.TVFocusManager?.moveFocus(direction);
