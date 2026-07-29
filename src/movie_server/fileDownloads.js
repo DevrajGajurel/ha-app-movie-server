@@ -125,6 +125,12 @@ async function runDownload(job) {
     } catch (err) {
       console.warn(`[download] Emby refresh failed: ${err.message}`);
     }
+
+    // Convert this file's subtitle tracks now, not on first play — see
+    // prefetchAllSubtitles' comment for why.
+    prefetchSubtitlesForFile(filePath).catch((err) => {
+      console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
+    });
   } catch (err) {
     job.status = "failed";
     job.error = err.message;
@@ -443,6 +449,82 @@ function extractSubtitleTrack(filePath, subtitleTrackIndex) {
   });
 }
 
+// Converting a subtitle track to WebVTT still has to demux the whole file
+// (ffmpeg has no "just the subtitles, instantly" shortcut), which on a
+// large downloaded movie was visible as a spinner right at the start of
+// playback. Caching the converted result as a sibling file means that cost
+// is paid once — by a background prefetch — instead of on every play.
+function subtitleCachePath(filePath, subtitleTrackIndex) {
+  return `${filePath}.track${subtitleTrackIndex}.vtt`;
+}
+
+async function ensureSubtitleCache(filePath, subtitleTrackIndex) {
+  const cachePath = subtitleCachePath(filePath, subtitleTrackIndex);
+  if (fs.existsSync(cachePath)) return cachePath;
+  const vtt = await extractSubtitleTrack(filePath, subtitleTrackIndex);
+  fs.writeFileSync(cachePath, vtt);
+  return cachePath;
+}
+
+// Used by the on-demand /api/downloads/subtitle route: serves the cached
+// conversion when the background prefetch has already run, and only falls
+// back to a live (slower) conversion for a file that hasn't been prefetched
+// yet — e.g. a movie downloaded in the last few minutes, or one whose
+// prefetch attempt previously failed.
+async function getSubtitleVtt(filePath, subtitleTrackIndex) {
+  const cachePath = subtitleCachePath(filePath, subtitleTrackIndex);
+  try {
+    return await fs.promises.readFile(cachePath, "utf8");
+  } catch {
+    return extractSubtitleTrack(filePath, subtitleTrackIndex);
+  }
+}
+
+// Walks every downloaded movie's folder and makes sure each of its text
+// subtitle tracks has a cached WebVTT conversion, so playback never has to
+// wait on ffmpeg for a title that's already been through this once. Run
+// once at server startup and again on a slow interval (see main.js) to
+// pick up movies added since the last sweep or where a prior attempt
+// failed; also triggered immediately after each download completes so a
+// freshly downloaded movie doesn't have to wait for the next sweep either.
+async function prefetchAllSubtitles() {
+  const base = path.resolve(getDownloadDir());
+  let entries;
+  try {
+    entries = await fs.promises.readdir(base, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(base, entry.name);
+
+    let files;
+    try {
+      files = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      if (!file.isFile() || !VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
+      await prefetchSubtitlesForFile(path.join(dir, file.name));
+    }
+  }
+}
+
+async function prefetchSubtitlesForFile(filePath) {
+  const probe = await probeMediaFile(filePath);
+  for (const track of probe?.subtitleTracks || []) {
+    try {
+      await ensureSubtitleCache(filePath, track.index);
+    } catch (err) {
+      console.warn(`[subtitles] prefetch failed for ${filePath} track ${track.index}: ${err.message}`);
+    }
+  }
+}
+
 // Streams a specific (non-default) embedded audio track by remuxing on the
 // fly: video is stream-copied (no re-encode) and only the chosen audio
 // track is included, muxed as fragmented MP4 so it can be piped without
@@ -668,6 +750,8 @@ module.exports = {
   streamFile,
   streamAudioTrackRemux,
   extractSubtitleTrack,
+  getSubtitleVtt,
+  prefetchAllSubtitles,
   saveProgress,
   getProgress,
 };

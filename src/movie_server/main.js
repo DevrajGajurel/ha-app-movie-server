@@ -27,7 +27,8 @@ const {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
-  extractSubtitleTrack,
+  getSubtitleVtt,
+  prefetchAllSubtitles,
   saveProgress,
   getProgress,
   listProgress,
@@ -668,7 +669,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const vtt = await extractSubtitleTrack(filePath, track);
+      const vtt = await getSubtitleVtt(filePath, track);
       res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8" });
       res.end(vtt);
     } catch (err) {
@@ -834,6 +835,18 @@ const server = http.createServer(async (req, res) => {
 const CACHE_REFRESH_MS =
   (Number.parseFloat(process.env.CACHE_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
 
+// Background subtitle prefetch (see fileDownloads.js's prefetchAllSubtitles
+// for why): each new download already triggers this for just its own file,
+// but a startup + periodic sweep also catches movies downloaded before this
+// feature existed, or where a prior conversion attempt failed.
+const SUBTITLE_PREFETCH_MS = 6 * 60 * 60 * 1000;
+
+function runSubtitlePrefetchSweep() {
+  prefetchAllSubtitles().catch((err) => {
+    console.warn("[subtitles] prefetch sweep failed:", err.message);
+  });
+}
+
 async function startServer() {
   try {
     await initMovieCache({
@@ -863,6 +876,9 @@ async function startServer() {
     console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
     console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
   });
+
+  runSubtitlePrefetchSweep();
+  setInterval(runSubtitlePrefetchSweep, SUBTITLE_PREFETCH_MS);
 }
 
 startServer();

@@ -1450,7 +1450,14 @@
 
   <div class="tv-trailer-overlay" id="trailer-overlay" hidden>
     <button class="tv-icon-btn tv-trailer-close" id="trailer-close-btn" type="button" aria-label="Close trailer">←</button>
-    <iframe id="trailer-iframe" title="Trailer" allow="autoplay; encrypted-media" allowfullscreen frameborder="0"></iframe>
+    <iframe
+      id="trailer-iframe"
+      title="Trailer"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allowfullscreen
+      frameborder="0"
+    ></iframe>
   </div>
 
   <div class="tv-search-overlay" id="search-overlay" hidden>

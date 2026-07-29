@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.37
+
+- Subtitles are now converted to WebVTT by a background prefetch instead of on first play: each new download triggers it immediately after saving, and a startup + every-6-hours sweep catches any movie downloaded before this feature existed. Playback now serves the cached conversion directly, removing the spinner that used to show while ffmpeg demuxed the whole file on the fly; a title that hasn't been prefetched yet (just downloaded, or a failed attempt) still falls back to converting live so playback is never blocked on it.
+- Attempted fix for the Trailer button's "video player configuration issue" error: this is a documented Tizen/YouTube-embed problem (YouTube's referrer-policy checks against Tizen's WebKit + `<access>` origin whitelist). Added explicit `youtube.com`/`www.youtube.com` access entries to config.xml and set the trailer iframe's `referrerpolicy`/`allow` attributes to match YouTube's own embed snippet. This is a best-effort fix based on community reports for a known-fragile area — needs testing on the real TV, and if it's still broken the realistic fallback is dropping the embed for a server-side extracted direct video stream instead.
+
 ## 1.4.36
 
 - Redesigned the movie detail page in a Plex/Jellyfin style: rating, year, runtime, content certification (e.g. PG-13), and an "Ends at HH:MM" estimate now sit in the meta row; tagline and director are shown below the overview when TMDB has them. For already-downloaded titles, a new info row shows the file's video quality (e.g. "4K HEVC") plus Audio/Subtitle cycle buttons — pressing one before Play now sends that exact choice straight into playback instead of only being changeable from the in-player panel after the fact. Delete is now a small icon-only circle button instead of a labeled pill, and a new Trailer button (YouTube embed, when TMDB has one) sits alongside Play and Download.
