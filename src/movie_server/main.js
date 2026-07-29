@@ -13,6 +13,7 @@ const http = require("http");
 const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
 const { parseKeywordList, tagQuality } = require("./quality");
+const { streamYoutubeTrailer } = require("./trailer");
 const {
   startDownload,
   getJob,
@@ -675,6 +676,12 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
+    return;
+  }
+
+  if (url === "/api/trailer" && req.method === "GET") {
+    const searchParams = new URL(req.url, "http://localhost").searchParams;
+    streamYoutubeTrailer(req, res, searchParams.get("key") || "");
     return;
   }
 

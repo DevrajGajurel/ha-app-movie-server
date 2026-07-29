@@ -267,6 +267,11 @@
         window.TVPlayer?.togglePlayPause();
         return;
       }
+      if (document.activeElement === document.getElementById("trailer-video")) {
+        e.preventDefault();
+        window.TVTrailer?.togglePlayPause();
+        return;
+      }
       // Enter: don't rely on the platform auto-activating a focused
       // <button>/<a> on Enter — confirmed unreliable on Tizen's WebKit
       // (this is the same category of issue as the native video controls:

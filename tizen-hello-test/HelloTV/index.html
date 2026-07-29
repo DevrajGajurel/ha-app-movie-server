@@ -1186,15 +1186,19 @@
       box-shadow: 0 0 0 3px rgba(0, 168, 225, 0.7), 0 10px 28px rgba(0, 0, 0, 0.45);
     }
 
-    /* ---- Trailer overlay: a YouTube embed, kept deliberately separate
-       from the main <video> player overlay rather than shoehorned into it
-       — that overlay's controls/progress/track-panel logic is all wired
-       specifically to a <video> element and reusing it for an iframe would
-       mean fighting that coupling instead of a small, self-contained
-       overlay. The iframe itself is never given D-pad focus (it isn't in
-       FOCUSABLE_SELECTOR), since key events inside an iframe's own
-       document don't bubble to ours — only the close button is reachable,
-       so Back/Enter to exit always works regardless. */
+    /* ---- Trailer overlay ----
+       A YouTube iframe embed doesn't work here: Samsung's own Tizen TV
+       guidance only documents the native <video> element or their AVPlay
+       API for video, and in practice an iframe hits a "video player
+       configuration error" that other Tizen developers have hit too, with
+       no reliable fix (YouTube's referrer-policy checks don't play well
+       with Tizen's WebKit). The server resolves the trailer to a direct
+       stream instead (see trailer.js) and this plays it through a plain
+       <video>, same as a downloaded movie — kept as its own small overlay
+       rather than reusing the main player overlay, since that one's
+       controls/progress/track-panel logic is all wired for a full movie
+       (resume position, audio/subtitle switching) that a trailer has no
+       use for. */
     .tv-trailer-overlay {
       position: fixed;
       inset: 0;
@@ -1204,10 +1208,11 @@
 
     .tv-trailer-overlay[hidden] { display: none; }
 
-    .tv-trailer-overlay iframe {
+    .tv-trailer-overlay video {
       width: 100%;
       height: 100%;
-      border: 0;
+      object-fit: contain;
+      background: #000;
     }
 
     .tv-trailer-close {
@@ -1449,15 +1454,9 @@
   </div>
 
   <div class="tv-trailer-overlay" id="trailer-overlay" hidden>
+    <video id="trailer-video" tabindex="-1"></video>
+    <div class="tv-player-spinner" id="trailer-spinner"></div>
     <button class="tv-icon-btn tv-trailer-close" id="trailer-close-btn" type="button" aria-label="Close trailer">←</button>
-    <iframe
-      id="trailer-iframe"
-      title="Trailer"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-      referrerpolicy="strict-origin-when-cross-origin"
-      allowfullscreen
-      frameborder="0"
-    ></iframe>
   </div>
 
   <div class="tv-search-overlay" id="search-overlay" hidden>
@@ -1567,7 +1566,8 @@
     let detailSubtitleTrackIndex = null;
 
     const trailerOverlay = document.getElementById("trailer-overlay");
-    const trailerIframe = document.getElementById("trailer-iframe");
+    const trailerVideo = document.getElementById("trailer-video");
+    const trailerSpinner = document.getElementById("trailer-spinner");
 
     const downloadModal = document.getElementById("download-modal");
     const downloadModalTitle = document.getElementById("download-modal-title");
@@ -2351,21 +2351,43 @@
       restoreFocusAfterModalClose();
     }
 
-    // ---- Trailer (YouTube embed) ----
+    // ---- Trailer ----
+    // Plays a server-resolved direct stream through a plain <video>, same
+    // as a downloaded movie — see trailer.js and the .tv-trailer-overlay
+    // CSS comment for why this isn't a YouTube iframe embed.
+    function toggleTrailerPlayPause() {
+      if (trailerVideo.paused) {
+        trailerVideo.play().catch(() => {});
+      } else {
+        trailerVideo.pause();
+      }
+    }
+
+    window.TVTrailer = { togglePlayPause: toggleTrailerPlayPause };
+
+    trailerVideo.addEventListener("waiting", () => trailerSpinner.classList.add("show"));
+    trailerVideo.addEventListener("playing", () => trailerSpinner.classList.remove("show"));
+
     function openTrailer(youtubeKey) {
       if (!youtubeKey) return;
       preModalFocus = document.activeElement;
-      trailerIframe.src = `https://www.youtube.com/embed/${encodeURIComponent(youtubeKey)}?autoplay=1&rel=0`;
+      trailerSpinner.classList.add("show");
+      trailerVideo.src = apiUrl(`trailer?key=${encodeURIComponent(youtubeKey)}`);
       trailerOverlay.hidden = false;
       document.querySelectorAll(".tv-focused").forEach((n) => n.classList.remove("tv-focused"));
-      const closeBtn = document.getElementById("trailer-close-btn");
-      closeBtn.classList.add("tv-focused");
-      closeBtn.focus();
+      trailerVideo.focus();
+      trailerVideo.play().catch(() => {
+        // Autoplay may be blocked; nothing more to do — the user can press
+        // Enter (wired to toggleTrailerPlayPause below) to start it.
+      });
     }
 
     function closeTrailer() {
       trailerOverlay.hidden = true;
-      trailerIframe.src = ""; // stop playback
+      trailerVideo.pause();
+      trailerVideo.removeAttribute("src");
+      trailerVideo.load(); // stop the in-flight stream/request
+      trailerSpinner.classList.remove("show");
       restoreFocusAfterModalClose();
     }
 

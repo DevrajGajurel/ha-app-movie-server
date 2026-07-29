@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.38
+
+- Replaced the Trailer feature's YouTube iframe embed with a server-resolved direct video stream, played through a plain `<video>` element (same as a downloaded movie). The iframe approach's "video player configuration issue" turned out to be more than a fixable attribute: Samsung's own Tizen TV guidance only documents the native `<video>` element or their AVPlay API for video, and a Tizen developer trying the same referrer-policy fix on a Xibo signage player confirmed it doesn't reliably work there either. New `/api/trailer?key=<youtubeId>` endpoint spawns `yt-dlp` (added to the Docker image) to resolve the trailer to a format that already combines audio+video, then pipes it straight through. Verified end-to-end: real trailer video plays, Enter toggles play/pause, Back closes and stops the stream.
+
 ## 1.4.37
 
 - Subtitles are now converted to WebVTT by a background prefetch instead of on first play: each new download triggers it immediately after saving, and a startup + every-6-hours sweep catches any movie downloaded before this feature existed. Playback now serves the cached conversion directly, removing the spinner that used to show while ffmpeg demuxed the whole file on the fly; a title that hasn't been prefetched yet (just downloaded, or a failed attempt) still falls back to converting live so playback is never blocked on it.
