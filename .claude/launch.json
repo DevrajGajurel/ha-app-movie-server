@@ -9,13 +9,6 @@
       "autoPort": false
     },
     {
-      "name": "tizen-preview",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["tizen/preview-dist.js"],
-      "port": 4600,
-      "autoPort": true
-    },
-    {
       "name": "hellotv-preview",
       "runtimeExecutable": "node",
       "runtimeArgs": ["tizen-hello-test/preview-hellotv.js"],

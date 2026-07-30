@@ -2749,7 +2749,7 @@
       closeTracksPanel,
     };
 
-    async function startPlayer(movie, fileToken, overrides) {
+    function startPlayer(movie, fileToken, overrides) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
       const audioOverride = overrides?.audioTrack;
@@ -2778,36 +2778,15 @@
       playerOverlay.hidden = false;
       playerSpinner.classList.add("show");
 
-      // Look up the last position remembered for this title *before*
-      // starting playback (audio/subtitle track too, but only as a
-      // fallback — see below). Audio track selection needs a server-side
-      // remux (see streamAudioTrackRemux), so which track to request has
-      // to be known up front — it can't be switched after the fact the way
-      // a manual mid-playback change can (switchAudioTrack), without
-      // racing the video's own metadata-load event. This puts one request
-      // in the critical path before the video starts loading, but it's a
-      // local server call, so the added delay is negligible.
-      let resumeSeconds = null;
-      try {
-        const res = await fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`));
-        const data = await res.json();
-        const progress = data?.progress;
-        if (progress?.positionSeconds >= RESUME_MIN_SECONDS) resumeSeconds = progress.positionSeconds;
-        // The caller (e.g. the detail page's own track cycle buttons)
-        // already resolved which track to use — don't let the remembered
-        // one override an explicit choice made just now.
-        if (audioOverride === undefined && Number.isInteger(progress?.audioTrack)) {
-          selectedAudioTrack = progress.audioTrack;
-        }
-        if (subtitleOverride === undefined && progress?.subtitleTrack != null) {
-          selectedSubtitleTrack = progress.subtitleTrack;
-        }
-      } catch {
-        // No saved progress/preferences available — play from the start
-        // with this file's default track.
-      }
-      pendingResumeSeconds = resumeSeconds;
-
+      // Start playback right away with whatever's already known (an
+      // explicit override from the detail page's track cycle buttons, or
+      // this file's default track) rather than waiting on a progress
+      // lookup first — that used to block every single play behind a
+      // network round trip, even for the vast majority of movies that
+      // have never had a non-default track remembered. The lookup still
+      // happens, just in parallel below; it only causes a visible reload
+      // in the (uncommon) case where it reveals a different audio track
+      // was remembered for this movie.
       const params = new URLSearchParams();
       if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
       params.set("title", displayTitle);
@@ -2822,6 +2801,52 @@
       showPlayerControls();
 
       if (selectedSubtitleTrack != null) selectSubtitleTrack(selectedSubtitleTrack);
+
+      fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`))
+        .then((res) => res.json())
+        .then((data) => {
+          const progress = data?.progress;
+          const resumeSeconds = progress?.positionSeconds >= RESUME_MIN_SECONDS ? progress.positionSeconds : null;
+
+          // The caller (e.g. the detail page's own track cycle buttons)
+          // already resolved which track to use — don't let a remembered
+          // one override an explicit choice just made. Audio track
+          // selection needs a server-side remux (see
+          // streamAudioTrackRemux), so switching to the remembered one
+          // means reloading the stream — handle that resume position
+          // through the reload's own fresh loadedmetadata event rather
+          // than the immediate-readyState branch below, which would race
+          // against a source we're about to discard anyway.
+          const needsAudioSwitch =
+            audioOverride === undefined &&
+            Number.isInteger(progress?.audioTrack) &&
+            progress.audioTrack !== selectedAudioTrack;
+
+          if (needsAudioSwitch) {
+            selectedAudioTrack = progress.audioTrack;
+            pendingResumeSeconds = resumeSeconds;
+            const reloadParams = new URLSearchParams(params);
+            if (selectedAudioTrack) reloadParams.set("audioTrack", String(selectedAudioTrack));
+            else reloadParams.delete("audioTrack");
+            playerVideo.src = apiUrl(`downloads/play?${reloadParams.toString()}`);
+            playerVideo.play().catch(() => {});
+          } else if (resumeSeconds != null) {
+            pendingResumeSeconds = resumeSeconds;
+            if (playerVideo.readyState >= 1) {
+              playerVideo.currentTime = pendingResumeSeconds;
+              pendingResumeSeconds = null;
+            }
+          }
+
+          if (subtitleOverride === undefined && selectedSubtitleTrack == null && progress?.subtitleTrack != null) {
+            selectedSubtitleTrack = progress.subtitleTrack;
+            selectSubtitleTrack(selectedSubtitleTrack);
+          }
+        })
+        .catch(() => {
+          // No saved progress/preferences available — play from the start
+          // with this file's default track.
+        });
 
       // Find this exact file's track list (for the in-player Audio &
       // Subtitles panel) from the same versions info the picker uses.
