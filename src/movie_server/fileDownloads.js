@@ -3,6 +3,7 @@ const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 const { execFile, spawn } = require("child_process");
+const { getCachedProbe, setCachedProbe } = require("./mediaProbeCache");
 
 const MARKER_FILE = ".movieserver.json";
 const PROGRESS_FILE = ".movieserver-progress.json";
@@ -384,7 +385,7 @@ function getProgress({ tmdbId, title, fileToken }) {
 // fail when selected.
 const TEXT_SUBTITLE_CODECS = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt"]);
 
-function probeMediaFile(filePath) {
+function runFfprobe(filePath) {
   return new Promise((resolve) => {
     execFile(
       "ffprobe",
@@ -426,6 +427,26 @@ function probeMediaFile(filePath) {
       }
     );
   });
+}
+
+// The same file gets probed repeatedly in one normal session (detail page,
+// version picker, then the player itself), and the answer never changes
+// for a given file — see mediaProbeCache.js for why this is cached there
+// rather than re-run every time.
+async function probeMediaFile(filePath) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+
+  const cached = await getCachedProbe(filePath, stat);
+  if (cached) return cached;
+
+  const result = await runFfprobe(filePath);
+  if (result) await setCachedProbe(filePath, stat, result);
+  return result;
 }
 
 // Extracts one text-based subtitle stream, converted to WebVTT, as a plain

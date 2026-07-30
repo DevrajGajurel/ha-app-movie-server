@@ -12,6 +12,7 @@ require("dotenv").config({ path: ENV_PATH, override: true });
 const http = require("http");
 const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
+const { initTmdbCache } = require("./tmdbCache");
 const { parseKeywordList, tagQuality } = require("./quality");
 const { streamYoutubeTrailer } = require("./trailer");
 const {
@@ -37,6 +38,7 @@ const {
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
+const { initProbeCache } = require("./mediaProbeCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -871,6 +873,20 @@ async function startServer() {
     console.warn("Redis init failed, continuing without cache:", err.message);
   }
 
+  let probeCacheEnabled = false;
+  try {
+    probeCacheEnabled = await initProbeCache(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("Probe cache Redis init failed, continuing without it:", err.message);
+  }
+
+  let tmdbCacheEnabled = false;
+  try {
+    tmdbCacheEnabled = await initTmdbCache(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("TMDB cache Redis init failed, continuing without it:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
@@ -882,6 +898,8 @@ async function startServer() {
     console.log(`HD tags:   ${HD_KEYWORDS.join(", ")}`);
     console.log(`4K tags:   ${K4_KEYWORDS.join(", ")}`);
     console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
+    console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
   });
 
   runSubtitlePrefetchSweep();

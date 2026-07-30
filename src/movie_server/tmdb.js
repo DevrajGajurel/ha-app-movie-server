@@ -1,3 +1,5 @@
+const { getCachedTmdb, setCachedTmdb } = require("./tmdbCache");
+
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const POSTER_BASE = "https://image.tmdb.org/t/p/w342";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
@@ -463,6 +465,17 @@ async function searchMedia(apiKey, title, genres) {
   const cacheKey = `${query}|${altQuery || ""}|${parsed.year || ""}|${looksLikeTv(parsed.raw) ? "tv" : "movie"}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
+  // Redis is a second tier behind the in-memory Map: same-process repeat
+  // lookups never leave memory, but a lookup that survives a restart (the
+  // Map starts empty every time) is served from here instead of re-hitting
+  // TMDB — see tmdbCache.js for why this expires instead of being kept
+  // forever like the ffprobe cache.
+  const cached = await getCachedTmdb(cacheKey);
+  if (cached !== undefined) {
+    cache.set(cacheKey, cached);
+    return cached;
+  }
+
   let { candidates, searchRanks } = await gatherCandidates(apiKey, parsed, { useYear: true });
   let match = pickBestMatch(candidates, parsed, { searchRanks });
 
@@ -473,6 +486,7 @@ async function searchMedia(apiKey, title, genres) {
 
   const meta = match ? await mapResult(apiKey, match, genres) : null;
   cache.set(cacheKey, meta);
+  await setCachedTmdb(cacheKey, meta);
   return meta;
 }
 
