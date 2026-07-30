@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.42
+
+- TV app now renders instantly on a cold launch from a `localStorage` snapshot of the last successfully-loaded catalog, instead of sitting on the splash screen for the full network + TMDB fetch every single time the app opens. The real fetch still runs in the background afterward and re-renders over it the moment it resolves — this only changes what's on screen while that's happening. Download/Continue-Watching status (not carried in the snapshot) corrects itself moments later via the existing fast local lookup, without waiting on the network catalog fetch. Verified: a cold reload went from a full network-bound wait to a fully rendered screen (471 movies) in 6ms.
+
 ## 1.4.41
 
 - Added two new Redis-backed caches to cut down on redundant work: (1) ffprobe results (video resolution/codec, audio and subtitle track lists — the "available languages" info) are now cached indefinitely, keyed by file path + size + mtime. The same file was being re-probed 2-3 times per session (opening the detail page, the version picker, then the player itself all independently called `/api/downloads/versions`), and a file's embedded tracks never change once downloaded — verified locally: ~130ms (spawns ffprobe) on first probe, ~40ms (cache hit, no subprocess) after. (2) TMDB enrichment (rating, genres, overview, runtime, tagline, director, certification, trailer key) now persists through Redis with a 7-day expiry, behind the existing in-memory cache — previously a full server restart wiped that cache entirely, forcing a re-fetch of the whole library's TMDB data (two requests per title) on the next scrape. Verified: a lookup in a fresh process (simulating a restart) came back in ~40ms with zero TMDB API calls, versus ~370ms for the original fetch. Both are additive — everything falls back to fetching fresh if Redis is unavailable, same as the existing listing cache.

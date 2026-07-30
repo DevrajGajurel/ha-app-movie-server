@@ -1603,6 +1603,31 @@
     let lastSearchQuery = "";
     let searchHistoryItems = loadSearchHistory();
 
+    // Client-side snapshot of the last successfully-loaded catalog, so a
+    // cold app launch can render instantly from it instead of sitting on
+    // the splash screen for the full network + TMDB fetch — see load()
+    // below. It's a convenience layer only: the real fetch always still
+    // runs and re-renders over whatever this shows.
+    const LIBRARY_CACHE_KEY = "movieServerTvLibraryCache";
+
+    function loadLibraryCacheSnapshot() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(LIBRARY_CACHE_KEY) || "null");
+        return parsed && Array.isArray(parsed.movies) && parsed.movies.length ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function saveLibraryCacheSnapshot() {
+      try {
+        localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify({ movies: allMovies, tmdbEnabledFlag }));
+      } catch {
+        // Best-effort (localStorage quota, private mode, etc.) — this is a
+        // startup-speed convenience, not a source of truth.
+      }
+    }
+
     function apiUrl(path) {
       const base = window.MOVIE_SERVER_API_BASE || "";
       return `${base}api/${path.replace(/^\//, "")}`;
@@ -1877,7 +1902,10 @@
         }
       }
 
-      if (mergedAny && gen === loadGeneration) renderCurrentView();
+      if (mergedAny && gen === loadGeneration) {
+        renderCurrentView();
+        saveLibraryCacheSnapshot();
+      }
     }
 
     function getDisplayTitle(movie) {
@@ -3316,11 +3344,38 @@
       const gen = ++loadGeneration;
       const isFirstLoad = !hasLoadedOnce;
       refreshBtn.disabled = true;
+
+      // On a cold launch, render instantly from whatever was cached at the
+      // end of the last session instead of sitting on the splash screen
+      // for the full network + TMDB fetch below — that fetch still runs
+      // exactly as before and re-renders over this the moment it resolves,
+      // so this only changes what's on screen in the meantime. The
+      // snapshot doesn't carry isAlreadyDownloaded/Continue-Watching state
+      // (that's a separate, local-only fetch), so those correct themselves
+      // moments later without waiting on the network catalog fetch.
+      let renderedFromCache = false;
+      if (isFirstLoad && !refresh) {
+        const cachedSnapshot = loadLibraryCacheSnapshot();
+        if (cachedSnapshot) {
+          allMovies = cachedSnapshot.movies;
+          nextSourceOrder = allMovies.length;
+          tmdbEnabledFlag = cachedSnapshot.tmdbEnabledFlag;
+          renderCurrentView();
+          splash.hidden = true;
+          renderedFromCache = true;
+          Promise.all([refreshDownloadLibrary(), refreshPlaybackProgress(), refreshDownloadJobs({ rerender: false })]).then(() => {
+            if (gen === loadGeneration) renderCurrentView();
+          });
+        }
+      }
+
       allMovies = [];
       nextSourceOrder = 0;
       loadedThroughPage = 0;
 
-      if (isFirstLoad) {
+      if (renderedFromCache) {
+        // Already rendered from the cached snapshot above — no splash needed.
+      } else if (isFirstLoad) {
         splashText.textContent = "Loading your library…";
         splash.hidden = false;
       } else {
@@ -3359,6 +3414,7 @@
         refreshBtn.disabled = false;
         hasLoadedOnce = true;
         splash.hidden = true;
+        saveLibraryCacheSnapshot();
 
         if (!loadAllFromCache && loadedThroughPage < totalMaxPages) {
           loadRemainingPages(gen, loadedThroughPage + 1, totalMaxPages, { refresh });
