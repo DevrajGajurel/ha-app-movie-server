@@ -647,7 +647,22 @@ async function prefetchSubtitlesForFile(filePath) {
 // track is included, muxed as fragmented MP4 so it can be piped without
 // seeking the output. This is a live process, so unlike streamFile() above
 // it can't honor Range requests / precise seeking.
-function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
+// Browsers (Tizen's WebKit-based <video> element included) essentially
+// never support Dolby Digital/Dolby Digital Plus/DTS/TrueHD audio in HTML5
+// video, even on hardware whose native decoder chip fully supports them
+// (which is exactly why Emby/Jellyfin's Tizen apps - built on the native
+// AVPlay API instead of a web <video> element - can play the same file
+// fine). Confirmed via ffprobe against a file that was crashing the TV:
+// its default audio track is "eac3". Rather than trying to detect and
+// recover from that failure after the fact, avoid ever handing the
+// browser a codec it can't decode in the first place.
+const BROWSER_INCOMPATIBLE_AUDIO_CODECS = new Set(["ac3", "eac3", "dts", "truehd", "mlp"]);
+
+function needsAudioTranscode(codec) {
+  return Boolean(codec) && BROWSER_INCOMPATIBLE_AUDIO_CODECS.has(String(codec).toLowerCase());
+}
+
+function streamAudioTrackRemux(req, res, filePath, audioTrackIndex, { transcodeAudio = false } = {}) {
   // Matroska, not fragmented MP4: MP4's moov atom normally has to be
   // written after all the media data, so streaming MP4 to a pipe requires
   // fragmentation flags (frag_keyframe+empty_moov) to work around that —
@@ -666,8 +681,11 @@ function streamAudioTrackRemux(req, res, filePath, audioTrackIndex) {
     "0:v:0",
     "-map",
     `0:a:${audioTrackIndex}`,
-    "-c",
+    "-c:v",
     "copy",
+    "-c:a",
+    transcodeAudio ? "aac" : "copy",
+    ...(transcodeAudio ? ["-b:a", "256k"] : []),
     "-f",
     "matroska",
     "pipe:1",
@@ -866,6 +884,7 @@ module.exports = {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  needsAudioTranscode,
   extractSubtitleTrack,
   getSubtitleVtt,
   prefetchAllSubtitles,

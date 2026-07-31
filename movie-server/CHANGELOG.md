@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.49
+
+- Found and fixed the actual cause of the TV reboot from a real crash log: the movie's default audio track was `eac3` (Dolby Digital Plus) - a codec browsers essentially never support in an HTML5 `<video>` element, even though the TV's own hardware decoder handles it fine natively (which is exactly why Emby/Jellyfin, built on Samsung's native AVPlay API, can play the same file without issue). `/api/downloads/play` now checks the selected track's codec via the existing cached ffprobe info and, when it's Dolby Digital/Plus/DTS/TrueHD, transparently remuxes just the audio to AAC (video stays untouched via `-c:v copy`, no quality loss or slow re-encode) instead of raw byte-streaming a codec the browser was always going to choke on. Verified directly against the real crashing file: 15s of both original and transcoded output ffprobed to confirm HEVC video unchanged, audio now AAC.
+
 ## 1.4.48
 
 - Added a `GET /api/client-log` read-side companion to the crash-log endpoint added in 1.4.47 - there was no way to pull `movieserver-client.log` back remotely (the existing download/media routes only serve recognized video extensions), which left it unreadable from outside the HA host during an active crash investigation.

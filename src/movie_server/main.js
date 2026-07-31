@@ -29,6 +29,7 @@ const {
   probeMediaFile,
   streamFile,
   streamAudioTrackRemux,
+  needsAudioTranscode,
   getSubtitleVtt,
   prefetchAllSubtitles,
   saveProgress,
@@ -686,12 +687,20 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Track 0 is always the file's own default audio — direct-play it so
+      // Track 0 is usually the file's own default audio, direct-played so
       // Range requests keep working for proper seeking. Any other track
       // requires remuxing since a raw byte stream can't switch which
-      // embedded audio track plays.
-      if (audioTrack > 0) {
-        streamAudioTrackRemux(req, res, filePath, audioTrack);
+      // embedded audio track plays - and so does track 0 itself when its
+      // codec (Dolby Digital/Plus, DTS, TrueHD, ...) isn't something a
+      // browser's <video> element can decode at all, regardless of the
+      // hardware's own native decoder capability (confirmed: this is what
+      // was crashing the TV on a file whose default track was eac3).
+      const info = await probeMediaFile(filePath);
+      const selectedTrack = info?.audioTracks?.[audioTrack];
+      const transcodeAudio = needsAudioTranscode(selectedTrack?.codec);
+
+      if (audioTrack > 0 || transcodeAudio) {
+        streamAudioTrackRemux(req, res, filePath, audioTrack, { transcodeAudio });
       } else {
         streamFile(req, res, filePath);
       }
