@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.45
+
+- Fixed "No download links found on this page" errors caused by the source site rotating domains (e.g. filmyfly.faith -> filmyfly.fail): a rotated domain's redirect lands on the new domain's bare homepage rather than the equivalent page, so every download-link selector previously came back with 0 matches even though the page itself was fine. When that happens, the scraper now retries once against the same page path on whatever origin `resolveRedirectUrl(mainUrl)` resolves to - the same lookup already used for the HA integration's domain-rotation sensor - before giving up. Verified against the live site: a page that returned 0 matches on the stale configured domain now resolves the real download link via the retry.
+
 ## 1.4.44
 
 - Added an optional `aria2`-based download path, toggled via a new "Use aria2 for downloads" add-on option (default off — the original single-connection fetch stays the default). When enabled, downloads use `aria2c` with 8 parallel Range-request connections per file instead of one, which can substantially beat a single connection's throughput against slow/rate-limited source servers. Everything else (folder naming, marker files, Emby refresh, subtitle prefetch, job progress tracking in the UI) works identically either way — only how the bytes get from the source to disk differs. Verified end-to-end locally against a real ~265MB file: correct segmented download (8 connections, ~65MB/s), accurate live progress, correct final file/folder, and confirmed the original fetch-based path is unaffected by the refactor.

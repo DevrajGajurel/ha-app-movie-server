@@ -281,6 +281,26 @@ async function fetchPageHtml(pageUrl) {
   return response.text();
 }
 
+// The source site periodically rotates domains (filmyfly.luxe -> .faith ->
+// .fail, etc). When it does, requesting an old-domain page URL still gets a
+// 200 back (fetch() follows the redirect automatically) but the redirect
+// often lands on the new domain's bare homepage, not the equivalent page -
+// so every selector below comes back with 0 matches even though nothing is
+// actually broken. resolveRedirectUrl(mainUrl) is the same lookup the HA
+// integration's sensor uses to detect a rotated domain, so on a selector
+// miss we reuse it here: take whatever origin it resolves to and retry the
+// exact same page path against that origin.
+async function resolveRetryPageUrl(pageUrl) {
+  const resolvedBase = await resolveRedirectUrl(mainUrl);
+  const original = new URL(pageUrl);
+  return new URL(`${original.pathname}${original.search}`, resolvedBase).href;
+}
+
+async function fetchDownloadPageDocument(pageUrl) {
+  const html = await fetchPageHtml(pageUrl);
+  return parseHTML(html).document;
+}
+
 function selectorDiagnostics(document, selectors) {
   return selectors.map((selector) => ({
     selector,
@@ -305,10 +325,21 @@ function collectAnchors(document, selectors) {
 }
 
 async function fetchDownloadOptions(pageUrl) {
-  const html = await fetchPageHtml(pageUrl);
-  const { document } = parseHTML(html);
+  let document = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.quality;
-  const anchors = collectAnchors(document, selectors);
+  let anchors = collectAnchors(document, selectors);
+
+  if (!anchors.length) {
+    try {
+      const retryUrl = await resolveRetryPageUrl(pageUrl);
+      if (retryUrl !== pageUrl) {
+        document = await fetchDownloadPageDocument(retryUrl);
+        anchors = collectAnchors(document, selectors);
+      }
+    } catch (err) {
+      console.warn("[downloads] retry via resolved main URL failed:", err.message);
+    }
+  }
 
   return {
     options: sortDownloadOptions(anchors.map((anchor) => ({
@@ -320,10 +351,21 @@ async function fetchDownloadOptions(pageUrl) {
 }
 
 async function fetchDirectDownloadOptions(pageUrl) {
-  const html = await fetchPageHtml(pageUrl);
-  const { document } = parseHTML(html);
+  let document = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.direct;
-  const anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
+  let anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
+
+  if (!anchors.length) {
+    try {
+      const retryUrl = await resolveRetryPageUrl(pageUrl);
+      if (retryUrl !== pageUrl) {
+        document = await fetchDownloadPageDocument(retryUrl);
+        anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
+      }
+    } catch (err) {
+      console.warn("[downloads] retry via resolved main URL failed:", err.message);
+    }
+  }
 
   return {
     options: sortDownloadOptions(anchors.map((anchor) => ({
