@@ -673,6 +673,11 @@ const server = http.createServer(async (req, res) => {
       const fileToken = searchParams.get("file") || null;
       const audioTrackParam = searchParams.get("audioTrack");
       const audioTrack = audioTrackParam !== null ? Number.parseInt(audioTrackParam, 10) : 0;
+      // Diagnostic escape hatch: forces the original bytes through
+      // untouched even when the default track would normally get
+      // transcoded - used to test whether a native player (AVPlay) can
+      // handle a codec the browser <video> element can't.
+      const forceRaw = searchParams.get("raw") === "1";
 
       let filePath = fileToken ? resolveMediaToken(fileToken) : null;
       if (!filePath) {
@@ -697,9 +702,9 @@ const server = http.createServer(async (req, res) => {
       // was crashing the TV on a file whose default track was eac3).
       const info = await probeMediaFile(filePath);
       const selectedTrack = info?.audioTracks?.[audioTrack];
-      const transcodeAudio = needsAudioTranscode(selectedTrack?.codec);
+      const transcodeAudio = !forceRaw && needsAudioTranscode(selectedTrack?.codec);
 
-      if (audioTrack > 0 || transcodeAudio) {
+      if (!forceRaw && (audioTrack > 0 || transcodeAudio)) {
         streamAudioTrackRemux(req, res, filePath, audioTrack, { transcodeAudio });
       } else {
         streamFile(req, res, filePath);
