@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.43
+
+- A few visual polish items inspired by beam-tv (another open-source Tizen local-media player): focused posters now lift slightly (`translateY(-6px)`) alongside the existing scale-up, giving a subtle "popping forward" feel; overlay close buttons got a frosted-glass look (`backdrop-filter: blur`) over backdrop images/video, degrading gracefully to the existing plain background on engines without support; the player's progress bar now animates smoothly instead of jumping on each tick; and the elapsed/duration time display uses tabular figures so it doesn't shift width as digits change. All verified rendering correctly (computed styles + screenshots) in the browser preview.
+
 ## 1.4.42
 
 - TV app now renders instantly on a cold launch from a `localStorage` snapshot of the last successfully-loaded catalog, instead of sitting on the splash screen for the full network + TMDB fetch every single time the app opens. The real fetch still runs in the background afterward and re-renders over it the moment it resolves — this only changes what's on screen while that's happening. Download/Continue-Watching status (not carried in the snapshot) corrects itself moments later via the existing fast local lookup, without waiting on the network catalog fetch. Verified: a cold reload went from a full network-bound wait to a fully rendered screen (471 movies) in 6ms.

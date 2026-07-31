@@ -245,7 +245,7 @@
     }
 
     .tv-icon-btn {
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.14);
       border: 1px solid var(--border);
       color: var(--text);
       width: 3rem;
@@ -256,6 +256,11 @@
       justify-content: center;
       font-size: 1.3rem;
       padding: 0;
+      /* Frosted-glass look over a backdrop/video — degrades gracefully to
+         the plain translucent background above on engines that don't
+         support it (purely cosmetic, no functional dependency on it). */
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
     }
 
     .tv-icon-btn:hover:not(:disabled) {
@@ -412,7 +417,7 @@
 
     .tv-poster-card.tv-focused,
     .tv-poster-card:focus {
-      transform: scale(1.14);
+      transform: translateY(-6px) scale(1.14);
       opacity: 1;
       z-index: 3;
       /* !important: css/tv.css (loaded after this inline stylesheet) has a
@@ -758,6 +763,7 @@
       width: 0%;
       background: var(--accent);
       border-radius: 999px;
+      transition: width 120ms linear;
     }
 
     .tv-player-time {
@@ -766,6 +772,9 @@
       font-size: 0.9rem;
       color: var(--muted);
       margin-bottom: 1.25rem;
+      /* Keeps digit widths consistent so the elapsed/duration text doesn't
+         shift as it ticks over (e.g. "1:09" -> "1:10"). */
+      font-variant-numeric: tabular-nums;
     }
 
     .tv-player-buttons {
