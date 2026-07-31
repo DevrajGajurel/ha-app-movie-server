@@ -37,6 +37,9 @@ REDIS_URL="$(bashio::config 'redis_url')"
 REDIS_URL="${REDIS_URL#"${REDIS_URL%%[![:space:]]*}"}"
 REDIS_URL="${REDIS_URL%"${REDIS_URL##*[![:space:]]}"}"
 
+USE_ARIA2="$(bashio::config 'use_aria2')"
+if [ -z "${USE_ARIA2}" ]; then USE_ARIA2=false; fi
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -52,6 +55,7 @@ EMBY_API_KEY=${EMBY_API_KEY}
 EMBY_PATH_PREFIX=${EMBY_PATH_PREFIX}
 REDIS_URL=${REDIS_URL}
 CACHE_REFRESH_HOURS=4
+USE_ARIA2=${USE_ARIA2}
 EOF
 
 cd /app || exit 1

@@ -76,37 +76,133 @@ function uniquePath(dir, filename) {
   return target;
 }
 
+// Plain single-connection fetch + stream-to-disk — the original (and
+// still default) download path.
+async function downloadFileWithFetch(job, dir) {
+  const response = await fetch(job.url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.status}`);
+  }
+
+  const filename = pickFilename(response.headers.get("content-disposition"), response.url, job.label);
+  const filePath = uniquePath(dir, filename);
+
+  job.totalBytes = Number(response.headers.get("content-length")) || 0;
+  job.receivedBytes = 0;
+
+  const fileStream = fs.createWriteStream(filePath);
+  const body = Readable.fromWeb(response.body);
+
+  body.on("data", (chunk) => {
+    job.receivedBytes += chunk.length;
+  });
+
+  await pipeline(body, fileStream);
+  return filePath;
+}
+
+// Same filename-resolution chain as downloadFileWithFetch (Content-
+// Disposition, then the final URL, then a sanitized label) — a HEAD
+// request gets us the header without pulling any body, since aria2c below
+// handles the actual transfer itself. Falls back to the URL/label alone
+// if the server doesn't support HEAD or the request fails outright;
+// pickFilename already tolerates a null contentDisposition for that.
+async function resolveAria2Filename(job) {
+  let contentDisposition = null;
+  let finalUrl = job.url;
+  try {
+    const res = await fetch(job.url, { method: "HEAD", redirect: "follow" });
+    contentDisposition = res.headers.get("content-disposition");
+    finalUrl = res.url || job.url;
+  } catch {
+    // Fall through to the URL/label-based name below.
+  }
+  return pickFilename(contentDisposition, finalUrl, job.label);
+}
+
+// aria2c prints a live-updating status line while downloading, e.g.
+// "[#1a2b3c 120MiB/500MiB(24%) CN:8 DL:95MiB ETA:4s]" — parsed here for
+// job progress instead of needing its RPC interface (which, unlike the
+// plain CLI mode, keeps the process running indefinitely after the
+// download finishes and would need an explicit shutdown call).
+const ARIA2_PROGRESS_RE = /\[#\w+\s+([\d.]+)(B|KiB|MiB|GiB|TiB)\/([\d.]+)(B|KiB|MiB|GiB|TiB)\(/;
+const ARIA2_UNIT_BYTES = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
+const ARIA2_CONNECTIONS = 8;
+
+function parseAria2Progress(text) {
+  const match = ARIA2_PROGRESS_RE.exec(text);
+  if (!match) return null;
+  const [, curVal, curUnit, totalVal, totalUnit] = match;
+  return {
+    receivedBytes: Math.round(Number.parseFloat(curVal) * ARIA2_UNIT_BYTES[curUnit]),
+    totalBytes: Math.round(Number.parseFloat(totalVal) * ARIA2_UNIT_BYTES[totalUnit]),
+  };
+}
+
+// Segmented, multi-connection download via aria2c — opt-in (see
+// isAria2Enabled), since it's a separate binary and a different code path
+// from the plain fetch above. Splits the file across ARIA2_CONNECTIONS
+// parallel Range-request connections, which can substantially beat a
+// single connection's throughput against slow/rate-limited source
+// servers (common on piracy-mirror sites), at the cost of an extra
+// process dependency.
+function downloadFileWithAria2(job, dir) {
+  return resolveAria2Filename(job).then((filename) => {
+    const filePath = uniquePath(dir, filename);
+    job.totalBytes = 0;
+    job.receivedBytes = 0;
+
+    return new Promise((resolve, reject) => {
+      // aria2c's boolean/valued flags need the "=value" inline form —
+      // space-separated ("--allow-overwrite" "true") gets parsed as a
+      // valueless flag followed by "true" as a second, separate URI
+      // argument, which aria2c then rejects as an invalid download target.
+      const aria2 = spawn("aria2c", [
+        `--dir=${dir}`,
+        `--out=${path.basename(filePath)}`,
+        `--max-connection-per-server=${ARIA2_CONNECTIONS}`,
+        `--split=${ARIA2_CONNECTIONS}`,
+        "--min-split-size=5M",
+        "--summary-interval=1",
+        "--console-log-level=warn",
+        "--allow-overwrite=true",
+        job.url,
+      ]);
+
+      let stderrTail = "";
+      const handleOutput = (chunk) => {
+        const text = chunk.toString();
+        stderrTail = (stderrTail + text).slice(-2000);
+        const progress = parseAria2Progress(text);
+        if (progress) {
+          job.receivedBytes = progress.receivedBytes;
+          job.totalBytes = progress.totalBytes;
+        }
+      };
+      aria2.stdout.on("data", handleOutput);
+      aria2.stderr.on("data", handleOutput);
+
+      aria2.on("error", reject);
+      aria2.on("close", (code) => {
+        if (code === 0) resolve(filePath);
+        else reject(new Error(`aria2c exited ${code}: ${stderrTail}`));
+      });
+    });
+  });
+}
+
+function isAria2Enabled() {
+  return String(process.env.USE_ARIA2 || "").toLowerCase() === "true";
+}
+
 async function runDownload(job) {
   job.status = "downloading";
 
   try {
-    const response = await fetch(job.url, { redirect: "follow" });
-    if (!response.ok) {
-      throw new Error(`Download failed: ${response.status}`);
-    }
-
     const dir = ensureDir(job.movieTitle, job.tmdbId);
-    const filename = pickFilename(
-      response.headers.get("content-disposition"),
-      response.url,
-      job.label
-    );
-    const filePath = uniquePath(dir, filename);
-    const totalBytes = Number(response.headers.get("content-length")) || 0;
+    const filePath = isAria2Enabled() ? await downloadFileWithAria2(job, dir) : await downloadFileWithFetch(job, dir);
 
     job.filePath = filePath;
-    job.totalBytes = totalBytes;
-    job.receivedBytes = 0;
-
-    const fileStream = fs.createWriteStream(filePath);
-    const body = Readable.fromWeb(response.body);
-
-    body.on("data", (chunk) => {
-      job.receivedBytes += chunk.length;
-    });
-
-    await pipeline(body, fileStream);
-
     job.status = "completed";
     job.finishedAt = new Date().toISOString();
 

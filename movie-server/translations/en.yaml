@@ -32,3 +32,6 @@ configuration:
   redis_url:
     name: Redis URL
     description: "Optional Redis URL for cached movie listings (speeds up dashboard loads). Refreshed every 4 hours."
+  use_aria2:
+    name: Use aria2 for downloads
+    description: "Download with aria2 (8 parallel connections per file) instead of a single connection. Can be much faster against slow/rate-limited source servers. Default: off."

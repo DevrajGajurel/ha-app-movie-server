@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.44
+
+- Added an optional `aria2`-based download path, toggled via a new "Use aria2 for downloads" add-on option (default off — the original single-connection fetch stays the default). When enabled, downloads use `aria2c` with 8 parallel Range-request connections per file instead of one, which can substantially beat a single connection's throughput against slow/rate-limited source servers. Everything else (folder naming, marker files, Emby refresh, subtitle prefetch, job progress tracking in the UI) works identically either way — only how the bytes get from the source to disk differs. Verified end-to-end locally against a real ~265MB file: correct segmented download (8 connections, ~65MB/s), accurate live progress, correct final file/folder, and confirmed the original fetch-based path is unaffected by the refactor.
+
 ## 1.4.43
 
 - A few visual polish items inspired by beam-tv (another open-source Tizen local-media player): focused posters now lift slightly (`translateY(-6px)`) alongside the existing scale-up, giving a subtle "popping forward" feel; overlay close buttons got a frosted-glass look (`backdrop-filter: blur`) over backdrop images/video, degrading gracefully to the existing plain background on engines without support; the player's progress bar now animates smoothly instead of jumping on each tick; and the elapsed/duration time display uses tabular figures so it doesn't shift width as digits change. All verified rendering correctly (computed styles + screenshots) in the browser preview.
