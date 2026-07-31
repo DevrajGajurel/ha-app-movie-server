@@ -1642,6 +1642,42 @@
       return `${base}api/${path.replace(/^\//, "")}`;
     }
 
+    // There's no way to attach a debugger or `sdb dlog` to this TV from a
+    // dev machine, and a hard crash (e.g. an unsupported codec taking the
+    // whole platform down) leaves nothing behind to inspect afterward - so
+    // anything we catch gets forwarded to the server, which writes it to
+    // its own log output AND a plain text file next to the downloaded
+    // movies (movieserver-client.log), so a report is actually readable.
+    function reportClientError(source, err, context) {
+      try {
+        const payload = {
+          source,
+          message: err?.message || String(err),
+          stack: err?.stack || null,
+          context: context || null,
+        };
+        fetch(apiUrl("client-log"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch {
+        // Reporting itself must never throw back into the caller.
+      }
+    }
+
+    window.addEventListener("error", (e) => {
+      reportClientError("window.onerror", e.error || new Error(e.message), {
+        filename: e.filename,
+        lineno: e.lineno,
+        colno: e.colno,
+      });
+    });
+
+    window.addEventListener("unhandledrejection", (e) => {
+      reportClientError("unhandledrejection", e.reason instanceof Error ? e.reason : new Error(String(e.reason)));
+    });
+
     function normalizeTitle(value) {
       return String(value || "")
         .toLowerCase()
@@ -2414,6 +2450,11 @@
 
     trailerVideo.addEventListener("waiting", () => trailerSpinner.classList.add("show"));
     trailerVideo.addEventListener("playing", () => trailerSpinner.classList.remove("show"));
+    trailerVideo.addEventListener("error", () => {
+      reportClientError("trailer-video.error", new Error("Trailer playback error"), {
+        errorCode: trailerVideo.error?.code || null,
+      });
+    });
 
     function openTrailer(youtubeKey) {
       if (!youtubeKey) return;
@@ -3376,14 +3417,23 @@
       if (isFirstLoad && !refresh) {
         const cachedSnapshot = loadLibraryCacheSnapshot();
         if (cachedSnapshot) {
-          allMovies = cachedSnapshot.movies;
+          const cachedMovies = cachedSnapshot.movies;
+          allMovies = cachedMovies;
           nextSourceOrder = allMovies.length;
           tmdbEnabledFlag = cachedSnapshot.tmdbEnabledFlag;
           renderCurrentView();
           splash.hidden = true;
           renderedFromCache = true;
           Promise.all([refreshDownloadLibrary(), refreshPlaybackProgress(), refreshDownloadJobs({ rerender: false })]).then(() => {
-            if (gen === loadGeneration) renderCurrentView();
+            // allMovies gets reset to a fresh empty array a few lines below
+            // (so the real fetch can merge into it) well before this
+            // resolves — re-rendering here without this guard was blowing
+            // away the already-visible cached poster rows with the "Loading
+            // movies..." empty state for a couple of seconds, until the
+            // real fetch repopulated it. Only re-render if we're still
+            // showing that same cached array (i.e. the real fetch hasn't
+            // started replacing it yet).
+            if (gen === loadGeneration && allMovies === cachedMovies) renderCurrentView();
           });
         }
       }
@@ -3459,6 +3509,30 @@
       };
       playerStatus.textContent = (err && messages[err.code]) || "Playback error.";
       playerStatus.hidden = false;
+      playerSpinner.classList.remove("show");
+
+      reportClientError("player-video.error", new Error(playerStatus.textContent), {
+        errorCode: err?.code || null,
+        tmdbId: playbackContext?.tmdbId || null,
+        title: playbackContext?.title || null,
+        fileToken: playbackContext?.fileToken || null,
+      });
+
+      // On some Tizen models, leaving a src that the native decoder already
+      // choked on still attached keeps its media pipeline alive in a bad
+      // state - reported as a brief "can't play this format" error followed
+      // a few seconds later by the whole TV rebooting. Explicitly releasing
+      // the element right away (rather than just showing our own message
+      // and leaving <video> pointed at the broken stream) tells the
+      // platform to tear that pipeline down immediately instead of letting
+      // it linger/retry.
+      playerVideo.pause();
+      playerVideo.removeAttribute("src");
+      playerVideo.load();
+
+      window.setTimeout(() => {
+        if (!playerOverlay.hidden) closePlayer();
+      }, 4000);
     });
 
     rowsContainer.addEventListener("click", (e) => {

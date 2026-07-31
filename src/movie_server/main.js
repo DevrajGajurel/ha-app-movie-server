@@ -814,6 +814,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // The TV app runs on hardware we can't easily attach a debugger or
+  // `sdb dlog` to from a dev machine, and Tizen's own error surface (a
+  // generic on-screen message, sometimes followed by the whole TV
+  // rebooting on an unsupported codec) doesn't leave anything to inspect
+  // afterward. This just forwards whatever the client caught to the
+  // server's own log output (visible via the HA add-on's Log tab / `docker
+  // logs`), so a crash report is something we can actually read.
+  if (url === "/api/client-log" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const { source, message, stack, context } = body || {};
+      const line =
+        `[${new Date().toISOString()}] ${source || "unknown"}: ${message || "(no message)"}` +
+        (context ? ` | context: ${JSON.stringify(context)}` : "") +
+        (stack ? ` | stack: ${String(stack).replace(/\s+/g, " ")}` : "");
+
+      console.error(`[client-log] ${line}`);
+
+      // Also written next to the downloaded movies themselves - same
+      // network share the user already browses, so reading a crash report
+      // doesn't require going through the HA add-on's Log tab or SSH.
+      try {
+        fs.appendFileSync(path.join(getDownloadDir(), "movieserver-client.log"), `${line}\n`);
+      } catch (fileErr) {
+        console.warn("[client-log] failed to write log file:", fileErr.message);
+      }
+    } catch (err) {
+      console.warn("[client-log] failed to parse client log payload:", err.message);
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   if (url === "/api/emby/status" && req.method === "GET") {
     sendJson(res, 200, { configured: isEmbyConfigured() });
     return;

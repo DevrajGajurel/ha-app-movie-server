@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.47
+
+- Fixed a real TV reboot: playing a movie whose codec/profile the TV's hardware decoder can't handle (confirmed on 4K HEVC titles) showed our "can't play this file's format" message correctly, but left the `<video>` element still pointed at the broken stream - a few seconds later the whole TV would crash and reboot. On any playback error the player now immediately releases the video element (`pause()` + clear `src` + `load()`) instead of leaving a choked native decoder pipeline attached, and auto-closes back to the detail page after a few seconds.
+- Fixed a cold-launch visual bug: after the instant localStorage-cached catalog rendered, a background status refresh (download/continue-watching badges) could fire *after* the real network fetch had already reset the movie list for merging, but *before* the real data replaced it — briefly wiping the whole screen to a bare "Loading movies..." state before the real catalog reappeared a couple of seconds later. Verified by reproducing the exact race (confirmed it flashes without the fix, doesn't with it).
+- The TV app now forwards any error it catches (uncaught exceptions, unhandled promise rejections, video playback errors) to the server, which logs it both to its own console output and to a plain-text `movieserver-client.log` file written next to the downloaded movies - there's no way to attach a debugger or `sdb dlog` to the TV from a dev machine, so a crash report is now something that's actually readable afterward.
+
 ## 1.4.46
 
 - TV app now shows the Play button once a download reaches 10% instead of waiting for it to fully finish. The file on disk was already playable well before completion (the backend's play/version lookups just scan for the file itself, regardless of download-job status) - this was previously only reachable by accident (e.g. re-downloading an already-completed title). Below 10% the button still stays hidden, and the "already downloaded" Delete button/badge are unaffected since they still key off the completed-library scan. Verified against live in-progress downloads in the browser preview, including the exact <10%/>=10% boundary.
