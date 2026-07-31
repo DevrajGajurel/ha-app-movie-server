@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.46
+
+- TV app now shows the Play button once a download reaches 10% instead of waiting for it to fully finish. The file on disk was already playable well before completion (the backend's play/version lookups just scan for the file itself, regardless of download-job status) - this was previously only reachable by accident (e.g. re-downloading an already-completed title). Below 10% the button still stays hidden, and the "already downloaded" Delete button/badge are unaffected since they still key off the completed-library scan. Verified against live in-progress downloads in the browser preview, including the exact <10%/>=10% boundary.
+
 ## 1.4.45
 
 - Fixed "No download links found on this page" errors caused by the source site rotating domains (e.g. filmyfly.faith -> filmyfly.fail): a rotated domain's redirect lands on the new domain's bare homepage rather than the equivalent page, so every download-link selector previously came back with 0 matches even though the page itself was fine. When that happens, the scraper now retries once against the same page path on whatever origin `resolveRedirectUrl(mainUrl)` resolves to - the same lookup already used for the HA integration's domain-rotation sensor - before giving up. Verified against the live site: a page that returned 0 matches on the stale configured domain now resolves the real download link via the retry.

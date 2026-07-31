@@ -2259,6 +2259,14 @@
       detailPageTitle.textContent = displayTitle;
 
       const job = latestJobForMovie(displayTitle);
+      // The file on disk is already playable well before the download job
+      // reports "completed" (aria2/fetch both write into the final-named
+      // file from the start, and the backend's play/version lookups just
+      // scan for that file regardless of job status) - so once a download
+      // is far enough along, let Play through rather than waiting on the
+      // marker file scanLibrary() needs to consider it "downloaded".
+      const playableEarly = job?.status === "downloading" && jobProgress(job) >= 10;
+      const playable = downloaded || playableEarly;
       let statusHtml = "";
       if (job?.status === "failed") {
         statusHtml = `
@@ -2300,9 +2308,9 @@
           <span class="tv-detail-info-item" id="detail-video-info"></span>
         </div>
         <div class="tv-detail-actions">
-          ${downloaded ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
+          ${playable ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
           ${t?.trailerKey ? `<button class="tv-hero-btn" id="detail-trailer-btn" type="button">🎬 Trailer</button>` : ""}
-          ${sourcePageLink ? `<a class="tv-hero-btn${downloaded ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
+          ${sourcePageLink ? `<a class="tv-hero-btn${playable ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
           ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
           ${downloaded ? `<button class="tv-icon-circle-btn danger" id="detail-delete-btn" type="button" aria-label="Delete downloaded movie">🗑</button>` : ""}
         </div>
@@ -2324,7 +2332,7 @@
       });
       document.getElementById("detail-delete-btn")?.addEventListener("click", () => openDeleteConfirm(movie));
 
-      // Land focus on the primary action (Play if downloaded, otherwise
+      // Land focus on the primary action (Play if playable, otherwise
       // Download) rather than the back button, which is what the generic
       // focusFirst() would pick since it's first in the DOM.
       const primaryAction = document.getElementById("detail-play-btn") || document.getElementById("detail-download-link");
@@ -2339,8 +2347,10 @@
       // The video/audio/subtitle info row needs this exact file's track
       // list, which requires probing the downloaded file server-side — not
       // available until this resolves, so it's populated in after the rest
-      // of the page is already showing rather than blocking on it.
-      if (downloaded) {
+      // of the page is already showing rather than blocking on it. Safe to
+      // attempt on a still-downloading file too; ffprobe just won't find a
+      // complete track list yet and the row stays hidden via the catch below.
+      if (playable) {
         const versionsParams = new URLSearchParams();
         if (t?.tmdbId) versionsParams.set("tmdbId", String(t.tmdbId));
         versionsParams.set("title", displayTitle);
