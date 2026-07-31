@@ -847,6 +847,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Companion read side for the log above - there's no other remote way to
+  // pull this file back (the existing download/media routes only serve
+  // recognized video extensions), and a TV crash leaves nothing else to
+  // inspect after the fact.
+  if (url === "/api/client-log" && req.method === "GET") {
+    try {
+      const logPath = path.join(getDownloadDir(), "movieserver-client.log");
+      const content = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+      const lines = content.split("\n").filter(Boolean);
+      const limit = Number(new URL(req.url, "http://localhost").searchParams.get("lines")) || 200;
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(lines.slice(-limit).join("\n"));
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(`Failed to read log: ${err.message}`);
+    }
+    return;
+  }
+
   if (url === "/api/emby/status" && req.method === "GET") {
     sendJson(res, 200, { configured: isEmbyConfigured() });
     return;

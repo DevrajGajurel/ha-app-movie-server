@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.48
+
+- Added a `GET /api/client-log` read-side companion to the crash-log endpoint added in 1.4.47 - there was no way to pull `movieserver-client.log` back remotely (the existing download/media routes only serve recognized video extensions), which left it unreadable from outside the HA host during an active crash investigation.
+
 ## 1.4.47
 
 - Fixed a real TV reboot: playing a movie whose codec/profile the TV's hardware decoder can't handle (confirmed on 4K HEVC titles) showed our "can't play this file's format" message correctly, but left the `<video>` element still pointed at the broken stream - a few seconds later the whole TV would crash and reboot. On any playback error the player now immediately releases the video element (`pause()` + clear `src` + `load()`) instead of leaving a choked native decoder pipeline attached, and auto-closes back to the detail page after a few seconds.
