@@ -30,6 +30,7 @@ const {
   streamFile,
   streamAudioTrackRemux,
   needsAudioTranscode,
+  needsH264LevelFix,
   getSubtitleVtt,
   prefetchAllSubtitles,
   saveProgress,
@@ -673,10 +674,12 @@ const server = http.createServer(async (req, res) => {
       const fileToken = searchParams.get("file") || null;
       const audioTrackParam = searchParams.get("audioTrack");
       const audioTrack = audioTrackParam !== null ? Number.parseInt(audioTrackParam, 10) : 0;
-      // Diagnostic escape hatch: forces the original bytes through
-      // untouched even when the default track would normally get
-      // transcoded - used to test whether a native player (AVPlay) can
-      // handle a codec the browser <video> element can't.
+      // "raw" only bypasses the eac3->AAC workaround built for the old
+      // <video>-element app (AVPlay decodes that natively, so forcing it
+      // would just throw away embedded tracks for no reason) - it does
+      // NOT mean "never touch the file." The H.264-level fix below applies
+      // regardless, since that's a real format-rejection AVPlay itself
+      // hits too, not something specific to the browser <video> element.
       const forceRaw = searchParams.get("raw") === "1";
 
       let filePath = fileToken ? resolveMediaToken(fileToken) : null;
@@ -703,9 +706,16 @@ const server = http.createServer(async (req, res) => {
       const info = await probeMediaFile(filePath);
       const selectedTrack = info?.audioTracks?.[audioTrack];
       const transcodeAudio = !forceRaw && needsAudioTranscode(selectedTrack?.codec);
+      // A file's H.264 level can be implausibly high for its actual
+      // resolution (confirmed: AVPlay refused a plain 1080p-ish H.264/AAC
+      // file outright - PLAYER_ERROR_NOT_SUPPORTED_FORMAT - because its
+      // SPS declared Level 5.1, a tier meant for ~4K). Rewriting just that
+      // header field costs nothing (no re-encode) and applies regardless
+      // of raw=1, unlike the audio-transcode bypass above.
+      const fixH264Level = needsH264LevelFix(info);
 
-      if (!forceRaw && (audioTrack > 0 || transcodeAudio)) {
-        streamAudioTrackRemux(req, res, filePath, audioTrack, { transcodeAudio });
+      if (audioTrack > 0 || transcodeAudio || fixH264Level) {
+        streamAudioTrackRemux(req, res, filePath, audioTrack, { transcodeAudio, fixH264Level });
       } else {
         streamFile(req, res, filePath);
       }
@@ -768,6 +778,7 @@ const server = http.createServer(async (req, res) => {
             videoCodec: probe?.videoCodec ?? null,
             videoProfile: probe?.videoProfile ?? null,
             videoBitDepth: probe?.videoBitDepth ?? null,
+            videoLevel: probe?.videoLevel ?? null,
             audioTracks: probe?.audioTracks ?? [],
             subtitleTracks: probe?.subtitleTracks ?? [],
           };

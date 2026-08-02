@@ -522,6 +522,9 @@ function runFfprobe(filePath) {
             ? 12
             : null;
           const videoBitDepth = Number.isFinite(rawBitDepth) && rawBitDepth > 0 ? rawBitDepth : pixFmtBitDepth;
+          // ffprobe reports H.264 level as an integer (51 = Level 5.1, 41 =
+          // Level 4.1, etc.) - see needsH264LevelFix for why this matters.
+          const videoLevel = Number.isFinite(Number(videoStream?.level)) ? Number(videoStream.level) : null;
 
           resolve({
             durationSeconds: data.format?.duration ? Math.round(Number(data.format.duration)) : null,
@@ -530,6 +533,7 @@ function runFfprobe(filePath) {
             videoCodec: videoStream?.codec_name || null,
             videoProfile: videoStream?.profile || null,
             videoBitDepth,
+            videoLevel,
             audioTracks,
             subtitleTracks,
           });
@@ -678,7 +682,33 @@ function needsAudioTranscode(codec) {
   return Boolean(codec) && BROWSER_INCOMPATIBLE_AUDIO_CODECS.has(String(codec).toLowerCase());
 }
 
-function streamAudioTrackRemux(req, res, filePath, audioTrackIndex, { transcodeAudio = false } = {}) {
+// H.264 Level 5.0+ is a spec tier meant for ~4K/very-high-bitrate content;
+// legitimate HD (<=1088p) footage never actually needs it. Confirmed via
+// ffprobe against a real file AVPlay refused to play at all
+// (PLAYER_ERROR_NOT_SUPPORTED_FORMAT): plain 1920x1000 H.264/AAC, nothing
+// exotic, but its SPS declares Level 5.1 - almost certainly a mistake from
+// whatever tool produced the (low-quality "HQCam") release, since the
+// actual bitrate/resolution don't remotely need it. AVPlay's hardware
+// decoder checks the declared level against its own certified ceiling
+// BEFORE attempting to decode and refuses the whole file if it looks too
+// demanding, regardless of whether the real content would decode fine.
+// Scoped to h264 only (HEVC's level field means something different) and
+// to <=1088p (genuine 4K H.264, if it exists in the library, legitimately
+// can need a high level - only implausible combinations get "fixed").
+const MAX_PLAUSIBLE_HD_H264_LEVEL = 42; // Level 4.2
+const REPAIRED_H264_LEVEL = "41"; // Level 4.1 - comfortably covers HD at any real bitrate
+const MAX_HD_HEIGHT = 1088;
+
+function needsH264LevelFix(probe) {
+  return (
+    probe?.videoCodec === "h264" &&
+    Number(probe?.videoLevel) > MAX_PLAUSIBLE_HD_H264_LEVEL &&
+    Number(probe?.height) > 0 &&
+    Number(probe?.height) <= MAX_HD_HEIGHT
+  );
+}
+
+function streamAudioTrackRemux(req, res, filePath, audioTrackIndex, { transcodeAudio = false, fixH264Level = false } = {}) {
   // Matroska, not fragmented MP4: MP4's moov atom normally has to be
   // written after all the media data, so streaming MP4 to a pipe requires
   // fragmentation flags (frag_keyframe+empty_moov) to work around that —
@@ -699,6 +729,9 @@ function streamAudioTrackRemux(req, res, filePath, audioTrackIndex, { transcodeA
     `0:a:${audioTrackIndex}`,
     "-c:v",
     "copy",
+    // Patches just the SPS level field in-place (no re-encode, no quality
+    // loss, near-instant) - see needsH264LevelFix for why this is needed.
+    ...(fixH264Level ? ["-bsf:v", `h264_metadata=level=${REPAIRED_H264_LEVEL}`] : []),
     "-c:a",
     transcodeAudio ? "aac" : "copy",
     ...(transcodeAudio ? ["-b:a", "256k"] : []),
@@ -910,6 +943,7 @@ module.exports = {
   streamFile,
   streamAudioTrackRemux,
   needsAudioTranscode,
+  needsH264LevelFix,
   extractSubtitleTrack,
   getSubtitleVtt,
   prefetchAllSubtitles,

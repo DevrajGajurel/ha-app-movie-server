@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.55
+
+- Fixed AVPlay refusing an otherwise-ordinary 1080p-ish H.264/AAC file outright (`PLAYER_ERROR_NOT_SUPPORTED_FORMAT`) - its SPS header declared H.264 Level 5.1, a tier meant for ~4K content, almost certainly a mistake from whatever tool produced that particular (low-quality "HQCam") release. `/api/downloads/play` now detects an implausible level (5.0+ declared for anything at or below 1088p) via ffprobe and rewrites just that header field in-place via ffmpeg's `h264_metadata` bitstream filter - no re-encode, no quality loss, near-instant. Applies regardless of `raw=1` since this affects AVPlay itself, not just the old `<video>`-element path. Verified against the actual file: ffprobe confirms the corrected stream reports Level 4.1, and the real HTTP route now returns valid `video/x-matroska` output.
+
 ## 1.4.54
 
 - Fixed seek (Left/Right) and Enter/play-pause not working after the AVPlay migration: that handling was gated on `document.activeElement === player-video`, which worked reliably for the old `<video>` element but not for AVPlay's `<object type="application/avplayer">` render target - it doesn't reliably hold keyboard focus the same way. Re-gated on whether the tracks panel is open instead (it's the only thing that should "steal" Left/Right/Up from the player), which doesn't depend on the platform's opinion of whether an `<object>` is focusable.
