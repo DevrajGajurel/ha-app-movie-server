@@ -8,7 +8,7 @@
 //   2. setSelectTrack(type, index) wants the COMBINED index from
 //      getTotalTrackInfo() (spanning video+audio+text together), not a
 //      per-type index - hence trackIndexMap below.
-import type { AVPlayState, AVPlayStreamInfo } from "./tizen-globals";
+import type { AVPlayApi, AVPlayState, AVPlayStreamInfo } from "./tizen-globals";
 
 const DISPLAY_WIDTH = 1920;
 const DISPLAY_HEIGHT = 1080;
@@ -47,41 +47,66 @@ export class AVPlayer {
     return this.ready;
   }
 
+  // Nothing here may throw synchronously and escape this method: it's
+  // always called from a useEffect (see usePlayer.ts), and React 18 has no
+  // default error boundary around effects - an uncaught throw (confirmed:
+  // this happened for real, from `this.api` itself throwing when
+  // webapis.avplay isn't available) unmounts the ENTIRE app to a blank
+  // screen instead of just failing this one file's playback attempt.
   open(url: string): void {
     this.ready = false;
     this.trackIndexMap = { audio: [], text: [] };
 
+    let api: AVPlayApi;
     try {
-      this.api.stop();
+      api = this.api;
+    } catch (err) {
+      this.events.onError?.(err instanceof Error ? err.message : "webapis.avplay is not available");
+      return;
+    }
+
+    try {
+      api.stop();
     } catch {
       /* nothing was playing yet - fine */
     }
     try {
-      this.api.close();
+      api.close();
     } catch {
       /* nothing was open yet - fine */
     }
 
-    this.api.open(url);
-    this.api.setDisplayRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     try {
-      this.api.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN");
+      api.open(url);
+      api.setDisplayRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    } catch (err) {
+      this.events.onError?.(err instanceof Error ? err.message : "Could not open this file");
+      return;
+    }
+
+    try {
+      api.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN");
     } catch {
       /* optional - some firmware doesn't support this call */
     }
 
-    this.api.setListener({
-      onbufferingstart: () => this.events.onBuffering?.(true),
-      onbufferingprogress: () => {},
-      onbufferingcomplete: () => this.events.onBuffering?.(false),
-      oncurrentplaytime: (ms) => this.events.onProgress?.(ms, this.getDurationMs()),
-      onstreamcompleted: () => this.events.onStreamCompleted?.(),
-      onerror: (eventType) => this.events.onError?.(String(eventType)),
-      onsubtitlechange: (_duration, text) => this.events.onSubtitle?.(text || ""),
-    });
+    try {
+      api.setListener({
+        onbufferingstart: () => this.events.onBuffering?.(true),
+        onbufferingprogress: () => {},
+        onbufferingcomplete: () => this.events.onBuffering?.(false),
+        oncurrentplaytime: (ms) => this.events.onProgress?.(ms, this.getDurationMs()),
+        onstreamcompleted: () => this.events.onStreamCompleted?.(),
+        onerror: (eventType) => this.events.onError?.(String(eventType)),
+        onsubtitlechange: (_duration, text) => this.events.onSubtitle?.(text || ""),
+      });
+    } catch (err) {
+      this.events.onError?.(err instanceof Error ? err.message : "Could not attach playback listener");
+      return;
+    }
 
     try {
-      this.api.prepareAsync(
+      api.prepareAsync(
         () => {
           this.ready = true;
           this.refreshTrackIndexMap();

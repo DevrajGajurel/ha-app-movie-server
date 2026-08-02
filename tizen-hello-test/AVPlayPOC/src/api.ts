@@ -32,6 +32,38 @@ export async function getDownloadedMovies(): Promise<DownloadedMovie[]> {
   return [...byTmdb, ...byTitle];
 }
 
+export interface ProgressItem {
+  folder: string;
+  tmdbId: string | null;
+  title: string;
+  positionSeconds: number;
+  durationSeconds: number;
+  percent: number;
+  updatedAt: string | null;
+}
+
+// No tmdbId/title/file params -> the backend's Continue Watching list
+// (already sorted most-recent-first, already excludes finished/near-
+// finished titles - see fileDownloads.js's listProgress).
+export async function getContinueWatching(): Promise<ProgressItem[]> {
+  const res = await fetch(apiUrl("downloads/progress"));
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.items || [];
+}
+
+// A progress item only carries tmdbId/title (whatever the download folder
+// itself was keyed by) - this recovers the full catalog Movie (poster,
+// backdrop, etc.) it corresponds to, same matching rule as isDownloaded().
+export function matchMovieForProgress(item: ProgressItem, movies: Movie[]): Movie | undefined {
+  if (item.tmdbId) {
+    const byId = movies.find((m) => m.tmdb?.tmdbId != null && String(m.tmdb.tmdbId) === item.tmdbId);
+    if (byId) return byId;
+  }
+  const normalized = normalizeTitle(item.title);
+  return movies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === normalized);
+}
+
 export interface TmdbInfo {
   tmdbId: number;
   tmdbTitle: string;

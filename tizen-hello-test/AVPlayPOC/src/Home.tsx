@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { getAllMovies, getDownloadedMovies, getMoviePageLink, isDownloaded, type Movie, type DownloadedMovie } from "./api";
+import {
+  getAllMovies,
+  getDownloadedMovies,
+  getContinueWatching,
+  matchMovieForProgress,
+  getMoviePageLink,
+  isDownloaded,
+  type Movie,
+  type DownloadedMovie,
+} from "./api";
 import { Sidebar, SIDEBAR_ITEMS } from "./Sidebar";
 import { Hero } from "./Hero";
 import { Row } from "./Row";
 import { Detail } from "./Detail";
 import { DownloadModal } from "./DownloadModal";
+import { Search } from "./Search";
+import { Downloads } from "./Downloads";
+
+type View = "browse" | "search" | "downloads";
 
 interface HomeProps {
   onPlay: (movie: Movie) => void;
@@ -22,9 +35,11 @@ const HERO_ROTATE_MS = 8000;
 export function Home({ onPlay }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
+  const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
   const [status, setStatus] = useState("Loading your library…");
   const [heroIndex, setHeroIndex] = useState(0);
 
+  const [view, setView] = useState<View>("browse");
   const [sidebarFocused, setSidebarFocused] = useState(false);
   const [sidebarIndex, setSidebarIndex] = useState(0);
   const [rowIndex, setRowIndex] = useState(-1); // -1 = hero
@@ -39,6 +54,14 @@ export function Home({ onPlay }: HomeProps) {
         setMovies(m);
         setDownloaded(d);
         setStatus(m.length ? "" : "No movies found.");
+        return getContinueWatching().then((items) => {
+          const percentByLink = new Map<string, number>();
+          for (const item of items) {
+            const match = matchMovieForProgress(item, m);
+            if (match) percentByLink.set(match.link, item.percent);
+          }
+          setContinueWatchingPercent(percentByLink);
+        });
       })
       .catch((err) => setStatus("Failed to load library: " + err.message));
   }, []);
@@ -78,12 +101,18 @@ export function Home({ onPlay }: HomeProps) {
       movies: movies.filter((m) => m.tmdb?.genres?.includes(genre)).slice(0, 20),
     }));
 
+    const continueWatchingMovies = movies.filter((m) => continueWatchingPercent.has(m.link));
+    const continueWatchingRow: RowDef[] = continueWatchingMovies.length
+      ? [{ title: "Continue Watching", movies: continueWatchingMovies }]
+      : [];
+
     return [
+      ...continueWatchingRow,
       { title: "Top 10 Movies", movies: byRating.slice(0, 10), ranked: true },
       { title: "Recently Added", movies: recentlyAdded, badge: "NEW" },
       ...genreRows,
     ];
-  }, [movies]);
+  }, [movies, continueWatchingPercent]);
 
   const currentHeroMovie = heroMovies[heroIndex] || null;
 
@@ -120,28 +149,56 @@ export function Home({ onPlay }: HomeProps) {
   useEffect(() => {
     if (openDetail || openDownload) return; // those handle their own keys
     function onKeyDown(e: KeyboardEvent) {
+      if (e.keyCode === 10009 || e.keyCode === 27) {
+        // Back: leave search/downloads back to the browse screen. In the
+        // browse screen itself there's nothing to "close" at this level.
+        if (view !== "browse") {
+          setView("browse");
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      if (sidebarFocused) {
+        switch (e.keyCode) {
+          case 39: // Right - leave the sidebar back into whatever's on screen
+            setSidebarFocused(false);
+            break;
+          case 38:
+            setSidebarIndex((i) => Math.max(0, i - 1));
+            break;
+          case 40:
+            setSidebarIndex((i) => Math.min(SIDEBAR_ITEMS.length - 1, i + 1));
+            break;
+          case 13:
+            setView(sidebarIndex === 0 ? "browse" : sidebarIndex === 1 ? "search" : "downloads");
+            setSidebarFocused(false);
+            break;
+        }
+        return;
+      }
+
+      // Search/Downloads own their own key handling once focus has left
+      // the sidebar (see Search.tsx) - this listener only drives the
+      // browse screen's hero/row navigation below.
+      if (view !== "browse") return;
+
       switch (e.keyCode) {
         case 37: // Left
-          if (sidebarFocused) return;
           if (itemIndex === 0) setSidebarFocused(true);
           else moveItem(-1);
           break;
         case 39: // Right
-          if (sidebarFocused) setSidebarFocused(false);
-          else moveItem(1);
+          moveItem(1);
           break;
         case 38: // Up
-          if (sidebarFocused) setSidebarIndex((i) => Math.max(0, i - 1));
-          else moveRow(-1);
+          moveRow(-1);
           break;
         case 40: // Down
-          if (sidebarFocused) setSidebarIndex((i) => Math.min(SIDEBAR_ITEMS.length - 1, i + 1));
-          else moveRow(1);
+          moveRow(1);
           break;
         case 13: // Enter
-          if (sidebarFocused) {
-            setSidebarFocused(false);
-          } else if (rowIndex === -1) {
+          if (rowIndex === -1) {
             if (currentHeroMovie) onPlay(currentHeroMovie);
           } else {
             const movie = rows[rowIndex]?.movies[itemIndex];
@@ -153,32 +210,41 @@ export function Home({ onPlay }: HomeProps) {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, openDetail, openDownload]);
+  }, [view, sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, openDetail, openDownload]);
 
   return (
     <div>
       <Sidebar activeIndex={sidebarIndex} focusedIndex={sidebarFocused ? sidebarIndex : null} onSelect={setSidebarIndex} />
-      <Hero
-        movie={currentHeroMovie}
-        focused={!sidebarFocused && rowIndex === -1}
-        dotsCount={heroMovies.length}
-        activeDot={heroIndex}
-        onPlay={() => currentHeroMovie && onPlay(currentHeroMovie)}
-      />
-      {status && <p className="status">{status}</p>}
-      <div className="rows">
-        {rows.map((row, ri) => (
-          <Row
-            key={row.title}
-            title={row.title}
-            movies={row.movies}
-            ranked={row.ranked}
-            badge={row.badge}
-            focusedIndex={!sidebarFocused && rowIndex === ri ? itemIndex : null}
-            onSelect={(movie) => openMovie(movie)}
+      {view === "browse" && (
+        <>
+          <Hero
+            movie={currentHeroMovie}
+            focused={!sidebarFocused && rowIndex === -1}
+            dotsCount={heroMovies.length}
+            activeDot={heroIndex}
+            onPlay={() => currentHeroMovie && onPlay(currentHeroMovie)}
           />
-        ))}
-      </div>
+          {status && <p className="status">{status}</p>}
+          <div className="rows">
+            {rows.map((row, ri) => (
+              <Row
+                key={row.title}
+                title={row.title}
+                movies={row.movies}
+                ranked={row.ranked}
+                badge={row.badge}
+                progressFor={(movie) => continueWatchingPercent.get(movie.link)}
+                focusedIndex={!sidebarFocused && rowIndex === ri ? itemIndex : null}
+                onSelect={(movie) => openMovie(movie)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      {view === "search" && (
+        <Search movies={movies} onSelect={openMovie} progressFor={(movie) => continueWatchingPercent.get(movie.link)} />
+      )}
+      {view === "downloads" && <Downloads />}
       {openDetail && (
         <Detail
           movie={openDetail}

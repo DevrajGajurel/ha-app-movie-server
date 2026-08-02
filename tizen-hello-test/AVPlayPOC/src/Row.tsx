@@ -7,11 +7,12 @@ interface RowProps {
   movies: Movie[];
   ranked?: boolean;
   badge?: string;
+  progressFor?: (movie: Movie) => number | undefined;
   focusedIndex: number | null;
   onSelect: (movie: Movie, index: number) => void;
 }
 
-export function Row({ title, movies, ranked, badge, focusedIndex, onSelect }: RowProps) {
+export function Row({ title, movies, ranked, badge, progressFor, focusedIndex, onSelect }: RowProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -35,6 +36,7 @@ export function Row({ title, movies, ranked, badge, focusedIndex, onSelect }: Ro
             movie={movie}
             rank={ranked ? i + 1 : undefined}
             badge={badge}
+            progressPercent={progressFor?.(movie)}
             focused={focusedIndex === i}
             onClick={() => onSelect(movie, i)}
           />
