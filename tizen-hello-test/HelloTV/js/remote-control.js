@@ -282,16 +282,30 @@
     }
   }
 
-  function handleKeydown(e) {
-    const player = document.getElementById("player-overlay");
-    const playerOpen = Boolean(player && !player.hidden);
+  // The old <video> element reliably became document.activeElement after
+  // .focus() (see index.html's startPlayer()), so gating seek/tracks-panel
+  // handling on "focus is literally on player-video" worked fine. AVPlay's
+  // render target is an <object type="application/avplayer"> instead, and
+  // that does NOT reliably hold keyboard focus the same way on this
+  // platform - confirmed by seek keys silently doing nothing once the
+  // <video>-to-AVPlay migration landed. Gate on the tracks panel's own
+  // hidden state instead: it's already the thing that should "steal" Left/
+  // Right/Up from the player while open (for navigating its own track
+  // list), and unlike focus-equality it doesn't depend on the platform's
+  // opinion of whether an <object> is focusable.
+  function playerIsActiveModal() {
+    const tracksPanel = document.getElementById("player-tracks-panel");
+    if (tracksPanel && !tracksPanel.hidden) return false;
+    return mainPlayerOpen();
+  }
 
+  function handleKeydown(e) {
     const direction = KEYCODE_DIRECTION[e.keyCode];
     if (direction) {
       if ((direction === "left" || direction === "right") && isTextEntry(document.activeElement)) {
         return; // let the caret move within the text field
       }
-      if (playerOpen && document.activeElement === document.getElementById("player-video")) {
+      if (playerIsActiveModal()) {
         if (direction === "left" || direction === "right") {
           e.preventDefault();
           handleSeekKey(direction, e.repeat);
@@ -314,7 +328,7 @@
     }
 
     if (e.keyCode === 13) {
-      if (playerOpen && document.activeElement === document.getElementById("player-video")) {
+      if (playerIsActiveModal()) {
         // The player has no native controls to activate (see the
         // direction-key handling above) — Enter/OK is play/pause here.
         e.preventDefault();

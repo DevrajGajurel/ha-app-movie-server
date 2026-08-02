@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.54
+
+- Fixed seek (Left/Right) and Enter/play-pause not working after the AVPlay migration: that handling was gated on `document.activeElement === player-video`, which worked reliably for the old `<video>` element but not for AVPlay's `<object type="application/avplayer">` render target - it doesn't reliably hold keyboard focus the same way. Re-gated on whether the tracks panel is open instead (it's the only thing that should "steal" Left/Right/Up from the player), which doesn't depend on the platform's opinion of whether an `<object>` is focusable.
+
 ## 1.4.53
 
 - Replaced the movie player's `<video>` element with Samsung's native AVPlay API (`webapis.avplay`), the same engine Emby/Jellyfin use - this is what was actually needed to stop the TV rebooting: AVPlay's own decoder handles eac3/Dolby-Digital-Plus audio and 10-bit HEVC (Main 10) natively, both confirmed crash triggers for the browser's `<video>` element. The 10-bit playback-blocking guard added in 1.4.52 is removed since it's no longer needed. Audio/subtitle track switching now happens live via AVPlay's `setSelectTrack` (no server remux, no reload) instead of the old server-side ffmpeg remux dance. Playback now always requests the original file untouched (`raw=1`) so every embedded track stays available to switch between. Verified against the exact previously-crashing file via a dedicated AVPlay POC app before porting this into the main app.
