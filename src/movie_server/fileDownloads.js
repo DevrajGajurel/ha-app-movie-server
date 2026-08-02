@@ -509,11 +509,27 @@ function runFfprobe(filePath) {
             .filter((s) => s.codec_type === "subtitle")
             .map((s, index) => ({ index, codec: s.codec_name || null, language: s.tags?.language || null, title: s.tags?.title || null }))
             .filter((s) => TEXT_SUBTITLE_CODECS.has(s.codec));
+          // 10-bit HEVC (Main 10 profile) is what both real crashes on this
+          // TV had in common with each other, on top of the eac3 audio
+          // issue already fixed - and the crash persisted even after that
+          // fix, which points at the video stream itself. bits_per_raw_sample
+          // is ffprobe's direct answer when present; pix_fmt (e.g.
+          // "yuv420p10le") is the fallback for files where it isn't.
+          const rawBitDepth = Number(videoStream?.bits_per_raw_sample);
+          const pixFmtBitDepth = /10(le|be)$/i.test(videoStream?.pix_fmt || "")
+            ? 10
+            : /12(le|be)$/i.test(videoStream?.pix_fmt || "")
+            ? 12
+            : null;
+          const videoBitDepth = Number.isFinite(rawBitDepth) && rawBitDepth > 0 ? rawBitDepth : pixFmtBitDepth;
+
           resolve({
             durationSeconds: data.format?.duration ? Math.round(Number(data.format.duration)) : null,
             width: videoStream?.width || null,
             height: videoStream?.height || null,
             videoCodec: videoStream?.codec_name || null,
+            videoProfile: videoStream?.profile || null,
+            videoBitDepth,
             audioTracks,
             subtitleTracks,
           });

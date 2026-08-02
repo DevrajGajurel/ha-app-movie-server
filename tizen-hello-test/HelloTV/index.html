@@ -1594,6 +1594,7 @@
     const versionModalContent = document.getElementById("version-modal-content");
     let versionModalMovie = null;
     let versionModalOverrides = null;
+    let versionModalVersions = [];
 
     const deleteConfirmModal = document.getElementById("delete-confirm-modal");
     const deleteConfirmBody = document.getElementById("delete-confirm-body");
@@ -2544,6 +2545,34 @@
         .join("");
     }
 
+    // 10-bit HEVC (Main 10 profile) is what both real TV-reboot crashes had
+    // in common, on top of the eac3 audio issue already fixed separately -
+    // the crash persisted even after that fix, pointing at the video
+    // stream itself. The browser <video> element has no reliable way to
+    // negotiate this away like the native AVPlay API can (see the AVPlay
+    // POC), so rather than attempt playback and hope the error-cleanup
+    // mitigation is enough, refuse to ever load a 10-bit file into <video>
+    // in the first place - showing a clear message costs nothing; a hard
+    // reboot costs the whole TV.
+    function isUnsafeHighBitDepth(version) {
+      return Number(version?.videoBitDepth) >= 10;
+    }
+
+    function showPlaybackBlockedMessage(displayTitle, version) {
+      playbackContext = null;
+      playerTitle.textContent = displayTitle;
+      playerVideo.removeAttribute("src");
+      playerSpinner.classList.remove("show");
+      playerOverlay.classList.remove("controls-hidden");
+      playerOverlay.hidden = false;
+      const label = videoQualityLabel(version) || "this video format";
+      playerStatus.textContent =
+        `Playback blocked: ${label} uses 10-bit HEVC, which has crashed this TV before when played through this app. ` +
+        `A native-player fix is in progress — this file can't be played here yet.`;
+      playerStatus.hidden = false;
+      document.getElementById("player-close-btn")?.focus();
+    }
+
     async function choosePlaybackVersion(movie, overrides) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
@@ -2563,12 +2592,18 @@
       }
 
       if (versions.length <= 1) {
-        startPlayer(movie, versions[0]?.token, overrides);
+        const version = versions[0];
+        if (version && isUnsafeHighBitDepth(version)) {
+          showPlaybackBlockedMessage(displayTitle, version);
+          return;
+        }
+        startPlayer(movie, version?.token, overrides);
         return;
       }
 
       versionModalMovie = movie;
       versionModalOverrides = overrides;
+      versionModalVersions = versions;
       versionModalContent.innerHTML = renderVersionOptions(versions);
       versionModal.hidden = false;
       window.TVFocusManager?.focusFirst();
@@ -2578,6 +2613,7 @@
       versionModal.hidden = true;
       versionModalMovie = null;
       versionModalOverrides = null;
+      versionModalVersions = [];
       restoreFocusAfterModalClose();
     }
 
@@ -2587,9 +2623,17 @@
       const movie = versionModalMovie;
       const overrides = versionModalOverrides;
       const token = btn.dataset.token || null;
+      const version = versionModalVersions.find((v) => v.token === token);
+      const displayTitle = movie.tmdb?.tmdbTitle || movie.title || "Untitled";
       versionModal.hidden = true;
       versionModalMovie = null;
       versionModalOverrides = null;
+      versionModalVersions = [];
+
+      if (version && isUnsafeHighBitDepth(version)) {
+        showPlaybackBlockedMessage(displayTitle, version);
+        return;
+      }
       startPlayer(movie, token, overrides);
     });
 

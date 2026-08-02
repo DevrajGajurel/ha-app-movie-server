@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.52
+
+- The audio-codec fix alone didn't stop the TV reboot - both crashing titles are also 10-bit HEVC (Main 10 profile), and the crash is happening at a level our own error-cleanup (1.4.47) can't reliably reach or prevent once it starts. Rather than keep reacting after the fact, the TV app now checks a file's video profile/bit depth (new `videoProfile`/`videoBitDepth` fields from ffprobe, exposed via `/api/downloads/versions`) *before* ever loading it into the `<video>` element, and blocks playback with a clear on-screen message instead for anything 10-bit - trading "won't play yet" for "won't crash the whole TV". Bumped the probe cache to v2 since existing cached entries don't have the new fields. A proper fix (playing 10-bit HEVC natively) is what the AVPlay POC is for.
+
 ## 1.4.51
 
 - Added `Cache-Control: no-store` to every downloads/play response. Verified via direct testing that the 1.4.49 audio-transcode fix is actually serving correctly (HEVC + single AAC track) for both previously-crashing titles - but the same URL (tmdbId/title, no explicit file token) can end up pointing at different bytes over time (a re-download, a newly-preferred larger file, or a track that now gets transcoded when it didn't before), and none of these responses had ever set a caching header, leaving the door open for a client to keep replaying a stale response instead of re-fetching after a server-side fix.

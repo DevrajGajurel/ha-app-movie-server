@@ -9,7 +9,11 @@ const { createClient } = require("redis");
 // itself all hit /api/downloads/versions independently). None of that
 // answer ever changes for a given file unless the file itself changes, so
 // it's cached here indefinitely rather than re-run every time.
-const CACHE_PREFIX = "movieserver:v1:probe";
+// Bumped to v2 when videoProfile/videoBitDepth were added to the probe
+// result - old v1 entries are missing those fields entirely (not just
+// null), which would silently defeat the high-bit-depth playback guard for
+// every file that was already probed and cached before this change.
+const CACHE_PREFIX = "movieserver:v2:probe";
 
 let client = null;
 
