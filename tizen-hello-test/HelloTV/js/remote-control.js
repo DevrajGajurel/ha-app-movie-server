@@ -174,20 +174,25 @@
     console.info("[remote-control] exit requested (no-op outside Tizen)");
   }
 
-  // Whichever of the two <video>s (main player or trailer) is actually
-  // open right now — used by both the D-pad seek handling below and the
-  // hardware remote's dedicated transport keys, neither of which can just
-  // grab "the first <video> in the document" (that used to be a real bug
-  // here: with the trailer added, document.querySelector("video") always
-  // matched player-video regardless of which overlay was actually open,
-  // so the physical Play/Pause and fast-forward/rewind buttons silently
-  // controlled the wrong, hidden player whenever a trailer was showing).
-  function activeVideoElement() {
-    const trailer = document.getElementById("trailer-overlay");
-    if (trailer && !trailer.hidden) return document.getElementById("trailer-video");
+  // The main player is now backed by AVPlay (see index.html's
+  // startPlayer()/webapis.avplay) instead of a <video> element - AVPlay has
+  // no per-element media API at all (getCurrentTime/seekTo/play/pause all
+  // live on the single global webapis.avplay singleton, not on
+  // #player-video itself), so it can't be manipulated the same way the
+  // trailer's real <video> element still is. mainPlayerOpen()/trailerOpen()
+  // pick which path a given key press should take.
+  function mainPlayerOpen() {
     const player = document.getElementById("player-overlay");
-    if (player && !player.hidden) return document.getElementById("player-video");
-    return null;
+    return Boolean(player && !player.hidden);
+  }
+
+  function trailerOpen() {
+    const trailer = document.getElementById("trailer-overlay");
+    return Boolean(trailer && !trailer.hidden);
+  }
+
+  function activeTrailerVideoElement() {
+    return trailerOpen() ? document.getElementById("trailer-video") : null;
   }
 
   // Left/Right while a video is open seeks instead of moving focus.
@@ -200,8 +205,12 @@
   let seekRepeatDirection = null;
   let seekRepeatCount = 0;
 
-  function seekActiveVideo(deltaSeconds) {
-    const video = activeVideoElement();
+  function seekActiveMedia(deltaSeconds) {
+    if (mainPlayerOpen()) {
+      window.TVPlayer?.seekBy(deltaSeconds);
+      return;
+    }
+    const video = activeTrailerVideoElement();
     if (!video) return;
     // The trailer stream is a live server-side mux with no known total
     // length up front, so video.duration is often not a finite number yet
@@ -218,8 +227,8 @@
       seekRepeatCount += 1;
     }
     const step = Math.min(SEEK_STEP_SECONDS * (1 + seekRepeatCount), SEEK_MAX_STEP_SECONDS);
-    seekActiveVideo(direction === "right" ? step : -step);
-    window.TVPlayer?.showControls();
+    seekActiveMedia(direction === "right" ? step : -step);
+    if (mainPlayerOpen()) window.TVPlayer?.showControls();
   }
 
   function resetSeekRepeat() {
@@ -230,16 +239,32 @@
   function dispatchMediaEvent(action) {
     document.dispatchEvent(new CustomEvent("tv-media-command", { detail: { action } }));
 
-    const video = activeVideoElement();
+    if (mainPlayerOpen()) {
+      switch (action) {
+        case "play":
+        case "play-pause":
+        case "pause":
+          window.TVPlayer?.togglePlayPause();
+          break;
+        case "stop":
+          document.getElementById("player-close-btn")?.click();
+          break;
+        case "fast-forward":
+          window.TVPlayer?.seekBy(10);
+          break;
+        case "rewind":
+          window.TVPlayer?.seekBy(-10);
+          break;
+      }
+      return;
+    }
+
+    const video = activeTrailerVideoElement();
     if (!video) return;
     switch (action) {
       case "play":
       case "play-pause":
-        if (video.id === "trailer-video") {
-          window.TVTrailer ? window.TVTrailer.togglePlayPause() : (video.paused ? video.play() : video.pause());
-        } else {
-          window.TVPlayer ? window.TVPlayer.togglePlayPause() : (video.paused ? video.play() : video.pause());
-        }
+        window.TVTrailer ? window.TVTrailer.togglePlayPause() : (video.paused ? video.play() : video.pause());
         break;
       case "pause":
         video.pause();

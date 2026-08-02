@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.53
+
+- Replaced the movie player's `<video>` element with Samsung's native AVPlay API (`webapis.avplay`), the same engine Emby/Jellyfin use - this is what was actually needed to stop the TV rebooting: AVPlay's own decoder handles eac3/Dolby-Digital-Plus audio and 10-bit HEVC (Main 10) natively, both confirmed crash triggers for the browser's `<video>` element. The 10-bit playback-blocking guard added in 1.4.52 is removed since it's no longer needed. Audio/subtitle track switching now happens live via AVPlay's `setSelectTrack` (no server remux, no reload) instead of the old server-side ffmpeg remux dance. Playback now always requests the original file untouched (`raw=1`) so every embedded track stays available to switch between. Verified against the exact previously-crashing file via a dedicated AVPlay POC app before porting this into the main app.
+
 ## 1.4.52
 
 - The audio-codec fix alone didn't stop the TV reboot - both crashing titles are also 10-bit HEVC (Main 10 profile), and the crash is happening at a level our own error-cleanup (1.4.47) can't reliably reach or prevent once it starts. Rather than keep reacting after the fact, the TV app now checks a file's video profile/bit depth (new `videoProfile`/`videoBitDepth` fields from ffprobe, exposed via `/api/downloads/versions`) *before* ever loading it into the `<video>` element, and blocks playback with a clear on-screen message instead for anything 10-bit - trading "won't play yet" for "won't crash the whole TV". Bumped the probe cache to v2 since existing cached entries don't have the new fields. A proper fix (playing 10-bit HEVC natively) is what the AVPlay POC is for.

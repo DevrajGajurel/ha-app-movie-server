@@ -673,11 +673,16 @@
     }
 
     /* ---- Video player ---- */
+    /* Transparent, not black: AVPlay renders into its own native plane
+       BEHIND this whole DOM layer (see #player-video below) - an opaque
+       background here would paint over that plane and hide the picture
+       even though playback is working, exactly like the AVPlay POC did
+       before this was fixed there. */
     .tv-player-overlay {
       position: fixed;
       inset: 0;
       z-index: 400;
-      background: #000;
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -685,11 +690,36 @@
 
     .tv-player-overlay[hidden] { display: none; }
 
+    /* AVPlay's actual render target (an <object>, not a <video> — see
+       startPlayer()/webapis.avplay). Must match the setDisplayRect() call
+       exactly; Samsung's own guidance is to always use the 1920x1080 base
+       resolution here regardless of the app's own CSS scaling. */
     #player-video {
-      width: 100%;
-      height: 100%;
-      background: #000;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      background: transparent;
     }
+
+    .tv-player-subtitle-cue {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 8%;
+      z-index: 2;
+      text-align: center;
+      color: #fff;
+      font-size: 2rem;
+      line-height: 1.4;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.9);
+      padding: 0 4rem;
+      white-space: pre-line;
+      pointer-events: none;
+    }
+
+    .tv-player-subtitle-cue[hidden] { display: none; }
 
     .tv-player-close {
       position: absolute;
@@ -1432,7 +1462,8 @@
   </main>
 
   <div class="tv-player-overlay" id="player-overlay" hidden>
-    <video id="player-video" tabindex="-1"></video>
+    <object id="player-video" type="application/avplayer" tabindex="-1"></object>
+    <div class="tv-player-subtitle-cue" id="player-subtitle-cue" hidden></div>
     <div class="tv-player-gradient"></div>
     <div class="tv-player-spinner" id="player-spinner"></div>
     <div class="tv-player-center-icon" id="player-center-icon"></div>
@@ -1550,6 +1581,7 @@
     const playerTracksPanel = document.getElementById("player-tracks-panel");
     const playerAudioTracksEl = document.getElementById("player-audio-tracks");
     const playerSubtitleTracksEl = document.getElementById("player-subtitle-tracks");
+    const playerSubtitleCue = document.getElementById("player-subtitle-cue");
     let featuredMovie = null;
     let preModalFocus = null;
     let allMovies = [];
@@ -2545,34 +2577,6 @@
         .join("");
     }
 
-    // 10-bit HEVC (Main 10 profile) is what both real TV-reboot crashes had
-    // in common, on top of the eac3 audio issue already fixed separately -
-    // the crash persisted even after that fix, pointing at the video
-    // stream itself. The browser <video> element has no reliable way to
-    // negotiate this away like the native AVPlay API can (see the AVPlay
-    // POC), so rather than attempt playback and hope the error-cleanup
-    // mitigation is enough, refuse to ever load a 10-bit file into <video>
-    // in the first place - showing a clear message costs nothing; a hard
-    // reboot costs the whole TV.
-    function isUnsafeHighBitDepth(version) {
-      return Number(version?.videoBitDepth) >= 10;
-    }
-
-    function showPlaybackBlockedMessage(displayTitle, version) {
-      playbackContext = null;
-      playerTitle.textContent = displayTitle;
-      playerVideo.removeAttribute("src");
-      playerSpinner.classList.remove("show");
-      playerOverlay.classList.remove("controls-hidden");
-      playerOverlay.hidden = false;
-      const label = videoQualityLabel(version) || "this video format";
-      playerStatus.textContent =
-        `Playback blocked: ${label} uses 10-bit HEVC, which has crashed this TV before when played through this app. ` +
-        `A native-player fix is in progress — this file can't be played here yet.`;
-      playerStatus.hidden = false;
-      document.getElementById("player-close-btn")?.focus();
-    }
-
     async function choosePlaybackVersion(movie, overrides) {
       const t = movie.tmdb;
       const displayTitle = t?.tmdbTitle || movie.title || "Untitled";
@@ -2592,12 +2596,7 @@
       }
 
       if (versions.length <= 1) {
-        const version = versions[0];
-        if (version && isUnsafeHighBitDepth(version)) {
-          showPlaybackBlockedMessage(displayTitle, version);
-          return;
-        }
-        startPlayer(movie, version?.token, overrides);
+        startPlayer(movie, versions[0]?.token, overrides);
         return;
       }
 
@@ -2623,17 +2622,10 @@
       const movie = versionModalMovie;
       const overrides = versionModalOverrides;
       const token = btn.dataset.token || null;
-      const version = versionModalVersions.find((v) => v.token === token);
-      const displayTitle = movie.tmdb?.tmdbTitle || movie.title || "Untitled";
       versionModal.hidden = true;
       versionModalMovie = null;
       versionModalOverrides = null;
       versionModalVersions = [];
-
-      if (version && isUnsafeHighBitDepth(version)) {
-        showPlaybackBlockedMessage(displayTitle, version);
-        return;
-      }
       startPlayer(movie, token, overrides);
     });
 
@@ -2655,12 +2647,47 @@
       return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
     }
 
-    function updatePlayerProgress() {
-      const duration = playerVideo.duration;
-      const pct = Number.isFinite(duration) && duration > 0 ? (playerVideo.currentTime / duration) * 100 : 0;
+    // ---- AVPlay (native player, replaces the old <video> element) ----
+    // A hard crash on this TV was traced to two things a browser <video>
+    // element can't handle even though the hardware fully supports them:
+    // eac3/Dolby-Digital-Plus audio, and 10-bit HEVC (Main 10) video -
+    // confirmed via a real crash log and reproduced deliberately with the
+    // AVPlay POC, which played the exact same file without issue. AVPlay
+    // has no per-element API the way <video> does - there's a single
+    // global webapis.avplay instance, and #player-video (now an <object>,
+    // see the CSS/HTML above) is just its render target. avReady tracks
+    // whether prepareAsync's success callback has fired for the CURRENT
+    // open() session; nothing that touches track selection, seeking, or
+    // duration is safe to call before that.
+    let avReady = false;
+    let avTrackIndexMap = { audio: [], text: [] };
+    let avSeekBusy = false;
+    let avPendingResumeMs = null;
+
+    function avDurationMs() {
+      try { return avReady ? webapis.avplay.getDuration() : 0; } catch { return 0; }
+    }
+
+    function avCurrentTimeMs() {
+      try { return avReady ? webapis.avplay.getCurrentTime() : 0; } catch { return 0; }
+    }
+
+    function avState() {
+      try { return webapis.avplay.getState(); } catch { return "NONE"; }
+    }
+
+    function avIsPaused() {
+      return avState() !== "PLAYING";
+    }
+
+    function updatePlayerProgress(currentMs) {
+      const durationMs = avDurationMs();
+      const durationSec = durationMs > 0 ? durationMs / 1000 : NaN;
+      const curSec = (currentMs != null ? currentMs : avCurrentTimeMs()) / 1000;
+      const pct = Number.isFinite(durationSec) && durationSec > 0 ? (curSec / durationSec) * 100 : 0;
       playerProgressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-      playerTimeElapsed.textContent = formatPlayerTime(playerVideo.currentTime);
-      playerTimeDuration.textContent = formatPlayerTime(duration);
+      playerTimeElapsed.textContent = formatPlayerTime(curSec);
+      playerTimeDuration.textContent = formatPlayerTime(durationSec);
     }
 
     let controlsHideTimer = null;
@@ -2670,7 +2697,7 @@
       if (controlsHideTimer) clearTimeout(controlsHideTimer);
       // Keep controls visible while paused — only auto-hide during playback,
       // matching Netflix/Jellyfin/Prime behavior.
-      if (!playerVideo.paused) {
+      if (!avIsPaused()) {
         controlsHideTimer = setTimeout(() => {
           playerOverlay.classList.add("controls-hidden");
         }, 4000);
@@ -2687,29 +2714,51 @@
     }
 
     function togglePlayPause() {
-      if (playerVideo.paused) {
-        playerVideo.play().catch(() => {});
-      } else {
-        playerVideo.pause();
+      if (!avReady) return;
+      const state = avState();
+      try {
+        if (state === "PLAYING") {
+          webapis.avplay.pause();
+          flashPlayerCenterIcon("⏸");
+          savePlaybackProgress({ immediate: true });
+        } else if (state === "PAUSED" || state === "READY") {
+          webapis.avplay.play();
+          flashPlayerCenterIcon("▶");
+        }
+      } catch (err) {
+        console.warn("[player] togglePlayPause failed:", err?.message);
       }
+      showPlayerControls();
+    }
+
+    // AVPlay requires waiting for a seek's own callback before issuing
+    // another seekTo/jumpForward/jumpBackward - firing them back to back
+    // (e.g. holding the remote's seek key) throws otherwise, hence
+    // avSeekBusy. jumpForward/jumpBackward take MILLISECONDS (confirmed
+    // via Samsung's own SampleWebApps-PlayerAvplayWithSubtitles source —
+    // easy to get wrong since seconds would be the natural guess).
+    function seekBy(deltaSeconds) {
+      if (!avReady || avSeekBusy) return;
+      avSeekBusy = true;
+      const ms = Math.round(Math.abs(deltaSeconds) * 1000);
+      const done = () => { avSeekBusy = false; };
+      try {
+        if (deltaSeconds >= 0) webapis.avplay.jumpForward(ms, done, done);
+        else webapis.avplay.jumpBackward(ms, done, done);
+      } catch (err) {
+        avSeekBusy = false;
+        console.warn("[player] seekBy failed:", err?.message);
+      }
+      // Reflect the seek immediately rather than waiting for the next
+      // oncurrentplaytime tick, which can lag visibly behind a keypress.
+      const target = Math.min(Math.max(0, avCurrentTimeMs() + deltaSeconds * 1000), avDurationMs() || Infinity);
+      updatePlayerProgress(target);
+      showPlayerControls();
     }
 
     // remote-control.js drives Enter/seek-key handling for the player but
     // lives outside this inline script's scope, so expose what it needs.
-    window.TVPlayer = { togglePlayPause, showControls: showPlayerControls };
-
-    playerVideo.addEventListener("play", () => {
-      flashPlayerCenterIcon("▶");
-      showPlayerControls();
-    });
-    playerVideo.addEventListener("pause", () => {
-      flashPlayerCenterIcon("⏸");
-      showPlayerControls();
-    });
-    playerVideo.addEventListener("timeupdate", updatePlayerProgress);
-    playerVideo.addEventListener("loadedmetadata", updatePlayerProgress);
-    playerVideo.addEventListener("waiting", () => playerSpinner.classList.add("show"));
-    playerVideo.addEventListener("playing", () => playerSpinner.classList.remove("show"));
+    window.TVPlayer = { togglePlayPause, showControls: showPlayerControls, seekBy };
 
     // ---- Resume playback (Continue Watching) ----
     // Position is tracked server-side, tied to the movie's download folder
@@ -2717,7 +2766,6 @@
     const RESUME_MIN_SECONDS = 10;
     const PROGRESS_SAVE_INTERVAL_MS = 10000;
     let playbackContext = null; // { tmdbId, title, fileToken }
-    let pendingResumeSeconds = null;
     let lastProgressSaveAt = 0;
 
     function resumeQueryParams(ctx) {
@@ -2729,9 +2777,9 @@
     }
 
     function savePlaybackProgress({ immediate = false } = {}) {
-      if (!playbackContext) return;
-      const duration = playerVideo.duration;
-      if (!Number.isFinite(duration) || duration <= 0) return;
+      if (!playbackContext || !avReady) return;
+      const durationMs = avDurationMs();
+      if (!(durationMs > 0)) return;
 
       const now = Date.now();
       if (!immediate && now - lastProgressSaveAt < PROGRESS_SAVE_INTERVAL_MS) return;
@@ -2744,8 +2792,8 @@
           tmdbId: playbackContext.tmdbId,
           title: playbackContext.title,
           file: playbackContext.fileToken,
-          positionSeconds: playerVideo.currentTime,
-          durationSeconds: duration,
+          positionSeconds: avCurrentTimeMs() / 1000,
+          durationSeconds: durationMs / 1000,
           audioTrack: selectedAudioTrack,
           subtitleTrack: selectedSubtitleTrack,
         }),
@@ -2754,26 +2802,15 @@
       });
     }
 
-    playerVideo.addEventListener("timeupdate", () => savePlaybackProgress());
-    playerVideo.addEventListener("pause", () => savePlaybackProgress({ immediate: true }));
-
-    playerVideo.addEventListener("loadedmetadata", () => {
-      if (pendingResumeSeconds != null) {
-        playerVideo.currentTime = pendingResumeSeconds;
-        pendingResumeSeconds = null;
-      }
-    });
-
     // ---- Audio & subtitle tracks (chosen DURING playback, not before) ----
     // Press Up while the player is focused to open this panel — see
-    // remote-control.js for the key wiring. Audio track switches reload the
-    // stream with the new track (see switchAudioTrack's comment for why);
-    // subtitles just add/replace a <track> element, no reload needed.
+    // remote-control.js for the key wiring. Both switch natively via
+    // AVPlay's setSelectTrack() now (no server remux, no reload) - see
+    // avSelectAudioTrack/avSelectSubtitleTrack below.
     let currentAudioTracks = [];
     let currentSubtitleTracks = [];
     let selectedAudioTrack = 0;
     let selectedSubtitleTrack = null; // null = off
-    let activeSubtitleTrackEl = null;
 
     function renderTracksPanel() {
       playerAudioTracksEl.innerHTML = currentAudioTracks.length
@@ -2814,62 +2851,65 @@
       playerVideo.focus();
     }
 
-    // Direct-play only serves the file's default audio track — switching to
-    // any other embedded track requires the server to remux that track in
-    // (see streamAudioTrackRemux), which means reloading the <video> src.
-    // We capture the current position/pause-state first and restore it once
-    // the reloaded stream is ready, so it feels like a track switch rather
-    // than starting the movie over.
-    function switchAudioTrack(trackIndex) {
-      if (!playbackContext) return;
-      const resumeAt = playerVideo.currentTime;
-      const wasPaused = playerVideo.paused;
-      selectedAudioTrack = trackIndex;
-      pendingResumeSeconds = null; // don't let a stale saved-progress resume clobber this
-
-      const params = new URLSearchParams();
-      if (playbackContext.tmdbId) params.set("tmdbId", String(playbackContext.tmdbId));
-      params.set("title", playbackContext.title);
-      if (playbackContext.fileToken) params.set("file", playbackContext.fileToken);
-      if (trackIndex) params.set("audioTrack", String(trackIndex));
-
-      const resumeOnceReady = () => {
-        playerVideo.currentTime = resumeAt;
-        if (!wasPaused) playerVideo.play().catch(() => {});
-        playerVideo.removeEventListener("loadedmetadata", resumeOnceReady);
-      };
-      playerVideo.addEventListener("loadedmetadata", resumeOnceReady);
-      playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
+    // setSelectTrack()'s index parameter is the COMBINED index across
+    // getTotalTrackInfo() (video+audio+text together), NOT a per-type
+    // index - confirmed via Samsung's own AVPlay sample source, and easy
+    // to get wrong since the backend's ffprobe-derived audioTracks/
+    // subtitleTracks arrays (used for the panel's labels) are indexed
+    // per-type, matching the file's own stream order. avTrackIndexMap
+    // translates between the two, built fresh each time avplay reaches
+    // READY (getTotalTrackInfo() throws before that).
+    function avRefreshTrackIndexMap() {
+      let info = [];
+      try { info = webapis.avplay.getTotalTrackInfo() || []; } catch { info = []; }
+      const audio = [];
+      const text = [];
+      for (const track of info) {
+        if (track.type === "AUDIO") audio.push(track.index);
+        else if (track.type === "TEXT") text.push(track.index);
+      }
+      avTrackIndexMap = { audio, text };
     }
 
-    // Subtitles are just an overlay <track> — no reload, switches instantly.
-    function selectSubtitleTrack(subtitleIndex) {
-      if (activeSubtitleTrackEl) {
-        activeSubtitleTrackEl.remove();
-        activeSubtitleTrackEl = null;
+    function avSelectAudioTrack(trackIndex) {
+      if (!avReady) return;
+      const combinedIndex = avTrackIndexMap.audio[trackIndex];
+      if (combinedIndex == null) return;
+      try {
+        webapis.avplay.setSelectTrack("AUDIO", combinedIndex);
+        selectedAudioTrack = trackIndex;
+      } catch (err) {
+        console.warn("[player] setSelectTrack AUDIO failed:", err?.message);
       }
-      selectedSubtitleTrack = subtitleIndex;
-      if (subtitleIndex == null || !playbackContext?.fileToken) return;
+    }
 
-      const trackEl = document.createElement("track");
-      trackEl.kind = "subtitles";
-      trackEl.default = true;
-      const params = new URLSearchParams({ file: playbackContext.fileToken, track: String(subtitleIndex) });
-      trackEl.src = apiUrl(`downloads/subtitle?${params.toString()}`);
-      trackEl.addEventListener("load", () => {
-        if (trackEl.track) trackEl.track.mode = "showing";
-      });
-      playerVideo.appendChild(trackEl);
-      activeSubtitleTrackEl = trackEl;
+    // subtitleIndex === null means "off": setSilentSubtitle(true) hides
+    // rendering without needing to deselect the TEXT track itself.
+    function avSelectSubtitleTrack(subtitleIndex) {
+      selectedSubtitleTrack = subtitleIndex;
+      playerSubtitleCue.hidden = true;
+      playerSubtitleCue.textContent = "";
+      if (!avReady) return;
+      try {
+        if (subtitleIndex == null) {
+          webapis.avplay.setSilentSubtitle(true);
+          return;
+        }
+        const combinedIndex = avTrackIndexMap.text[subtitleIndex];
+        if (combinedIndex != null) webapis.avplay.setSelectTrack("TEXT", combinedIndex);
+        webapis.avplay.setSilentSubtitle(false);
+      } catch (err) {
+        console.warn("[player] subtitle track switch failed:", err?.message);
+      }
     }
 
     playerTracksPanel.addEventListener("click", (e) => {
       const btn = e.target.closest(".tv-track-option");
       if (!btn) return;
       if (btn.dataset.kind === "audio") {
-        switchAudioTrack(Number(btn.dataset.track));
+        avSelectAudioTrack(Number(btn.dataset.track));
       } else {
-        selectSubtitleTrack(btn.dataset.track === "off" ? null : Number(btn.dataset.track));
+        avSelectSubtitleTrack(btn.dataset.track === "off" ? null : Number(btn.dataset.track));
       }
       closeTracksPanel();
     });
@@ -2879,7 +2919,109 @@
       showControls: showPlayerControls,
       openTracksPanel,
       closeTracksPanel,
+      seekBy,
     };
+
+    // Runs once prepareAsync's success callback fires AND once the saved-
+    // progress fetch resolves - whichever is later actually applies
+    // anything, since track selection/seekTo both require avReady, and the
+    // remembered track/position might not have arrived yet when avReady
+    // first flips true. Safe to call twice; the second call is a no-op
+    // apart from re-applying the same values.
+    function avApplyPendingAdjustments() {
+      if (!avReady) return;
+      if (selectedAudioTrack) avSelectAudioTrack(selectedAudioTrack);
+      avSelectSubtitleTrack(selectedSubtitleTrack);
+      if (avPendingResumeMs != null) {
+        const ms = avPendingResumeMs;
+        avPendingResumeMs = null;
+        try {
+          webapis.avplay.seekTo(ms, () => {}, (err) => console.warn("[player] resume seekTo failed:", err?.message));
+        } catch (err) {
+          console.warn("[player] resume seekTo threw:", err?.message);
+        }
+      }
+    }
+
+    function avShowPlaybackError(message) {
+      playerStatus.textContent = message;
+      playerStatus.hidden = false;
+      playerSpinner.classList.remove("show");
+      reportClientError("avplay.error", new Error(message), {
+        tmdbId: playbackContext?.tmdbId || null,
+        title: playbackContext?.title || null,
+        fileToken: playbackContext?.fileToken || null,
+      });
+      window.setTimeout(() => {
+        if (!playerOverlay.hidden) closePlayer();
+      }, 4000);
+    }
+
+    function avOpenStream(streamUrl) {
+      avReady = false;
+      avTrackIndexMap = { audio: [], text: [] };
+
+      try {
+        webapis.avplay.stop();
+      } catch {
+        /* nothing was playing - fine */
+      }
+      try {
+        webapis.avplay.close();
+      } catch {
+        /* nothing was open - fine */
+      }
+
+      try {
+        webapis.avplay.open(streamUrl);
+        // Always the 1920x1080 base resolution here per Samsung's own
+        // guidance, regardless of the app's own CSS scaling (there isn't
+        // any - #player-video is sized 1920x1080 to match exactly).
+        webapis.avplay.setDisplayRect(0, 0, 1920, 1080);
+        webapis.avplay.setDisplayMethod("PLAYER_DISPLAY_MODE_FULL_SCREEN");
+      } catch (err) {
+        avShowPlaybackError("Could not open this file: " + (err?.message || "unknown error"));
+        return;
+      }
+
+      webapis.avplay.setListener({
+        onbufferingstart: () => playerSpinner.classList.add("show"),
+        onbufferingprogress: () => {},
+        onbufferingcomplete: () => playerSpinner.classList.remove("show"),
+        oncurrentplaytime: (currentMs) => {
+          updatePlayerProgress(currentMs);
+          savePlaybackProgress();
+        },
+        onstreamcompleted: () => closePlayer(),
+        onerror: (eventType) => avShowPlaybackError("Playback error: " + String(eventType)),
+        onevent: () => {},
+        onsubtitlechange: (_duration, text) => {
+          playerSubtitleCue.textContent = text || "";
+          playerSubtitleCue.hidden = !text;
+        },
+        ondrmevent: () => {},
+      });
+
+      try {
+        webapis.avplay.prepareAsync(
+          () => {
+            avReady = true;
+            avRefreshTrackIndexMap();
+            avApplyPendingAdjustments();
+            try {
+              webapis.avplay.play();
+            } catch (err) {
+              console.warn("[player] play() after prepare failed:", err?.message);
+            }
+            playerSpinner.classList.remove("show");
+            flashPlayerCenterIcon("▶");
+          },
+          (err) => avShowPlaybackError("Could not prepare this file: " + (err?.message || "unknown error"))
+        );
+      } catch (err) {
+        avShowPlaybackError(err?.message || "prepareAsync threw");
+      }
+    }
 
     function startPlayer(movie, fileToken, overrides) {
       const t = movie.tmdb;
@@ -2888,16 +3030,12 @@
       const subtitleOverride = overrides?.subtitleTrack;
 
       playbackContext = { tmdbId: t?.tmdbId || null, title: displayTitle, fileToken: fileToken || null };
-      pendingResumeSeconds = null;
       lastProgressSaveAt = 0;
+      avPendingResumeMs = null;
       currentAudioTracks = [];
       currentSubtitleTracks = [];
       selectedAudioTrack = Number.isInteger(audioOverride) ? audioOverride : 0;
       selectedSubtitleTrack = subtitleOverride !== undefined ? subtitleOverride : null;
-      if (activeSubtitleTrackEl) {
-        activeSubtitleTrackEl.remove();
-        activeSubtitleTrackEl = null;
-      }
       playerTracksHint.hidden = true;
       playerTracksPanel.hidden = true;
 
@@ -2910,70 +3048,38 @@
       playerOverlay.hidden = false;
       playerSpinner.classList.add("show");
 
-      // Start playback right away with whatever's already known (an
-      // explicit override from the detail page's track cycle buttons, or
-      // this file's default track) rather than waiting on a progress
-      // lookup first — that used to block every single play behind a
-      // network round trip, even for the vast majority of movies that
-      // have never had a non-default track remembered. The lookup still
-      // happens, just in parallel below; it only causes a visible reload
-      // in the (uncommon) case where it reveals a different audio track
-      // was remembered for this movie.
+      // raw=1 is load-bearing, not optional: it bypasses the server's
+      // eac3->AAC auto-transcode and track-switch remux (both built for
+      // the old <video>-element path, neither needed now that AVPlay reads
+      // the container natively) - without it, the server would strip the
+      // response down to a single audio track, breaking
+      // avSelectAudioTrack's ability to switch between embedded ones.
       const params = new URLSearchParams();
       if (t?.tmdbId) params.set("tmdbId", String(t.tmdbId));
       params.set("title", displayTitle);
       if (fileToken) params.set("file", fileToken);
-      if (selectedAudioTrack) params.set("audioTrack", String(selectedAudioTrack));
-      playerVideo.src = apiUrl(`downloads/play?${params.toString()}`);
+      params.set("raw", "1");
       playerVideo.focus();
-      playerVideo.play().catch(() => {
-        // Autoplay may be blocked; the error handler below covers real
-        // playback failures (unsupported format, file not found, etc.).
-      });
+      avOpenStream(apiUrl(`downloads/play?${params.toString()}`));
       showPlayerControls();
-
-      if (selectedSubtitleTrack != null) selectSubtitleTrack(selectedSubtitleTrack);
 
       fetch(apiUrl(`downloads/progress?${resumeQueryParams(playbackContext)}`))
         .then((res) => res.json())
         .then((data) => {
           const progress = data?.progress;
           const resumeSeconds = progress?.positionSeconds >= RESUME_MIN_SECONDS ? progress.positionSeconds : null;
+          if (resumeSeconds != null) avPendingResumeMs = Math.round(resumeSeconds * 1000);
 
           // The caller (e.g. the detail page's own track cycle buttons)
           // already resolved which track to use — don't let a remembered
-          // one override an explicit choice just made. Audio track
-          // selection needs a server-side remux (see
-          // streamAudioTrackRemux), so switching to the remembered one
-          // means reloading the stream — handle that resume position
-          // through the reload's own fresh loadedmetadata event rather
-          // than the immediate-readyState branch below, which would race
-          // against a source we're about to discard anyway.
-          const needsAudioSwitch =
-            audioOverride === undefined &&
-            Number.isInteger(progress?.audioTrack) &&
-            progress.audioTrack !== selectedAudioTrack;
-
-          if (needsAudioSwitch) {
+          // one override an explicit choice just made.
+          if (audioOverride === undefined && Number.isInteger(progress?.audioTrack)) {
             selectedAudioTrack = progress.audioTrack;
-            pendingResumeSeconds = resumeSeconds;
-            const reloadParams = new URLSearchParams(params);
-            if (selectedAudioTrack) reloadParams.set("audioTrack", String(selectedAudioTrack));
-            else reloadParams.delete("audioTrack");
-            playerVideo.src = apiUrl(`downloads/play?${reloadParams.toString()}`);
-            playerVideo.play().catch(() => {});
-          } else if (resumeSeconds != null) {
-            pendingResumeSeconds = resumeSeconds;
-            if (playerVideo.readyState >= 1) {
-              playerVideo.currentTime = pendingResumeSeconds;
-              pendingResumeSeconds = null;
-            }
           }
-
           if (subtitleOverride === undefined && selectedSubtitleTrack == null && progress?.subtitleTrack != null) {
             selectedSubtitleTrack = progress.subtitleTrack;
-            selectSubtitleTrack(selectedSubtitleTrack);
           }
+          avApplyPendingAdjustments();
         })
         .catch(() => {
           // No saved progress/preferences available — play from the start
@@ -3002,17 +3108,24 @@
     function closePlayer() {
       savePlaybackProgress({ immediate: true });
       playbackContext = null;
-      playerVideo.pause();
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
+      try {
+        const state = webapis.avplay.getState();
+        if (state === "PLAYING" || state === "PAUSED") webapis.avplay.stop();
+      } catch {
+        /* already stopped/never started - fine */
+      }
+      try {
+        webapis.avplay.close();
+      } catch {
+        /* already closed - fine */
+      }
+      avReady = false;
       playerOverlay.hidden = true;
       if (controlsHideTimer) clearTimeout(controlsHideTimer);
       playerSpinner.classList.remove("show");
       playerTracksPanel.hidden = true;
-      if (activeSubtitleTrackEl) {
-        activeSubtitleTrackEl.remove();
-        activeSubtitleTrackEl = null;
-      }
+      playerSubtitleCue.hidden = true;
+      playerSubtitleCue.textContent = "";
 
       const focusEl = preModalFocus;
       preModalFocus = null;
@@ -3542,42 +3655,6 @@
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
 
     document.getElementById("player-close-btn").addEventListener("click", closePlayer);
-
-    playerVideo.addEventListener("error", () => {
-      const err = playerVideo.error;
-      const messages = {
-        1: "Playback was aborted.",
-        2: "Network error while loading the video.",
-        3: "This file is corrupted or uses an unsupported encoding.",
-        4: "This TV can't play this file's format (unsupported container/codec).",
-      };
-      playerStatus.textContent = (err && messages[err.code]) || "Playback error.";
-      playerStatus.hidden = false;
-      playerSpinner.classList.remove("show");
-
-      reportClientError("player-video.error", new Error(playerStatus.textContent), {
-        errorCode: err?.code || null,
-        tmdbId: playbackContext?.tmdbId || null,
-        title: playbackContext?.title || null,
-        fileToken: playbackContext?.fileToken || null,
-      });
-
-      // On some Tizen models, leaving a src that the native decoder already
-      // choked on still attached keeps its media pipeline alive in a bad
-      // state - reported as a brief "can't play this format" error followed
-      // a few seconds later by the whole TV rebooting. Explicitly releasing
-      // the element right away (rather than just showing our own message
-      // and leaving <video> pointed at the broken stream) tells the
-      // platform to tear that pipeline down immediately instead of letting
-      // it linger/retry.
-      playerVideo.pause();
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
-
-      window.setTimeout(() => {
-        if (!playerOverlay.hidden) closePlayer();
-      }, 4000);
-    });
 
     rowsContainer.addEventListener("click", (e) => {
       const card = e.target.closest(".tv-poster-card");
