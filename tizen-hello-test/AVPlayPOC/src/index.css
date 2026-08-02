@@ -243,8 +243,13 @@ img {
 .row-track {
   display: flex;
   gap: 18px;
-  overflow: hidden;
-  padding: 4px 56px 12px 4px;
+  /* overflow-y must stay visible, not hidden: a focused card scales up
+     and shifts up (see .poster-card.focused below) - clipping the Y axis
+     here would cut off exactly the part of the poster that's supposed to
+     pop out on hover/focus. Only the horizontal scroll needs clipping. */
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 24px 56px 24px 4px;
   scroll-behavior: smooth;
 }
 
@@ -256,6 +261,16 @@ img {
   border-radius: 8px;
   overflow: visible;
   cursor: pointer;
+  /* Sibling cards paint in DOM order by default, so a focused card's
+     enlarged/shifted poster can end up visually UNDER the next poster in
+     the row instead of on top of it - raising the whole card (not just
+     its inner image wrapper) above its siblings fixes that regardless of
+     which direction it grows into. */
+  z-index: 1;
+}
+
+.poster-card.focused {
+  z-index: 10;
 }
 
 .poster-card .poster-img-wrap {
