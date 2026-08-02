@@ -18,7 +18,12 @@ export function Row({ title, movies, ranked, badge, progressFor, focusedIndex, o
 
   useEffect(() => {
     if (focusedIndex == null) return;
-    itemRefs.current[focusedIndex]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    // "nearest", not "center": center forces every row to re-scroll and
+    // snap to the focused column each time you move between rows, even
+    // when that item is already fully visible - jarring when the whole
+    // point of moving Up/Down is to stay on roughly the same column.
+    // "nearest" only scrolls the minimum amount actually needed.
+    itemRefs.current[focusedIndex]?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
   }, [focusedIndex]);
 
   if (!movies.length) return null;
