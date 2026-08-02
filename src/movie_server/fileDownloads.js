@@ -832,6 +832,37 @@ function scanLibrary() {
       }
     }
 
+    // "Recently Downloaded" wants the actual video file's creation date, not
+    // the marker's save timestamp or the folder's own mtime (the folder can
+    // predate the file, e.g. re-downloading into an existing title folder) -
+    // birthtime on whichever video file is newest in this folder is the most
+    // direct signal of when this download actually landed on disk.
+    let downloadedAt = null;
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        if (!VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
+        try {
+          const stat = fs.statSync(path.join(dir, name));
+          const created = stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.ctime;
+          if (!downloadedAt || created > downloadedAt) downloadedAt = created;
+        } catch {
+          // skip unreadable file
+        }
+      }
+    } catch {
+      // skip unreadable dir
+    }
+    if (downloadedAt) {
+      downloadedAt = downloadedAt.toISOString();
+    } else {
+      // No readable video file stat at all - folder mtime is the last resort.
+      try {
+        downloadedAt = fs.statSync(dir).mtime.toISOString();
+      } catch {
+        downloadedAt = null;
+      }
+    }
+
     if (!tmdbId) {
       const match = /\(tmdb-(\d+)\)/i.exec(entry.name);
       if (match) tmdbId = match[1];
@@ -844,7 +875,7 @@ function scanLibrary() {
     const norm = normalizeTitle(cleanTitle || title);
     if (norm) titles.add(norm);
 
-    items.push({ folder: entry.name, tmdbId, title });
+    items.push({ folder: entry.name, tmdbId, title, downloadedAt });
   }
 
   return {

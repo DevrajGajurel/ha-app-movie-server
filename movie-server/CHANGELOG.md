@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.56
+
+- `scanLibrary()` (backing `/api/downloads/library`, used by the advanced app's "Recently Downloaded" row) now reports each download's actual video file creation date (`downloadedAt`) instead of nothing - sourced from the newest video file's birthtime in that folder, falling back to folder mtime only if unreadable. This is a more reliable signal than the marker file's save timestamp or folder mtime alone, since a folder can predate the file inside it (e.g. re-downloading into an existing title's folder).
+
 ## 1.4.55
 
 - Fixed AVPlay refusing an otherwise-ordinary 1080p-ish H.264/AAC file outright (`PLAYER_ERROR_NOT_SUPPORTED_FORMAT`) - its SPS header declared H.264 Level 5.1, a tier meant for ~4K content, almost certainly a mistake from whatever tool produced that particular (low-quality "HQCam") release. `/api/downloads/play` now detects an implausible level (5.0+ declared for anything at or below 1088p) via ffprobe and rewrites just that header field in-place via ffmpeg's `h264_metadata` bitstream filter - no re-encode, no quality loss, near-instant. Applies regardless of `raw=1` since this affects AVPlay itself, not just the old `<video>`-element path. Verified against the actual file: ffprobe confirms the corrected stream reports Level 4.1, and the real HTTP route now returns valid `video/x-matroska` output.
