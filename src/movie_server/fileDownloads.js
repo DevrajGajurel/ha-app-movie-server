@@ -695,7 +695,7 @@ function streamAudioTrackRemux(req, res, filePath, audioTrackIndex, { transcodeA
   // event) so a missing ffmpeg binary or other launch failure surfaces as a
   // real error response instead of a 200 with an empty body.
   ffmpeg.on("spawn", () => {
-    res.writeHead(200, { "Content-Type": "video/x-matroska" });
+    res.writeHead(200, { "Content-Type": "video/x-matroska", "Cache-Control": "no-store" });
     ffmpeg.stdout.pipe(res);
   });
 
@@ -723,6 +723,7 @@ function streamFile(req, res, filePath) {
       "Content-Length": stat.size,
       "Content-Type": contentType,
       "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
     });
     fs.createReadStream(filePath).pipe(res);
     return;
@@ -733,11 +734,19 @@ function streamFile(req, res, filePath) {
   let end = match[2] ? Number.parseInt(match[2], 10) : stat.size - 1;
   if (Number.isNaN(end) || end >= stat.size) end = stat.size - 1;
 
+  // Same URL (tmdbId/title, no explicit file token) can end up pointing at
+  // different bytes over time - a re-download, a newly-preferred larger
+  // file, or (as of 1.4.49) a track that now gets transcoded when it
+  // didn't before - so this must never be cached. Confirmed this was
+  // exactly what made a server-side fix look like it "didn't work": the
+  // TV kept replaying an old cached response for the same URL instead of
+  // re-fetching after the backend was rebuilt.
   res.writeHead(206, {
     "Content-Range": `bytes ${start}-${end}/${stat.size}`,
     "Accept-Ranges": "bytes",
     "Content-Length": end - start + 1,
     "Content-Type": contentType,
+    "Cache-Control": "no-store",
   });
   fs.createReadStream(filePath, { start, end }).pipe(res);
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.51
+
+- Added `Cache-Control: no-store` to every downloads/play response. Verified via direct testing that the 1.4.49 audio-transcode fix is actually serving correctly (HEVC + single AAC track) for both previously-crashing titles - but the same URL (tmdbId/title, no explicit file token) can end up pointing at different bytes over time (a re-download, a newly-preferred larger file, or a track that now gets transcoded when it didn't before), and none of these responses had ever set a caching header, leaving the door open for a client to keep replaying a stale response instead of re-fetching after a server-side fix.
+
 ## 1.4.50
 
 - Added a `raw=1` diagnostic override to `/api/downloads/play` that forces the original file bytes through untouched, bypassing the new auto-transcode from 1.4.49 - needed to test whether a native player (AVPlay POC) can handle a codec the browser `<video>` element can't, without the server already working around it.
