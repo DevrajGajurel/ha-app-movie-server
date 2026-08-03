@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.4
+
+- Cineby on the TV now loads through a same-origin `/api/cineby-proxy` that strips frame-blocking headers and injects a D-pad virtual cursor (arrows move, Enter clicks, Back returns to the app). This keeps remote control working inside Cineby without navigating the widget away.
+
 ## 1.5.3
 
 - Added a **Streams** sidebar tab that lists `.m3u8` playlists from `PlexMedia/M3U8` (container `/downloads/M3U8`) and plays them via AVPlay. New APIs: `GET /api/m3u8` and `GET /api/m3u8/play?file=…`.

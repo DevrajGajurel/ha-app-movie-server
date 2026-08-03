@@ -55,14 +55,32 @@ export interface TizenApplication {
   exit(): void;
 }
 
+export interface TizenApplicationControl {
+  operation: string;
+  uri?: string | null;
+}
+
 declare global {
   interface Window {
     webapis?: {
       avplay: AVPlayApi;
     };
     tizen?: {
+      ApplicationControl: new (
+        operation: string,
+        uri?: string | null,
+        mime?: string | null,
+        category?: string | null,
+        data?: unknown
+      ) => TizenApplicationControl;
       application: {
         getCurrentApplication(): TizenApplication;
+        launchAppControl(
+          appControl: TizenApplicationControl,
+          id: string | null,
+          successCallback?: () => void,
+          errorCallback?: (error: { message: string }) => void
+        ): void;
       };
       tvinputdevice?: {
         registerKey(key: string): void;

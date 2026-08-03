@@ -165,15 +165,16 @@ export async function getConfig(): Promise<Config> {
   return res.json();
 }
 
-// Opens the configured Cineby URL as a top-level navigation. Iframes are
-// blocked by cineby.* (X-Frame-Options / CSP frame-ancestors). Returns
-// false when no URL is configured so the caller can show a setup screen.
-export async function openCinebyUrl(): Promise<boolean> {
+// Same-origin proxy that strips cineby's frame-blocking headers and injects
+// a TV virtual cursor so the remote can drive the page.
+export function buildCinebyProxyUrl(): string {
+  return apiUrl("cineby-proxy/");
+}
+
+export async function getCinebyProxyUrl(): Promise<string | null> {
   const config = await getConfig();
-  const url = (config.cinebyUrl || "").trim();
-  if (!url) return false;
-  window.location.assign(url);
-  return true;
+  if (!(config.cinebyUrl || "").trim()) return null;
+  return buildCinebyProxyUrl();
 }
 
 async function getMoviesPage(from: number, to: number): Promise<{ movies: Movie[]; tmdbEnabled: boolean }> {

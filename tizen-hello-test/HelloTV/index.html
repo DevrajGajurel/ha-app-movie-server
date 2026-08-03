@@ -368,6 +368,15 @@
       line-height: 1.5;
     }
 
+    .tv-cineby-frame {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #000;
+    }
+
     .tv-stream-item {
       display: block;
       width: 100%;
@@ -1994,18 +2003,18 @@
 
     function hideCinebyView() {
       cinebyPanel.hidden = true;
+      const frame = document.getElementById("cineby-frame");
+      if (frame) {
+        frame.hidden = true;
+        frame.removeAttribute("src");
+      }
       document.getElementById("hero").hidden = false;
       rowsContainer.hidden = false;
     }
 
     function showCinebyView() {
-      // CSP frame-ancestors 'none' blocks iframes for sites like cineby.tech —
-      // open as a top-level navigation instead. Remote Back returns via history.
-      const url = (cinebyUrl || "").trim();
-      if (url) {
-        window.location.assign(url);
-        return;
-      }
+      // Load through /api/cineby-proxy so framing works and a D-pad virtual
+      // cursor is injected into the page for TV remote navigation.
       currentView = "cineby";
       setActiveNav();
       document.getElementById("hero").hidden = true;
@@ -2013,6 +2022,30 @@
       cinebyPanel.hidden = false;
       cinebyEmpty.hidden = false;
       window.TVFocusManager?.closeSidenav?.();
+
+      const url = (cinebyUrl || "").trim();
+      if (!url) {
+        cinebyEmpty.innerHTML =
+          "<h1>Cineby</h1><p>Set <code>cineby_url</code> in the Movie Server config (or <code>CINEBY_URL</code> in .env) to open a page here.</p>";
+        const oldFrame = document.getElementById("cineby-frame");
+        if (oldFrame) oldFrame.remove();
+        return;
+      }
+
+      cinebyEmpty.innerHTML =
+        "<h1>Cineby</h1><p>Use the remote: arrows move the cursor, Enter clicks, Back returns here.</p>";
+      let frame = document.getElementById("cineby-frame");
+      if (!frame) {
+        frame = document.createElement("iframe");
+        frame.id = "cineby-frame";
+        frame.className = "tv-cineby-frame";
+        frame.title = "Cineby";
+        frame.setAttribute("allow", "fullscreen; autoplay");
+        cinebyPanel.appendChild(frame);
+      }
+      cinebyEmpty.hidden = true;
+      frame.hidden = false;
+      frame.src = apiUrl("cineby-proxy/");
     }
 
     async function showStreamsView() {
@@ -3870,6 +3903,12 @@
     navLibraryBtn.addEventListener("click", showLibraryView);
     navStreamsBtn.addEventListener("click", showStreamsView);
     navCinebyBtn.addEventListener("click", showCinebyView);
+
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "medianest-cineby-back" && currentView === "cineby") {
+        showHomeView();
+      }
+    });
 
     searchInput.addEventListener("input", () => {
       lastSearchQuery = searchInput.value;

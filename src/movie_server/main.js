@@ -44,6 +44,7 @@ const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelet
 const { resolveRedirectUrl } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
+const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -525,6 +526,15 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  if (url === CINEBY_PROXY_PREFIX || url.startsWith(`${CINEBY_PROXY_PREFIX}/`)) {
+    try {
+      await handleCinebyProxy(req, res, cinebyUrl);
+    } catch (err) {
+      if (!res.headersSent) sendJson(res, 500, { error: err.message });
+    }
     return;
   }
 

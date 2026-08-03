@@ -7,7 +7,6 @@ import {
   matchMovieForDownload,
   getMoviePageLink,
   isDownloaded,
-  openCinebyUrl,
   type Movie,
   type DownloadedMovie,
   type M3u8Playlist,
@@ -208,15 +207,7 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
           case 13:
             {
               const next = SIDEBAR_VIEWS[sidebarIndex] || "browse";
-              if (next === "cineby") {
-                openCinebyUrl()
-                  .then((opened) => {
-                    if (!opened) setView("cineby");
-                  })
-                  .catch(() => setView("cineby"));
-              } else {
-                setView(next);
-              }
+              setView(next);
               setSidebarFocused(false);
             }
             break;
@@ -276,16 +267,7 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
   function selectSidebar(index: number) {
     setSidebarIndex(index);
     setSidebarFocused(false);
-    const next = SIDEBAR_VIEWS[index] || "browse";
-    if (next === "cineby") {
-      openCinebyUrl()
-        .then((opened) => {
-          if (!opened) setView("cineby");
-        })
-        .catch(() => setView("cineby"));
-      return;
-    }
-    setView(next);
+    setView(SIDEBAR_VIEWS[index] || "browse");
   }
 
   return (
@@ -328,7 +310,7 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
       )}
       {view === "downloads" && <Downloads />}
       {view === "streams" && <Streams onPlay={onPlayStream} active={!sidebarFocused} />}
-      {view === "cineby" && <Cineby />}
+      {view === "cineby" && <Cineby onBack={() => setView("browse")} />}
       {openDetail && (
         <Detail
           key={openDetail.link}
