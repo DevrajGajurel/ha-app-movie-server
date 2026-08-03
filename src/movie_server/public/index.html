@@ -152,6 +152,129 @@
       min-width: 0;
     }
 
+    .streams-panel {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 0;
+    }
+
+    .streams-panel-inner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .streams-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 0.85rem;
+    }
+
+    .streams-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .streams-meta {
+      font-size: 0.78rem;
+      color: var(--muted);
+      flex: 1;
+      min-width: 12rem;
+    }
+
+    .streams-meta strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .streams-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .stream-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .stream-card-poster {
+      aspect-ratio: 2 / 3;
+      background: #12151d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      position: relative;
+    }
+
+    .stream-card-poster img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .stream-card-badge {
+      position: absolute;
+      top: 0.4rem;
+      left: 0.4rem;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    .stream-card-body {
+      padding: 0.55rem 0.6rem 0.7rem;
+    }
+
+    .stream-card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1.25;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .stream-card-year {
+      margin-top: 0.2rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .stream-card-qualities {
+      margin-top: 0.45rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+
+    .stream-quality-chip {
+      font-size: 0.65rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      background: rgba(108, 140, 255, 0.12);
+      color: var(--accent);
+    }
+
+    .streams-empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 0.5rem 0;
+    }
+
     .empty-actions {
       margin-top: 1rem;
       display: flex;
@@ -875,6 +998,17 @@
     </div>
   </section>
 
+  <section class="streams-panel" id="streams-panel">
+    <div class="streams-panel-inner">
+      <div class="streams-header">
+        <h2>Streams</h2>
+        <p class="streams-meta" id="streams-meta">Loading catalog…</p>
+        <button id="streams-refresh" type="button">Refresh catalog</button>
+      </div>
+      <div id="streams-content" class="streams-empty">Loading…</div>
+    </div>
+  </section>
+
   <section class="filters" id="filters" hidden>
     <div class="filters-panel">
       <div class="filters-row">
@@ -946,6 +1080,10 @@
     const applyMainUrlBtn = document.getElementById("apply-main-url");
     const cinebyUrlInput = document.getElementById("cineby-url-input");
     const applyCinebyUrlBtn = document.getElementById("apply-cineby-url");
+    const streamsMetaEl = document.getElementById("streams-meta");
+    const streamsContentEl = document.getElementById("streams-content");
+    const streamsRefreshBtn = document.getElementById("streams-refresh");
+    let streamsPollTimer = null;
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -1686,6 +1824,113 @@
       cinebyUrlInput.value = config.cinebyUrl || "";
     }
 
+    function formatStreamsTime(iso) {
+      if (!iso) return "never";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString();
+    }
+
+    function streamQualityLabels(movie) {
+      const labels = new Set();
+      for (const stream of movie.streams || []) {
+        for (const q of stream.qualities || []) {
+          if (q?.label) labels.add(q.label);
+        }
+        if (stream.bestQuality) labels.add(stream.bestQuality);
+      }
+      return [...labels];
+    }
+
+    function renderStreamsCatalog(data) {
+      const movies = data.movies || [];
+      const refreshing = Boolean(data.refreshing);
+      const playable = data.playable != null ? data.playable : movies.length;
+      const parts = [
+        `<strong>${playable}</strong> playable`,
+        data.window ? `window: ${escapeHtml(data.window)}` : null,
+        `updated: ${escapeHtml(formatStreamsTime(data.refreshedAt))}`,
+        refreshing ? "<strong>refreshing…</strong>" : null,
+        data.lastError ? `error: ${escapeHtml(data.lastError)}` : null,
+      ].filter(Boolean);
+      streamsMetaEl.innerHTML = parts.join(" · ");
+      streamsRefreshBtn.disabled = refreshing;
+      streamsRefreshBtn.textContent = refreshing ? "Refreshing…" : "Refresh catalog";
+
+      if (!movies.length) {
+        streamsContentEl.className = "streams-empty";
+        streamsContentEl.textContent = refreshing
+          ? "Catalog refresh in progress — titles will appear as they scrape."
+          : "No playable streams in Redis yet. Click Refresh catalog or wait for the next scheduled run.";
+        return;
+      }
+
+      streamsContentEl.className = "streams-grid";
+      streamsContentEl.innerHTML = movies.map((movie) => {
+        const qualities = streamQualityLabels(movie);
+        const poster = movie.poster
+          ? `<img src="${escapeAttr(movie.poster)}" alt="" loading="lazy" />`
+          : "No poster";
+        const year = movie.year ? `<div class="stream-card-year">${escapeHtml(String(movie.year))}</div>` : "";
+        const chips = qualities.length
+          ? `<div class="stream-card-qualities">${qualities
+              .map((q) => `<span class="stream-quality-chip">${escapeHtml(q)}</span>`)
+              .join("")}</div>`
+          : "";
+        return `
+          <article class="stream-card">
+            <div class="stream-card-poster">
+              ${poster}
+              ${qualities[0] ? `<span class="stream-card-badge">${escapeHtml(qualities[0])}</span>` : ""}
+            </div>
+            <div class="stream-card-body">
+              <div class="stream-card-title">${escapeHtml(movie.title || "Untitled")}</div>
+              ${year}
+              ${chips}
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function loadStreamsCatalog() {
+      try {
+        const res = await fetch(apiUrl("streams"));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderStreamsCatalog(data);
+        if (data.refreshing) {
+          if (!streamsPollTimer) {
+            streamsPollTimer = setInterval(() => {
+              loadStreamsCatalog().catch(() => {});
+            }, 4000);
+          }
+        } else if (streamsPollTimer) {
+          clearInterval(streamsPollTimer);
+          streamsPollTimer = null;
+        }
+      } catch (err) {
+        streamsMetaEl.textContent = "Failed to load streams catalog";
+        streamsContentEl.className = "streams-empty";
+        streamsContentEl.textContent = err.message;
+      }
+    }
+
+    async function refreshStreamsCatalog() {
+      streamsRefreshBtn.disabled = true;
+      streamsRefreshBtn.textContent = "Starting…";
+      try {
+        const res = await fetch(apiUrl("streams/refresh"), { method: "POST" });
+        const data = await res.json();
+        if (!res.ok && res.status !== 202) throw new Error(data.error || res.statusText);
+        await loadStreamsCatalog();
+      } catch (err) {
+        streamsMetaEl.textContent = err.message;
+        streamsRefreshBtn.disabled = false;
+        streamsRefreshBtn.textContent = "Refresh catalog";
+      }
+    }
+
     async function applyMainUrl() {
       const nextUrl = mainUrlInput.value.trim();
       if (!nextUrl) return;
@@ -1791,6 +2036,7 @@
     }
 
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
+    streamsRefreshBtn.addEventListener("click", () => refreshStreamsCatalog());
     applyMainUrlBtn.addEventListener("click", applyMainUrl);
     mainUrlInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") applyMainUrl();
@@ -1855,6 +2101,7 @@
     });
 
     load();
+    loadStreamsCatalog();
   </script>
 </body>
 </html>

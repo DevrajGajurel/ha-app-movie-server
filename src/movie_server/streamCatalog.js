@@ -150,10 +150,15 @@ function runPythonRefreshIncremental(reason) {
       for (const line of parts) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        // Only structured events are NDJSON; anything else is scraper noise.
+        if (!trimmed.startsWith("{")) {
+          console.log(`[vidsrc] ${trimmed}`);
+          continue;
+        }
         try {
           handleEvent(JSON.parse(trimmed));
         } catch (err) {
-          console.warn("[streams] bad NDJSON line:", err.message);
+          console.warn("[streams] bad NDJSON line:", err.message, trimmed.slice(0, 120));
         }
       }
     });

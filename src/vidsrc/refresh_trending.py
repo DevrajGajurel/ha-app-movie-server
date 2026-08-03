@@ -35,9 +35,15 @@ def _tmdb_key() -> str:
     return key
 
 
+# Keep a private handle to real stdout for NDJSON. Scraper/Chrome/undetected-
+# chromedriver print progress to stdout; we redirect that to stderr so Node
+# only sees structured events on stdout.
+_NDJSON_OUT = sys.stdout
+
+
 def emit(event: dict) -> None:
-    sys.stdout.write(json.dumps(event, separators=(",", ":")) + "\n")
-    sys.stdout.flush()
+    _NDJSON_OUT.write(json.dumps(event, separators=(",", ":")) + "\n")
+    _NDJSON_OUT.flush()
 
 
 def fetch_trending(window: Literal["day", "week"], limit: int) -> list[dict]:
@@ -81,6 +87,9 @@ def main() -> None:
     movies = fetch_trending(args.window, limit)
     total = len(movies)
     playable = 0
+
+    # Route all incidental prints (scraper + deps) to stderr for the scrape loop.
+    sys.stdout = sys.stderr
 
     emit({"event": "start", "window": args.window, "total": total, "refererHint": REFERER_DEFAULT})
 

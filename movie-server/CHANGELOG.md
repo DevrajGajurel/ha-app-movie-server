@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.2
+
+- Fix Streams scrape NDJSON pollution: scraper/Chrome progress logs go to stderr so Redis updates reliably; non-JSON stdout lines are treated as log noise instead of parse errors.
+- Backend dashboard shows a Streams catalog panel (posters, qualities, refresh status) with a manual Refresh catalog button.
+
 ## 1.6.1
 
 - Streams Redis catalog now updates after each scraped title (NDJSON progress), so posters appear one-by-one during refresh instead of only at the end.
