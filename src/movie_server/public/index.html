@@ -408,12 +408,6 @@
       background: rgba(108, 140, 255, 0.12);
       color: var(--accent);
       border: 1px solid transparent;
-      cursor: pointer;
-    }
-
-    .stream-quality-chip:hover {
-      border-color: var(--accent);
-      background: rgba(108, 140, 255, 0.22);
     }
 
     .stream-player-backdrop {
@@ -432,8 +426,9 @@
 
     .stream-player-bar {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1rem;
+      gap: 0.65rem;
       max-width: 1100px;
       width: 100%;
       margin: 0 auto 0.75rem;
@@ -443,10 +438,40 @@
       flex: 1;
       font-size: 1rem;
       font-weight: 600;
-      min-width: 0;
+      min-width: 10rem;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .stream-player-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .stream-player-controls label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .stream-player-controls select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.4rem 0.55rem;
+      font-size: 0.8rem;
+      min-width: 6.5rem;
+    }
+
+    .stream-player-controls select:focus {
+      outline: none;
+      border-color: var(--accent);
     }
 
     .stream-player-video-wrap {
@@ -1342,20 +1367,20 @@
     </div>
   </div>
 
-  <div class="modal-backdrop" id="stream-quality-modal" hidden>
-    <div class="modal" role="dialog" aria-labelledby="stream-quality-title">
-      <h2 id="stream-quality-title">Choose quality</h2>
-      <div id="stream-quality-content" class="download-state">Loading…</div>
-      <div class="modal-actions">
-        <button class="btn-secondary" id="stream-quality-close" type="button">Close</button>
-      </div>
-    </div>
-  </div>
-
   <div class="stream-player-backdrop" id="stream-player" hidden>
     <div class="stream-player-bar">
       <h2 id="stream-player-title">Playing</h2>
-      <button class="btn-secondary" id="stream-player-close" type="button">Close</button>
+      <div class="stream-player-controls">
+        <label>
+          Quality
+          <select id="stream-player-quality" aria-label="Video quality"></select>
+        </label>
+        <label>
+          Audio
+          <select id="stream-player-audio" aria-label="Audio track"></select>
+        </label>
+        <button class="btn-secondary" id="stream-player-close" type="button">Close</button>
+      </div>
     </div>
     <div class="stream-player-video-wrap">
       <video id="stream-player-video" controls playsinline></video>
@@ -1376,14 +1401,12 @@
     const streamsMetaEl = document.getElementById("streams-meta");
     const streamsContentEl = document.getElementById("streams-content");
     const streamsRefreshBtn = document.getElementById("streams-refresh");
-    const streamQualityModal = document.getElementById("stream-quality-modal");
-    const streamQualityTitle = document.getElementById("stream-quality-title");
-    const streamQualityContent = document.getElementById("stream-quality-content");
-    const streamQualityClose = document.getElementById("stream-quality-close");
     const streamPlayerEl = document.getElementById("stream-player");
     const streamPlayerTitle = document.getElementById("stream-player-title");
     const streamPlayerVideo = document.getElementById("stream-player-video");
     const streamPlayerClose = document.getElementById("stream-player-close");
+    const streamPlayerQuality = document.getElementById("stream-player-quality");
+    const streamPlayerAudio = document.getElementById("stream-player-audio");
     const viewLibraryEl = document.getElementById("view-library");
     const viewStreamsEl = document.getElementById("view-streams");
     const navItems = document.querySelectorAll(".nav-item[data-view]");
@@ -1391,6 +1414,7 @@
     let activeView = "library";
     let streamsCatalogMovies = [];
     let streamHls = null;
+    let streamFallbackQualities = [];
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -2166,14 +2190,7 @@
     }
 
     function streamQualityLabels(movie) {
-      const labels = new Set();
-      for (const stream of movie.streams || []) {
-        for (const q of stream.qualities || []) {
-          if (q?.label) labels.add(q.label);
-        }
-        if (stream.bestQuality) labels.add(stream.bestQuality);
-      }
-      return [...labels];
+      return streamQualities(movie).map((q) => q.label).filter(Boolean);
     }
 
     function streamQualities(movie) {
@@ -2190,6 +2207,8 @@
             label: q.label || stream.bestQuality || "Auto",
             url: q.url,
             referer,
+            height: q.height != null ? Number(q.height) : null,
+            bandwidth: q.bandwidth != null ? Number(q.bandwidth) : null,
           });
         }
         if (!(stream.qualities || []).length && stream.url) {
@@ -2200,11 +2219,28 @@
               label: stream.bestQuality || "Auto",
               url: stream.url,
               referer,
+              height: null,
+              bandwidth: null,
             });
           }
         }
       }
-      return out;
+      return out.sort((a, b) => {
+        const ah = a.height || 0;
+        const bh = b.height || 0;
+        if (bh !== ah) return bh - ah;
+        return (b.bandwidth || 0) - (a.bandwidth || 0);
+      });
+    }
+
+    function streamMasterSource(movie) {
+      const stream = (movie.streams || []).find((s) => s?.url) || movie.streams?.[0];
+      if (!stream?.url) return null;
+      return {
+        url: stream.url,
+        referer: stream.referer || movie.referer || "",
+        label: stream.bestQuality || null,
+      };
     }
 
     function buildHlsProxyUrl(streamUrl, referer) {
@@ -2215,12 +2251,7 @@
       return apiUrl(`hls-proxy?${params.toString()}`);
     }
 
-    function closeStreamQualityModal() {
-      streamQualityModal.hidden = true;
-      streamQualityContent.innerHTML = "";
-    }
-
-    function stopStreamPlayback() {
+    function stopStreamPlayback({ resetSelectors = true } = {}) {
       if (streamHls) {
         try {
           streamHls.destroy();
@@ -2229,41 +2260,157 @@
         }
         streamHls = null;
       }
+      if (resetSelectors) {
+        streamFallbackQualities = [];
+        streamPlayerQuality.innerHTML = "";
+        streamPlayerAudio.innerHTML = "";
+        streamPlayerQuality.disabled = true;
+        streamPlayerAudio.disabled = true;
+      }
       streamPlayerVideo.removeAttribute("src");
       streamPlayerVideo.load();
     }
 
     function closeStreamPlayer() {
-      stopStreamPlayback();
+      stopStreamPlayback({ resetSelectors: true });
       streamPlayerEl.hidden = true;
       streamPlayerTitle.textContent = "Playing";
     }
 
-    function playStreamQuality(movie, quality) {
-      closeStreamQualityModal();
-      const proxyUrl = buildHlsProxyUrl(quality.url, quality.referer || movie.referer || "");
-      const title = `${movie.title || "Stream"}${quality.label ? ` · ${quality.label}` : ""}`;
-      streamPlayerTitle.textContent = title;
+    function fillSelect(select, options, selectedValue) {
+      select.innerHTML = options
+        .map(
+          (opt) =>
+            `<option value="${escapeAttr(String(opt.value))}"${
+              String(opt.value) === String(selectedValue) ? " selected" : ""
+            }>${escapeHtml(opt.label)}</option>`
+        )
+        .join("");
+      select.disabled = options.length <= 1;
+    }
+
+    function hlsLevelLabel(level, index) {
+      if (level?.height) return `${level.height}p`;
+      if (level?.attrs?.RESOLUTION) {
+        const parts = String(level.attrs.RESOLUTION).toLowerCase().split("x");
+        if (parts[1]) return `${parts[1]}p`;
+      }
+      if (level?.bitrate) return `${Math.round(level.bitrate / 1000)} kbps`;
+      return `Quality ${index + 1}`;
+    }
+
+    function hlsAudioLabel(track, index) {
+      const parts = [];
+      if (track?.name) parts.push(track.name);
+      if (track?.lang) parts.push(track.lang);
+      if (!parts.length && track?.groupId) parts.push(track.groupId);
+      return parts.join(" · ") || `Audio ${index + 1}`;
+    }
+
+    function highestHlsLevelIndex(hls) {
+      const levels = hls?.levels || [];
+      if (!levels.length) return -1;
+      let best = 0;
+      for (let i = 1; i < levels.length; i += 1) {
+        const cur = levels[i];
+        const prev = levels[best];
+        const ch = cur.height || 0;
+        const ph = prev.height || 0;
+        if (ch > ph || (ch === ph && (cur.bitrate || 0) > (prev.bitrate || 0))) {
+          best = i;
+        }
+      }
+      return best;
+    }
+
+    function refreshHlsTrackSelectors() {
+      if (!streamHls) return;
+      const levels = streamHls.levels || [];
+      if (levels.length) {
+        const selected = streamHls.currentLevel >= 0 ? streamHls.currentLevel : highestHlsLevelIndex(streamHls);
+        fillSelect(
+          streamPlayerQuality,
+          levels.map((level, index) => ({
+            value: String(index),
+            label: hlsLevelLabel(level, index),
+          })),
+          String(selected)
+        );
+      } else if (streamFallbackQualities.length) {
+        fillSelect(
+          streamPlayerQuality,
+          streamFallbackQualities.map((q, index) => ({
+            value: String(index),
+            label: q.label || `Quality ${index + 1}`,
+          })),
+          streamPlayerQuality.value || "0"
+        );
+      } else {
+        fillSelect(streamPlayerQuality, [{ value: "0", label: "Auto" }], "0");
+      }
+
+      const audioTracks = streamHls.audioTracks || [];
+      if (audioTracks.length) {
+        fillSelect(
+          streamPlayerAudio,
+          audioTracks.map((track, index) => ({
+            value: String(index),
+            label: hlsAudioLabel(track, index),
+          })),
+          String(streamHls.audioTrack >= 0 ? streamHls.audioTrack : 0)
+        );
+      } else {
+        fillSelect(streamPlayerAudio, [{ value: "0", label: "Default" }], "0");
+      }
+    }
+
+    function playStreamSource(movie, source, { preferHighest = true } = {}) {
+      if (!source?.url) {
+        streamsMetaEl.textContent = `No playable stream for ${movie.title || "this title"}`;
+        return;
+      }
+      const proxyUrl = buildHlsProxyUrl(source.url, source.referer || movie.referer || "");
+      const fallbacks = streamQualities(movie);
+      streamPlayerTitle.textContent = movie.title || "Stream";
       streamPlayerEl.hidden = false;
-      stopStreamPlayback();
+      stopStreamPlayback({ resetSelectors: true });
+      streamFallbackQualities = fallbacks.length ? fallbacks : [source];
 
       const canNative = streamPlayerVideo.canPlayType("application/vnd.apple.mpegurl");
       if (window.Hls && Hls.isSupported()) {
         streamHls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
+          startLevel: -1,
         });
         streamHls.loadSource(proxyUrl);
         streamHls.attachMedia(streamPlayerVideo);
         streamHls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (preferHighest && (streamHls.levels || []).length > 1) {
+            streamHls.currentLevel = highestHlsLevelIndex(streamHls);
+          }
+          refreshHlsTrackSelectors();
           streamPlayerVideo.play().catch(() => {});
         });
+        streamHls.on(Hls.Events.LEVEL_SWITCHED, refreshHlsTrackSelectors);
+        streamHls.on(Hls.Events.AUDIO_TRACKS_UPDATED, refreshHlsTrackSelectors);
+        streamHls.on(Hls.Events.AUDIO_TRACK_SWITCHED, refreshHlsTrackSelectors);
         streamHls.on(Hls.Events.ERROR, (_event, data) => {
           if (data?.fatal) {
             streamsMetaEl.textContent = `Playback error: ${data.type || "failed"}`;
           }
         });
       } else if (canNative) {
+        // Safari: play master; in-player track switching is limited without hls.js.
+        fillSelect(
+          streamPlayerQuality,
+          streamFallbackQualities.map((q, index) => ({
+            value: String(index),
+            label: q.label || `Quality ${index + 1}`,
+          })),
+          "0"
+        );
+        fillSelect(streamPlayerAudio, [{ value: "0", label: "Default" }], "0");
         streamPlayerVideo.src = proxyUrl;
         streamPlayerVideo.play().catch(() => {});
       } else {
@@ -2273,36 +2420,15 @@
     }
 
     function openStreamMovie(movie) {
+      const master = streamMasterSource(movie);
       const qualities = streamQualities(movie);
-      if (!qualities.length) {
+      if (!master && !qualities.length) {
         streamsMetaEl.textContent = `No playable qualities for ${movie.title || "this title"}`;
         return;
       }
-      if (qualities.length === 1) {
-        playStreamQuality(movie, qualities[0]);
-        return;
-      }
-      streamQualityTitle.textContent = movie.title || "Choose quality";
-      streamQualityContent.innerHTML = `
-        <p class="download-state" style="padding:0 0 0.75rem;margin:0;">Choose quality</p>
-        <ul class="download-list">
-          ${qualities
-            .map(
-              (q, idx) => `
-            <li>
-              <button type="button" class="download-option stream-quality-option" data-quality-index="${idx}">
-                ${escapeHtml(q.label || "Auto")}
-              </button>
-            </li>
-          `
-            )
-            .join("")}
-        </ul>
-      `;
-      streamQualityModal.dataset.movieIndex = String(
-        streamsCatalogMovies.findIndex((m) => m === movie)
-      );
-      streamQualityModal.hidden = false;
+      // Prefer master playlist so HLS.js can expose levels + audio tracks.
+      // Fall back to the highest probed quality URL.
+      playStreamSource(movie, master || qualities[0], { preferHighest: true });
     }
 
     function renderStreamsCatalog(data) {
@@ -2331,18 +2457,14 @@
 
       streamsContentEl.className = "streams-grid";
       streamsContentEl.innerHTML = movies.map((movie, index) => {
-        const qualities = streamQualities(movie);
-        const labels = qualities.map((q) => q.label).filter(Boolean);
+        const labels = streamQualityLabels(movie);
         const poster = movie.poster
           ? `<img src="${escapeAttr(movie.poster)}" alt="" loading="lazy" />`
           : "No poster";
         const year = movie.year ? `<div class="stream-card-year">${escapeHtml(String(movie.year))}</div>` : "";
-        const chips = qualities.length
-          ? `<div class="stream-card-qualities">${qualities
-              .map(
-                (q, qIdx) =>
-                  `<button type="button" class="stream-quality-chip" data-stream-index="${index}" data-quality-index="${qIdx}">${escapeHtml(q.label || "Auto")}</button>`
-              )
+        const chips = labels.length
+          ? `<div class="stream-card-qualities">${labels
+              .map((label) => `<span class="stream-quality-chip">${escapeHtml(label)}</span>`)
               .join("")}</div>`
           : "";
         return `
@@ -2507,15 +2629,6 @@
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
     streamsRefreshBtn.addEventListener("click", () => refreshStreamsCatalog());
     streamsContentEl.addEventListener("click", (e) => {
-      const chip = e.target.closest(".stream-quality-chip");
-      if (chip) {
-        e.preventDefault();
-        e.stopPropagation();
-        const movie = streamsCatalogMovies[Number(chip.dataset.streamIndex)];
-        const quality = streamQualities(movie || {})[Number(chip.dataset.qualityIndex)];
-        if (movie && quality) playStreamQuality(movie, quality);
-        return;
-      }
       const card = e.target.closest(".stream-card[data-stream-index]");
       if (!card) return;
       e.preventDefault();
@@ -2525,34 +2638,62 @@
     streamsContentEl.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       const card = e.target.closest(".stream-card[data-stream-index]");
-      if (!card || e.target.closest(".stream-quality-chip")) return;
+      if (!card) return;
       e.preventDefault();
       const movie = streamsCatalogMovies[Number(card.dataset.streamIndex)];
       if (movie) openStreamMovie(movie);
     });
-    streamQualityContent.addEventListener("click", (e) => {
-      const btn = e.target.closest(".stream-quality-option");
-      if (!btn) return;
-      e.preventDefault();
-      const movie = streamsCatalogMovies[Number(streamQualityModal.dataset.movieIndex)];
-      const quality = streamQualities(movie || {})[Number(btn.dataset.qualityIndex)];
-      if (movie && quality) playStreamQuality(movie, quality);
+    streamPlayerQuality.addEventListener("change", () => {
+      const index = Number(streamPlayerQuality.value);
+      if (streamHls && (streamHls.levels || []).length) {
+        streamHls.currentLevel = index;
+        return;
+      }
+      // Safari / single-rendition fallback: reload a probed quality URL.
+      const quality = streamFallbackQualities[index];
+      if (!quality?.url) return;
+      const title = streamPlayerTitle.textContent || "Stream";
+      const preserved = streamFallbackQualities.slice();
+      const currentTime = streamPlayerVideo.currentTime || 0;
+      stopStreamPlayback({ resetSelectors: false });
+      streamFallbackQualities = preserved;
+      const proxyUrl = buildHlsProxyUrl(quality.url, quality.referer || "");
+      fillSelect(
+        streamPlayerQuality,
+        preserved.map((q, i) => ({
+          value: String(i),
+          label: q.label || `Quality ${i + 1}`,
+        })),
+        String(index)
+      );
+      fillSelect(streamPlayerAudio, [{ value: "0", label: "Default" }], "0");
+      streamPlayerTitle.textContent = title;
+      streamPlayerVideo.src = proxyUrl;
+      streamPlayerVideo.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (currentTime > 0 && Number.isFinite(currentTime)) {
+            try {
+              streamPlayerVideo.currentTime = currentTime;
+            } catch {
+              // ignore
+            }
+          }
+          streamPlayerVideo.play().catch(() => {});
+        },
+        { once: true }
+      );
     });
-    streamQualityClose.addEventListener("click", closeStreamQualityModal);
-    streamQualityModal.addEventListener("click", (e) => {
-      if (e.target === streamQualityModal) closeStreamQualityModal();
+    streamPlayerAudio.addEventListener("change", () => {
+      if (!streamHls) return;
+      streamHls.audioTrack = Number(streamPlayerAudio.value);
     });
     streamPlayerClose.addEventListener("click", closeStreamPlayer);
     streamPlayerEl.addEventListener("click", (e) => {
       if (e.target === streamPlayerEl) closeStreamPlayer();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape") return;
-      if (!streamPlayerEl.hidden) {
-        closeStreamPlayer();
-        return;
-      }
-      if (!streamQualityModal.hidden) closeStreamQualityModal();
+      if (e.key === "Escape" && !streamPlayerEl.hidden) closeStreamPlayer();
     });
     navItems.forEach((item) => {
       item.addEventListener("click", () => setView(item.dataset.view));

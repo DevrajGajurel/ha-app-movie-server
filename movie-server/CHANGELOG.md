@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.6
+
+- Server Streams player starts at highest quality and lets you switch Quality/Audio in the player (no pre-play picker).
+
 ## 1.6.5
 
 - Server Streams view: click a poster (or quality chip) to play via the HLS proxy; multi-quality titles open a picker.
