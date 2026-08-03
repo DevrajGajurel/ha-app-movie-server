@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.8
+
+- Version bump to sync Home Assistant with the current state of the app.
+
 ## 1.5.7
 
 - Added Cineby diagnostics: proxy logs (`[cineby-proxy]`) for HTML fetches, failures, and blocked redirects; TV apps report open/load/error via `/api/client-log`; the injected cursor script reports load, JS errors, and OK-clicks into `movieserver-client.log`.
