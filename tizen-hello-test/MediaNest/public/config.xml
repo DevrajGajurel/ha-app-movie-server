@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain.example/AVPlayPOC" version="1.0.0" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain.example/MediaNest" version="1.0.0" viewmodes="maximized">
+	<!-- tizen:application id/package intentionally unchanged (still avplaypoc1.AVPlayPOC) -
+	     Tizen treats a changed package id as an entirely different app, which would leave
+	     the currently-installed app orphaned on the TV until manually uninstalled. Only the
+	     user-facing name changed here; the package identity stays stable across this rename. -->
 	<tizen:application id="avplaypoc1.AVPlayPOC" package="avplaypoc1" required_version="2.3"/>
-	<name>AVPlayPOC</name>
+	<name>MediaNest</name>
 	<icon src="icon.png"/>
 	<tizen:privilege name="http://tizen.org/privilege/application.launch"/>
 	<tizen:privilege name="http://tizen.org/privilege/internet"/>

@@ -40,6 +40,10 @@ REDIS_URL="${REDIS_URL%"${REDIS_URL##*[![:space:]]}"}"
 USE_ARIA2="$(bashio::config 'use_aria2')"
 if [ -z "${USE_ARIA2}" ]; then USE_ARIA2=false; fi
 
+CINEBY_URL="$(bashio::config 'cineby_url')"
+CINEBY_URL="${CINEBY_URL#"${CINEBY_URL%%[![:space:]]*}"}"
+CINEBY_URL="${CINEBY_URL%"${CINEBY_URL##*[![:space:]]}"}"
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -56,6 +60,7 @@ EMBY_PATH_PREFIX=${EMBY_PATH_PREFIX}
 REDIS_URL=${REDIS_URL}
 CACHE_REFRESH_HOURS=4
 USE_ARIA2=${USE_ARIA2}
+CINEBY_URL=${CINEBY_URL}
 EOF
 
 cd /app || exit 1

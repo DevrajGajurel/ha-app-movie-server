@@ -6,12 +6,13 @@ interface SearchProps {
   movies: Movie[];
   onSelect: (movie: Movie) => void;
   progressFor?: (movie: Movie) => number | undefined;
+  downloadedFor?: (movie: Movie) => boolean;
 }
 
 // Tizen brings up its own on-screen keyboard automatically when a real
 // <input> receives focus - no custom virtual-keyboard UI needed, same
 // approach HelloTV's search box already relies on.
-export function Search({ movies, onSelect, progressFor }: SearchProps) {
+export function Search({ movies, onSelect, progressFor, downloadedFor }: SearchProps) {
   const [query, setQuery] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +67,14 @@ export function Search({ movies, onSelect, progressFor }: SearchProps) {
       />
       {normalized && !results.length ? <p className="status" style={{ paddingLeft: 0 }}>No matches for "{query}".</p> : null}
       {results.length ? (
-        <Row title={`Results for "${query}"`} movies={results} focusedIndex={focusedIndex} progressFor={progressFor} onSelect={onSelect} />
+        <Row
+          title={`Results for "${query}"`}
+          movies={results}
+          focusedIndex={focusedIndex}
+          progressFor={progressFor}
+          downloadedFor={downloadedFor}
+          onSelect={onSelect}
+        />
       ) : null}
     </div>
   );

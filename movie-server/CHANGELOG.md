@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.57
+
+- Added a Cineby sidebar tab on the TV apps (MediaNest + HelloTV) that loads a configurable webpage in an iframe. Set `cineby_url` in Home Assistant add-on options (or `CINEBY_URL` / the local dashboard's Cineby URL field). Exposed as `cinebyUrl` on `GET/PUT /api/config`.
+
 ## 1.4.56
 
 - `scanLibrary()` (backing `/api/downloads/library`, used by the advanced app's "Recently Downloaded" row) now reports each download's actual video file creation date (`downloadedAt`) instead of nothing - sourced from the newest video file's birthtime in that folder, falling back to folder mtime only if unreadable. This is a more reliable signal than the marker file's save timestamp or folder mtime alone, since a folder can predate the file inside it (e.g. re-downloading into an existing title's folder).

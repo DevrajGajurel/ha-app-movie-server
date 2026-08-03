@@ -1,5 +1,5 @@
 name: Movie Server
-version: "1.4.56"
+version: "1.4.57"
 slug: movie_server
 description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
 url: https://github.com/DevrajGajurel/ha-app-movie-server
@@ -41,3 +41,4 @@ schema:
   emby_path_prefix: str?
   redis_url: password?
   use_aria2: bool?
+  cineby_url: url?

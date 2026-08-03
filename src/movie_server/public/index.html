@@ -868,6 +868,11 @@
       <input id="main-url-input" type="url" placeholder="https://filmyfly.luxe/" />
       <button id="apply-main-url" type="button">Apply</button>
     </div>
+    <div class="source-config-row">
+      <label for="cineby-url-input">Cineby URL</label>
+      <input id="cineby-url-input" type="url" placeholder="https://…" />
+      <button id="apply-cineby-url" type="button">Apply</button>
+    </div>
   </section>
 
   <section class="filters" id="filters" hidden>
@@ -939,6 +944,8 @@
     const sourceConfigEl = document.getElementById("source-config");
     const mainUrlInput = document.getElementById("main-url-input");
     const applyMainUrlBtn = document.getElementById("apply-main-url");
+    const cinebyUrlInput = document.getElementById("cineby-url-input");
+    const applyCinebyUrlBtn = document.getElementById("apply-cineby-url");
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -1676,6 +1683,7 @@
 
       sourceConfigEl.hidden = false;
       mainUrlInput.value = config.mainUrl || "";
+      cinebyUrlInput.value = config.cinebyUrl || "";
     }
 
     async function applyMainUrl() {
@@ -1701,6 +1709,30 @@
       } finally {
         applyMainUrlBtn.disabled = false;
         applyMainUrlBtn.textContent = "Apply";
+      }
+    }
+
+    async function applyCinebyUrl() {
+      const nextUrl = cinebyUrlInput.value.trim();
+
+      applyCinebyUrlBtn.disabled = true;
+      applyCinebyUrlBtn.textContent = "Saving…";
+
+      try {
+        const res = await fetch(apiUrl("config"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cinebyUrl: nextUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        cinebyUrlInput.value = data.cinebyUrl || "";
+      } catch (err) {
+        content.className = "state error";
+        content.textContent = err.message;
+      } finally {
+        applyCinebyUrlBtn.disabled = false;
+        applyCinebyUrlBtn.textContent = "Apply";
       }
     }
 
@@ -1762,6 +1794,10 @@
     applyMainUrlBtn.addEventListener("click", applyMainUrl);
     mainUrlInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") applyMainUrl();
+    });
+    applyCinebyUrlBtn.addEventListener("click", applyCinebyUrl);
+    cinebyUrlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") applyCinebyUrl();
     });
 
     content.addEventListener("click", (e) => {

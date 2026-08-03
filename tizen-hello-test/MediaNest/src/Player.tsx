@@ -12,6 +12,12 @@ interface PlayerProps {
 const RESUME_MIN_SECONDS = 10;
 const PROGRESS_SAVE_INTERVAL_MS = 10000;
 
+// Ramps the jump size up every repeat while the seek key is held (10s, 20s,
+// 30s...) instead of always jumping a flat 10s - keeps climbing for as long
+// as the button stays held, uncapped, so a long hold covers a lot more of
+// the timeline instead of leveling off and crawling.
+const SEEK_STEP_SECONDS = 10;
+
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const total = Math.floor(seconds);
@@ -31,12 +37,31 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
   const player = usePlayer();
   const lastSaveAtRef = useRef(0);
   const rememberedAppliedRef = useRef(false);
+  const seekRepeatDirectionRef = useRef<"left" | "right" | null>(null);
+  const seekRepeatCountRef = useRef(0);
 
   const [version, setVersion] = useState<MediaVersion | null>(null);
   const [selectedAudioTrack, setSelectedAudioTrack] = useState(0);
   const [selectedSubtitleTrack, setSelectedSubtitleTrack] = useState<number | null>(null);
   const [tracksPanelOpen, setTracksPanelOpen] = useState(false);
   const [tracksFocusIndex, setTracksFocusIndex] = useState(0);
+  const [centerIcon, setCenterIcon] = useState<string | null>(null);
+  const centerIconTimerRef = useRef<number | null>(null);
+
+  // Brief play/pause glyph flash on toggle, matching HelloTV's
+  // flashPlayerCenterIcon() - the only visual feedback Enter/OK gives here,
+  // since there's no persistent play/pause button.
+  function flashCenterIcon(glyph: string) {
+    setCenterIcon(glyph);
+    if (centerIconTimerRef.current) window.clearTimeout(centerIconTimerRef.current);
+    centerIconTimerRef.current = window.setTimeout(() => setCenterIcon(null), 600);
+  }
+
+  function togglePlayPauseWithFlash() {
+    const wasPlaying = player.state === "PLAYING";
+    player.togglePlayPause();
+    flashCenterIcon(wasPlaying ? "⏸" : "▶");
+  }
 
   // Opens the stream once on mount. raw=1 (baked into buildPlayUrl) is
   // load-bearing: it bypasses the server's eac3->AAC transcode built for
@@ -77,10 +102,16 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
         setSelectedAudioTrack(progress.audioTrack);
         player.selectAudioTrack(progress.audioTrack);
       }
-      if (progress && progress.subtitleTrack != null) {
-        setSelectedSubtitleTrack(progress.subtitleTrack);
-        player.selectSubtitleTrack(progress.subtitleTrack);
-      }
+      // Always explicitly apply subtitle state, even when there's no
+      // remembered track: AVPlay auto-shows the first embedded subtitle
+      // track by default unless setSilentSubtitle(true) is called, so
+      // skipping this call when there's nothing remembered left the menu
+      // showing "Off" while the native player silently displayed subtitles
+      // anyway. Matches HelloTV's avApplyPendingAdjustments, which always
+      // calls avSelectSubtitleTrack(selectedSubtitleTrack) unconditionally.
+      const subtitleTrack = progress && progress.subtitleTrack != null ? progress.subtitleTrack : null;
+      setSelectedSubtitleTrack(subtitleTrack);
+      player.selectSubtitleTrack(subtitleTrack);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.isReady]);
@@ -136,6 +167,29 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
     return [...audio, ...subtitle];
   }, [version]);
 
+  function handleSeekKey(direction: "left" | "right", isRepeat: boolean) {
+    if (!isRepeat || seekRepeatDirectionRef.current !== direction) {
+      seekRepeatDirectionRef.current = direction;
+      seekRepeatCountRef.current = 0;
+    } else {
+      seekRepeatCountRef.current += 1;
+    }
+    const step = SEEK_STEP_SECONDS * (1 + seekRepeatCountRef.current);
+    player.seekBy(direction === "right" ? step : -step);
+  }
+
+  useEffect(() => {
+    function onKeyUp(e: KeyboardEvent) {
+      const direction = e.keyCode === 37 ? "left" : e.keyCode === 39 ? "right" : null;
+      if (direction && seekRepeatDirectionRef.current === direction) {
+        seekRepeatDirectionRef.current = null;
+        seekRepeatCountRef.current = 0;
+      }
+    }
+    document.addEventListener("keyup", onKeyUp);
+    return () => document.removeEventListener("keyup", onKeyUp);
+  }, []);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (tracksPanelOpen) {
@@ -161,13 +215,13 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
 
       switch (e.keyCode) {
         case 13: // Enter/OK
-          player.togglePlayPause();
+          togglePlayPauseWithFlash();
           break;
         case 37: // Left
-          player.seekBy(-10);
+          handleSeekKey("left", e.repeat);
           break;
         case 39: // Right
-          player.seekBy(10);
+          handleSeekKey("right", e.repeat);
           break;
         case 38: // Up
           if (trackOptions.length > 1) {
@@ -178,6 +232,23 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
         case 10009: // Back (Tizen remote)
         case 27: // Escape (desktop preview fallback)
           closeAndSave();
+          break;
+        // Dedicated remote transport buttons - only delivered at all once
+        // registered in main.tsx (Tizen doesn't dispatch keydown for these
+        // otherwise, which is why Play previously did nothing).
+        case 415: // MediaPlay
+        case 19: // MediaPause
+        case 10252: // MediaPlayPause
+          togglePlayPauseWithFlash();
+          break;
+        case 413: // MediaStop
+          closeAndSave();
+          break;
+        case 417: // MediaFastForward
+          handleSeekKey("right", e.repeat);
+          break;
+        case 412: // MediaRewind
+          handleSeekKey("left", e.repeat);
           break;
       }
     }
@@ -191,6 +262,7 @@ export function Player({ tmdbId, title, fileToken, onClose }: PlayerProps) {
   return (
     <div>
       <object id="avplayer" className="player-surface" type="application/avplayer" />
+      <div className={"player-center-icon" + (centerIcon ? " show" : "")}>{centerIcon}</div>
       {player.subtitleText && <div className="subtitle-cue">{player.subtitleText}</div>}
       <div className="player-overlay">
         <div className="player-title">{title}</div>

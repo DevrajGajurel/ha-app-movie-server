@@ -7,29 +7,47 @@ function apiUrl(path: string): string {
   return `${API_BASE}api/${path.replace(/^\//, "")}`;
 }
 
+export interface DownloadLibraryItem {
+  folder: string;
+  tmdbId: string | null;
+  title: string;
+  downloadedAt: string | null;
+}
+
 export interface DownloadLibrary {
   downloadDir: string;
   tmdbIds: string[];
   titles: string[];
+  items: DownloadLibraryItem[];
 }
 
 export interface DownloadedMovie {
   tmdbId: string | null;
   title: string;
+  downloadedAt: string | null;
 }
 
-// scanLibrary() on the backend only reports tmdbId OR normalized title,
-// not full movie metadata - kept around for isDownloaded() checks (a movie
-// in the full catalog isn't necessarily downloaded yet).
+// scanLibrary() on the backend reports one entry per downloaded folder,
+// each with its own tmdbId/title/downloadedAt - kept around for
+// isDownloaded() checks (a movie in the full catalog isn't necessarily
+// downloaded yet) and for sorting the Recently Downloaded row.
 export async function getDownloadedMovies(): Promise<DownloadedMovie[]> {
   const res = await fetch(apiUrl("downloads/library"));
   if (!res.ok) throw new Error(`Failed to load library: ${res.status}`);
   const data: DownloadLibrary = await res.json();
-  const byTmdb = data.tmdbIds.map((id) => ({ tmdbId: id, title: id }));
-  const byTitle = data.titles
-    .filter((t) => !data.tmdbIds.some((id) => id === t))
-    .map((t) => ({ tmdbId: null, title: t }));
-  return [...byTmdb, ...byTitle];
+  return (data.items || []).map((item) => ({ tmdbId: item.tmdbId, title: item.title, downloadedAt: item.downloadedAt }));
+}
+
+// Matches a downloaded-library entry back to its full catalog Movie (same
+// tmdbId-first-then-normalized-title rule as isDownloaded()), for rows that
+// need the actual metadata (poster/backdrop) of what's been downloaded.
+export function matchMovieForDownload(item: DownloadedMovie, movies: Movie[]): Movie | undefined {
+  if (item.tmdbId) {
+    const byId = movies.find((m) => m.tmdb?.tmdbId != null && String(m.tmdb.tmdbId) === item.tmdbId);
+    if (byId) return byId;
+  }
+  const normalized = normalizeTitle(item.title);
+  return movies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === normalized);
 }
 
 export interface ProgressItem {
@@ -114,10 +132,31 @@ export function getMoviePageLink(movie: Movie): string {
   return movie.link && !movie.link.startsWith("library:") ? movie.link : "";
 }
 
+// Removes every downloaded folder matching this movie (all quality/language
+// versions at once, same granularity the backend's isDownloaded/library
+// checks already use) - not a per-file operation.
+export async function deleteMedia(tmdbId: string | null, title: string): Promise<{ deletedDirs: number }> {
+  const params = new URLSearchParams();
+  if (tmdbId) params.set("tmdbId", tmdbId);
+  params.set("title", title);
+  const res = await fetch(apiUrl(`downloads/media?${params.toString()}`), { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// The trailer stream is a live YouTube-resolve-and-remux passthrough (see
+// main.js's /api/trailer), not a YouTube iframe embed - playable through a
+// plain <video> the same way a downloaded movie plays through one.
+export function buildTrailerUrl(trailerKey: string): string {
+  return apiUrl(`trailer?key=${encodeURIComponent(trailerKey)}`);
+}
+
 export interface Config {
   maxPages: number;
   initialPages: number;
   tmdbEnabled?: boolean;
+  cinebyUrl?: string;
 }
 
 export async function getConfig(): Promise<Config> {

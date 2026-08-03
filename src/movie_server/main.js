@@ -59,6 +59,7 @@ const K4_KEYWORDS = resolveKeywords(process.env.K4_KEYWORDS, DEFAULT_K4_KEYWORDS
 let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
 let initialPages = parseInitialPages(process.env.INITIAL_PAGES);
+let cinebyUrl = String(process.env.CINEBY_URL || "").trim();
 
 function isHomeAssistantAddon() {
   return process.env.HOME_ASSISTANT_ADDON === "true";
@@ -69,6 +70,7 @@ function getConfigPayload(extra = {}) {
     mainUrl,
     maxPages,
     initialPages,
+    cinebyUrl,
     embyConfigured: isEmbyConfigured(),
     configEditable: !isHomeAssistantAddon(),
     ...extra,
@@ -160,6 +162,7 @@ function persistConfig() {
     setEnvVar("MAIN_URL", mainUrl);
     setEnvVar("MAX_PAGES", String(maxPages));
     setEnvVar("INITIAL_PAGES", String(initialPages));
+    setEnvVar("CINEBY_URL", cinebyUrl);
   } catch (err) {
     console.warn("Could not write .env:", err.message);
   }
@@ -174,6 +177,12 @@ function setMainUrl(newUrl) {
 function setMaxPages(pages) {
   maxPages = parseMaxPages(pages);  
   process.env.MAX_PAGES = String(maxPages);
+  persistConfig();
+}
+
+function setCinebyUrl(newUrl) {
+  cinebyUrl = String(newUrl || "").trim();
+  process.env.CINEBY_URL = cinebyUrl;
   persistConfig();
 }
 
@@ -547,6 +556,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         setMaxPages(nextPages);
+      }
+
+      if (body.cinebyUrl !== undefined) {
+        const nextCineby = String(body.cinebyUrl).trim();
+        if (nextCineby) new URL(nextCineby);
+        setCinebyUrl(nextCineby);
       }
 
       sendJson(res, 200, getConfigPayload({ message: "Config updated" }));
@@ -986,6 +1001,7 @@ async function startServer() {
       getConfig: () => ({
         mainUrl,
         maxPages,
+        cinebyUrl,
         initialPages,
         tmdbEnabled: Boolean(TMDB_API_KEY),
       }),

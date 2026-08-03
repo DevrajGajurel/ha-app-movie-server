@@ -110,7 +110,10 @@ export class AVPlayer {
         () => {
           this.ready = true;
           this.refreshTrackIndexMap();
-          this.notifyState();
+          // AVPlay lands in READY (prepared but paused) after prepareAsync -
+          // without this, playback sits frozen on the first frame until the
+          // user presses Enter once just to start it moving.
+          this.play();
         },
         (err) => this.events.onError?.(err?.message || "prepareAsync failed")
       );

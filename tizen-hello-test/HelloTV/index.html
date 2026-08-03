@@ -335,6 +335,45 @@
       font-size: 1.2rem;
     }
 
+    .tv-cineby-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: #000;
+    }
+
+    .tv-cineby-panel[hidden] {
+      display: none;
+    }
+
+    .tv-cineby-frame {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .tv-cineby-empty {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      height: 100%;
+      padding: 4rem;
+      box-sizing: border-box;
+      background: #0b1018;
+    }
+
+    .tv-cineby-empty h1 {
+      font-size: 2rem;
+      margin: 0 0 1rem;
+    }
+
+    .tv-cineby-empty p {
+      color: rgba(255, 255, 255, 0.65);
+      max-width: 36rem;
+      line-height: 1.5;
+    }
+
     /* ---- Rows ---- */
     .tv-rows {
       /* Starts right below the fixed hero and scrolls independently within
@@ -1436,11 +1475,22 @@
       <button class="tv-sidenav-btn" id="nav-library-btn" type="button">
         <span class="tv-sidenav-icon">▶</span> Library
       </button>
+      <button class="tv-sidenav-btn" id="nav-cineby-btn" type="button">
+        <span class="tv-sidenav-icon">🎬</span> Cineby
+      </button>
       <button class="tv-sidenav-btn" id="refresh" type="button">
         <span class="tv-sidenav-icon">⟳</span> Refresh
       </button>
     </div>
   </nav>
+
+  <div class="tv-cineby-panel" id="cineby-panel" hidden>
+    <div class="tv-cineby-empty" id="cineby-empty">
+      <h1>Cineby</h1>
+      <p>Set <code>cineby_url</code> in the Movie Server config (or <code>CINEBY_URL</code> in .env) to load a page here.</p>
+    </div>
+    <iframe class="tv-cineby-frame" id="cineby-frame" title="Cineby" hidden allow="fullscreen; autoplay"></iframe>
+  </div>
 
   <section class="tv-hero" id="hero">
     <div class="tv-hero-backdrop" id="hero-backdrop"></div>
@@ -1640,6 +1690,11 @@
     const navHomeBtn = document.getElementById("nav-home-btn");
     const navSearchBtn = document.getElementById("nav-search-btn");
     const navLibraryBtn = document.getElementById("nav-library-btn");
+    const navCinebyBtn = document.getElementById("nav-cineby-btn");
+    const cinebyPanel = document.getElementById("cineby-panel");
+    const cinebyEmpty = document.getElementById("cineby-empty");
+    const cinebyFrame = document.getElementById("cineby-frame");
+    let cinebyUrl = "";
 
     const SEARCH_HISTORY_KEY = "movieServerTvSearchHistory";
     let lastSearchQuery = "";
@@ -1904,6 +1959,34 @@
     function setActiveNav() {
       navHomeBtn.classList.toggle("active", currentView === "home");
       navLibraryBtn.classList.toggle("active", currentView === "library");
+      navCinebyBtn.classList.toggle("active", currentView === "cineby");
+    }
+
+    function hideCinebyView() {
+      cinebyPanel.hidden = true;
+      cinebyFrame.hidden = true;
+      cinebyFrame.removeAttribute("src");
+      document.getElementById("hero").hidden = false;
+      rowsContainer.hidden = false;
+    }
+
+    function showCinebyView() {
+      currentView = "cineby";
+      setActiveNav();
+      document.getElementById("hero").hidden = true;
+      rowsContainer.hidden = true;
+      cinebyPanel.hidden = false;
+      const url = (cinebyUrl || "").trim();
+      if (!url) {
+        cinebyEmpty.hidden = false;
+        cinebyFrame.hidden = true;
+        cinebyFrame.removeAttribute("src");
+      } else {
+        cinebyEmpty.hidden = true;
+        cinebyFrame.hidden = false;
+        if (cinebyFrame.getAttribute("src") !== url) cinebyFrame.src = url;
+      }
+      window.TVFocusManager?.closeSidenav?.();
     }
 
     function uniqueMovies(movies) {
@@ -1926,6 +2009,7 @@
 
     function showHomeView() {
       currentView = "home";
+      hideCinebyView();
       renderCurrentView();
       window.TVFocusManager?.closeSidenav?.();
       window.TVFocusManager?.focusFirst();
@@ -1933,6 +2017,7 @@
 
     function showLibraryView() {
       currentView = "library";
+      hideCinebyView();
       renderCurrentView();
       window.TVFocusManager?.closeSidenav?.();
       window.TVFocusManager?.focusFirst();
@@ -3615,6 +3700,8 @@
 
         totalMaxPages = config.maxPages;
         initialPagesCount = window.TV_INITIAL_PAGES || config.initialPages || 2;
+        cinebyUrl = config.cinebyUrl || "";
+        if (currentView === "cineby") showCinebyView();
 
         const loadAllFromCache = config.cacheEnabled && !refresh;
         const toPage = loadAllFromCache
@@ -3690,6 +3777,7 @@
     });
 
     navLibraryBtn.addEventListener("click", showLibraryView);
+    navCinebyBtn.addEventListener("click", showCinebyView);
 
     searchInput.addEventListener("input", () => {
       lastSearchQuery = searchInput.value;

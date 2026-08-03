@@ -7,11 +7,12 @@ interface PosterCardProps {
   rank?: number;
   badge?: string;
   progressPercent?: number;
+  downloaded?: boolean;
   onClick: () => void;
 }
 
 export const PosterCard = forwardRef<HTMLDivElement, PosterCardProps>(function PosterCard(
-  { movie, focused, rank, badge, progressPercent, onClick },
+  { movie, focused, rank, badge, progressPercent, downloaded, onClick },
   ref
 ) {
   const title = movie.tmdb?.tmdbTitle || movie.title;
@@ -24,6 +25,7 @@ export const PosterCard = forwardRef<HTMLDivElement, PosterCardProps>(function P
         <div className="poster-img-wrap">
           {badge ? <span className="poster-badge">{badge}</span> : null}
           {poster ? <img src={poster} alt={title} loading="lazy" /> : null}
+          {downloaded ? <div className="poster-play-icon">▶</div> : null}
           {progressPercent != null ? (
             <div className="poster-progress-track">
               <div className="poster-progress-fill" style={{ width: `${progressPercent}%` }} />

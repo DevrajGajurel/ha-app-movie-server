@@ -4,20 +4,23 @@ import {
   getDownloadedMovies,
   getContinueWatching,
   matchMovieForProgress,
+  matchMovieForDownload,
   getMoviePageLink,
   isDownloaded,
   type Movie,
   type DownloadedMovie,
 } from "./api";
-import { Sidebar, SIDEBAR_ITEMS } from "./Sidebar";
+import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
 import { Hero } from "./Hero";
 import { Row } from "./Row";
 import { Detail } from "./Detail";
 import { DownloadModal } from "./DownloadModal";
 import { Search } from "./Search";
 import { Downloads } from "./Downloads";
+import { Cineby } from "./Cineby";
+import { ExitConfirm } from "./ExitConfirm";
 
-type View = "browse" | "search" | "downloads";
+type View = SidebarView;
 
 interface HomeProps {
   onPlay: (movie: Movie) => void;
@@ -47,6 +50,7 @@ export function Home({ onPlay }: HomeProps) {
 
   const [openDetail, setOpenDetail] = useState<Movie | null>(null);
   const [openDownload, setOpenDownload] = useState<Movie | null>(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   useEffect(() => {
     Promise.all([getAllMovies(), getDownloadedMovies()])
@@ -82,6 +86,15 @@ export function Home({ onPlay }: HomeProps) {
     return () => window.clearInterval(timer);
   }, [heroMovies.length, openDetail, openDownload]);
 
+  // Scrolling back up to the hero has nothing to trigger it otherwise:
+  // Row.tsx only scrolls the page when ITS OWN row becomes focused, and the
+  // hero isn't a Row - so without this, moving Up from row 0 all the way
+  // back to the hero (rowIndex -1) left the page still scrolled down at
+  // whatever row you came from, with no way back to the top.
+  useEffect(() => {
+    if (rowIndex === -1) document.getElementById("root")?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [rowIndex]);
+
   const rows: RowDef[] = useMemo(() => {
     if (!movies.length) return [];
     const byRating = [...movies].sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0));
@@ -106,13 +119,28 @@ export function Home({ onPlay }: HomeProps) {
       ? [{ title: "Continue Watching", movies: continueWatchingMovies }]
       : [];
 
+    // Downloaded-library entries only carry tmdbId/title, not full
+    // metadata - match each back to its catalog Movie, then sort by the
+    // backend's downloadedAt (the video file's own creation date, falling
+    // back to folder mtime only if that's unreadable) descending. Every
+    // downloaded title belongs here, not just the most recent N.
+    const recentlyDownloaded = [...downloaded]
+      .sort((a, b) => new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime())
+      .map((item) => matchMovieForDownload(item, movies))
+      .filter((m): m is Movie => !!m)
+      .filter((m, i, arr) => arr.findIndex((other) => other.link === m.link) === i);
+    const recentlyDownloadedRow: RowDef[] = recentlyDownloaded.length
+      ? [{ title: "Recently Downloaded", movies: recentlyDownloaded }]
+      : [];
+
     return [
       ...continueWatchingRow,
       { title: "Top 10 Movies", movies: byRating.slice(0, 10), ranked: true },
+      ...recentlyDownloadedRow,
       { title: "Recently Added", movies: recentlyAdded, badge: "NEW" },
       ...genreRows,
     ];
-  }, [movies, continueWatchingPercent]);
+  }, [movies, downloaded, continueWatchingPercent]);
 
   const currentHeroMovie = heroMovies[heroIndex] || null;
 
@@ -147,14 +175,17 @@ export function Home({ onPlay }: HomeProps) {
   }
 
   useEffect(() => {
-    if (openDetail || openDownload) return; // those handle their own keys
+    if (openDetail || openDownload || showExitConfirm) return; // those handle their own keys
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
-        // Back: leave search/downloads back to the browse screen. In the
-        // browse screen itself there's nothing to "close" at this level.
+        // Back: leave search/downloads back to the browse screen. On the
+        // browse screen itself there's nothing left to "close" at this
+        // level, so ask before quitting instead - an accidental extra Back
+        // press shouldn't kick the user out of the app.
         if (view !== "browse") {
           setView("browse");
-          e.stopPropagation();
+        } else {
+          setShowExitConfirm(true);
         }
         return;
       }
@@ -171,16 +202,21 @@ export function Home({ onPlay }: HomeProps) {
             setSidebarIndex((i) => Math.min(SIDEBAR_ITEMS.length - 1, i + 1));
             break;
           case 13:
-            setView(sidebarIndex === 0 ? "browse" : sidebarIndex === 1 ? "search" : "downloads");
+            setView(SIDEBAR_VIEWS[sidebarIndex] || "browse");
             setSidebarFocused(false);
             break;
         }
         return;
       }
 
-      // Search/Downloads own their own key handling once focus has left
+      // Search/Downloads/Cineby own their own key handling once focus has left
       // the sidebar (see Search.tsx) - this listener only drives the
-      // browse screen's hero/row navigation below.
+      // browse screen's hero/row navigation below. Left from Cineby returns
+      // focus to the sidebar so the remote isn't trapped in the iframe.
+      if (view === "cineby") {
+        if (e.keyCode === 37) setSidebarFocused(true);
+        return;
+      }
       if (view !== "browse") return;
 
       switch (e.keyCode) {
@@ -205,16 +241,34 @@ export function Home({ onPlay }: HomeProps) {
             if (movie) openMovie(movie);
           }
           break;
+        // Dedicated remote Play/Pause buttons: jump straight into playback
+        // from whichever poster is focused, skipping the Detail screen -
+        // but only when the title is actually downloaded, since there's
+        // nothing to play otherwise.
+        case 415: // MediaPlay
+        case 19: // MediaPause
+        case 10252: // MediaPlayPause
+          {
+            const focusedMovie = rowIndex === -1 ? currentHeroMovie : rows[rowIndex]?.movies[itemIndex];
+            if (focusedMovie && isDownloaded(focusedMovie, downloaded)) onPlay(focusedMovie);
+          }
+          break;
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, openDetail, openDownload]);
+  }, [view, sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, downloaded, openDetail, openDownload, showExitConfirm]);
+
+  function selectSidebar(index: number) {
+    setSidebarIndex(index);
+    setView(SIDEBAR_VIEWS[index] || "browse");
+    setSidebarFocused(false);
+  }
 
   return (
     <div>
-      <Sidebar activeIndex={sidebarIndex} focusedIndex={sidebarFocused ? sidebarIndex : null} onSelect={setSidebarIndex} />
+      <Sidebar activeIndex={sidebarIndex} focusedIndex={sidebarFocused ? sidebarIndex : null} onSelect={selectSidebar} />
       {view === "browse" && (
         <>
           <Hero
@@ -234,6 +288,7 @@ export function Home({ onPlay }: HomeProps) {
                 ranked={row.ranked}
                 badge={row.badge}
                 progressFor={(movie) => continueWatchingPercent.get(movie.link)}
+                downloadedFor={(movie) => isDownloaded(movie, downloaded)}
                 focusedIndex={!sidebarFocused && rowIndex === ri ? itemIndex : null}
                 onSelect={(movie) => openMovie(movie)}
               />
@@ -242,15 +297,26 @@ export function Home({ onPlay }: HomeProps) {
         </>
       )}
       {view === "search" && (
-        <Search movies={movies} onSelect={openMovie} progressFor={(movie) => continueWatchingPercent.get(movie.link)} />
+        <Search
+          movies={movies}
+          onSelect={openMovie}
+          progressFor={(movie) => continueWatchingPercent.get(movie.link)}
+          downloadedFor={(movie) => isDownloaded(movie, downloaded)}
+        />
       )}
       {view === "downloads" && <Downloads />}
+      {view === "cineby" && <Cineby />}
       {openDetail && (
         <Detail
+          key={openDetail.link}
           movie={openDetail}
           downloaded={isDownloaded(openDetail, downloaded)}
           onPlay={() => handlePlayFromDetail(openDetail)}
           onDownload={() => handleDownloadFromDetail(openDetail)}
+          onDeleted={() => {
+            setOpenDetail(null);
+            getDownloadedMovies().then(setDownloaded);
+          }}
           onClose={() => setOpenDetail(null)}
         />
       )}
@@ -263,6 +329,7 @@ export function Home({ onPlay }: HomeProps) {
           onDownloadStarted={() => getDownloadedMovies().then(setDownloaded)}
         />
       )}
+      {showExitConfirm && <ExitConfirm onCancel={() => setShowExitConfirm(false)} />}
     </div>
   );
 }
