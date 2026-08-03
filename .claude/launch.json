@@ -14,6 +14,13 @@
       "runtimeArgs": ["tizen-hello-test/preview-hellotv.js"],
       "port": 4601,
       "autoPort": true
+    },
+    {
+      "name": "medianest-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "tizen-hello-test/MediaNest"],
+      "port": 5173,
+      "autoPort": false
     }
   ]
 }
