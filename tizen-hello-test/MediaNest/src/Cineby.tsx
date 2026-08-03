@@ -1,18 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCinebyProxyUrl } from "./api";
 
 interface CinebyProps {
   onBack?: () => void;
+  active?: boolean;
 }
 
-// Loads Cineby through the movie-server proxy (strips CSP frame-ancestors /
-// X-Frame-Options and injects a D-pad virtual cursor). Direct iframes are
-// blocked by cineby.*; top-level navigation leaves MediaNest with no
-// remote handling. Back is posted from the injected cursor script.
-export function Cineby({ onBack }: CinebyProps) {
+// Loads Cineby inside MediaNest via the movie-server proxy (strips CSP /
+// X-Frame-Options, injects a D-pad cursor). Sandboxed without
+// allow-top-navigation so Cineby cannot replace the MediaNest widget.
+export function Cineby({ onBack, active = true }: CinebyProps) {
   const [proxyUrl, setProxyUrl] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +47,27 @@ export function Cineby({ onBack }: CinebyProps) {
     return () => window.removeEventListener("message", onMessage);
   }, [onBack]);
 
+  // Tizen delivers remote keys to the MediaNest document, not the iframe.
+  // Forward D-pad + OK into the proxied page's virtual cursor.
+  useEffect(() => {
+    if (!active || !proxyUrl) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (![37, 38, 39, 40, 13].includes(e.keyCode)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      iframeRef.current?.contentWindow?.postMessage({ type: "medianest-tv-key", keyCode: e.keyCode }, "*");
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [active, proxyUrl]);
+
   if (loading) {
     return (
       <div className="cineby-view">
-        <p className="status" style={{ paddingLeft: 0 }}>Loading…</p>
+        <div className="cineby-chrome">
+          <span className="cineby-chrome-title">MediaNest · Cineby</span>
+          <span className="cineby-chrome-hint">Loading…</span>
+        </div>
       </div>
     );
   }
@@ -57,15 +75,29 @@ export function Cineby({ onBack }: CinebyProps) {
   if (error || !proxyUrl) {
     return (
       <div className="cineby-view">
-        <h1 className="hero-title" style={{ fontSize: 32 }}>Cineby</h1>
-        <p className="status" style={{ paddingLeft: 0 }}>{error || "Cineby URL not configured."}</p>
+        <div className="cineby-chrome">
+          <span className="cineby-chrome-title">MediaNest · Cineby</span>
+        </div>
+        <p className="status" style={{ paddingLeft: 24 }}>{error || "Cineby URL not configured."}</p>
       </div>
     );
   }
 
   return (
     <div className="cineby-view cineby-view-frame">
-      <iframe className="cineby-frame" src={proxyUrl} title="Cineby" allow="fullscreen; autoplay" />
+      <div className="cineby-chrome">
+        <span className="cineby-chrome-title">MediaNest · Cineby</span>
+        <span className="cineby-chrome-hint">Back leaves · arrows move cursor · OK selects</span>
+      </div>
+      <iframe
+        ref={iframeRef}
+        className="cineby-frame"
+        src={proxyUrl}
+        title="Cineby"
+        // No allow-top-navigation: Cineby must not replace MediaNest.
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        allow="fullscreen; autoplay"
+      />
     </div>
   );
 }

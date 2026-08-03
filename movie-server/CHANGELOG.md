@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.5
+
+- Keep Cineby inside MediaNest/HelloTV: sandboxed iframe (no top-level navigation), MediaNest chrome bar, block off-origin redirects, and forward the TV remote into the proxied page so D-pad moves the cursor and OK clicks instead of only scrolling the outer app.
+
 ## 1.5.4
 
 - Cineby on the TV now loads through a same-origin `/api/cineby-proxy` that strips frame-blocking headers and injects a D-pad virtual cursor (arrows move, Enter clicks, Back returns to the app). This keeps remote control working inside Cineby without navigating the widget away.

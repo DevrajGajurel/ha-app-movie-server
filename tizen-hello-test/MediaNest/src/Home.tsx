@@ -215,9 +215,10 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
         return;
       }
 
-      // Search/Downloads/Streams own their own Up/Down/Enter handling.
-      // Left from Cineby/Streams returns focus to the sidebar.
-      if (view === "cineby" || view === "streams") {
+      // Cineby's own capture listener forwards D-pad/OK into the iframe.
+      // Streams owns Up/Down/Enter; Left returns focus to the sidebar.
+      if (view === "cineby") return;
+      if (view === "streams") {
         if (e.keyCode === 37) setSidebarFocused(true);
         return;
       }
@@ -310,7 +311,7 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
       )}
       {view === "downloads" && <Downloads />}
       {view === "streams" && <Streams onPlay={onPlayStream} active={!sidebarFocused} />}
-      {view === "cineby" && <Cineby onBack={() => setView("browse")} />}
+      {view === "cineby" && <Cineby active={!sidebarFocused} onBack={() => setView("browse")} />}
       {openDetail && (
         <Detail
           key={openDetail.link}

@@ -120,11 +120,14 @@
 
     const modal = openModal();
     const sidenavOpen = window.TVFocusManager?.isSidenavOpen?.();
+    const cinebyOpen = cinebyPanelOpen();
 
     if (modal) {
       closeModal();
     } else if (sidenavOpen) {
       window.TVFocusManager.closeSidenav();
+    } else if (cinebyOpen) {
+      document.getElementById("nav-home-btn")?.click();
     } else {
       showExitConfirm();
     }
@@ -299,11 +302,31 @@
     return mainPlayerOpen();
   }
 
+  function cinebyPanelOpen() {
+    const panel = document.getElementById("cineby-panel");
+    return Boolean(panel && !panel.hidden);
+  }
+
+  function forwardCinebyKey(keyCode) {
+    const frame = document.getElementById("cineby-frame");
+    try {
+      frame?.contentWindow?.postMessage({ type: "medianest-tv-key", keyCode }, "*");
+    } catch (err) {
+      // ignore cross-origin / missing frame
+    }
+  }
+
   function handleKeydown(e) {
     const direction = KEYCODE_DIRECTION[e.keyCode];
     if (direction) {
       if ((direction === "left" || direction === "right") && isTextEntry(document.activeElement)) {
         return; // let the caret move within the text field
+      }
+      // Keep remote keys inside the Cineby iframe — do not leave MediaNest/HelloTV.
+      if (cinebyPanelOpen() && !window.TVFocusManager?.isSidenavOpen?.()) {
+        e.preventDefault();
+        forwardCinebyKey(e.keyCode);
+        return;
       }
       if (playerIsActiveModal()) {
         if (direction === "left" || direction === "right") {
@@ -328,6 +351,11 @@
     }
 
     if (e.keyCode === 13) {
+      if (cinebyPanelOpen() && !window.TVFocusManager?.isSidenavOpen?.()) {
+        e.preventDefault();
+        forwardCinebyKey(13);
+        return;
+      }
       if (playerIsActiveModal()) {
         // The player has no native controls to activate (see the
         // direction-key handling above) — Enter/OK is play/pause here.
