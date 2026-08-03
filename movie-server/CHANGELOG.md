@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.5
+
+- Server Streams view: click a poster (or quality chip) to play via the HLS proxy; multi-quality titles open a picker.
+
 ## 1.6.4
 
 - Server dashboard sidebar to switch between Library and Streams views (bottom tabs on mobile).

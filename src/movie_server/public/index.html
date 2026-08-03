@@ -292,6 +292,25 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
+      cursor: pointer;
+      text-align: left;
+      color: inherit;
+      width: 100%;
+      padding: 0;
+      font: inherit;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+
+    .stream-card:hover:not(:disabled),
+    .stream-card:focus-visible {
+      border-color: var(--accent);
+      background: var(--bg);
+      transform: translateY(-2px);
+    }
+
+    .stream-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
 
     .stream-card-poster {
@@ -312,6 +331,36 @@
       display: block;
     }
 
+    .stream-card-play {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      transition: opacity 0.15s;
+      pointer-events: none;
+    }
+
+    .stream-card:hover .stream-card-play,
+    .stream-card:focus-visible .stream-card-play {
+      opacity: 1;
+    }
+
+    .stream-card-play span {
+      width: 2.75rem;
+      height: 2.75rem;
+      border-radius: 999px;
+      background: rgba(108, 140, 255, 0.95);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+
     .stream-card-badge {
       position: absolute;
       top: 0.4rem;
@@ -322,6 +371,7 @@
       font-weight: 700;
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
+      z-index: 1;
     }
 
     .stream-card-body {
@@ -357,6 +407,68 @@
       border-radius: 4px;
       background: rgba(108, 140, 255, 0.12);
       color: var(--accent);
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+
+    .stream-quality-chip:hover {
+      border-color: var(--accent);
+      background: rgba(108, 140, 255, 0.22);
+    }
+
+    .stream-player-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.88);
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      padding: 1rem;
+    }
+
+    .stream-player-backdrop[hidden] {
+      display: none;
+    }
+
+    .stream-player-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto 0.75rem;
+    }
+
+    .stream-player-bar h2 {
+      flex: 1;
+      font-size: 1rem;
+      font-weight: 600;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .stream-player-video-wrap {
+      flex: 1;
+      min-height: 0;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .stream-player-video-wrap video {
+      width: 100%;
+      height: 100%;
+      max-height: calc(100dvh - 5.5rem);
+      background: #000;
     }
 
     .streams-empty {
@@ -1230,6 +1342,27 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="stream-quality-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="stream-quality-title">
+      <h2 id="stream-quality-title">Choose quality</h2>
+      <div id="stream-quality-content" class="download-state">Loading…</div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="stream-quality-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stream-player-backdrop" id="stream-player" hidden>
+    <div class="stream-player-bar">
+      <h2 id="stream-player-title">Playing</h2>
+      <button class="btn-secondary" id="stream-player-close" type="button">Close</button>
+    </div>
+    <div class="stream-player-video-wrap">
+      <video id="stream-player-video" controls playsinline></video>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <script>
     const content = document.getElementById("content");
     const refreshBtn = document.getElementById("refresh");
@@ -1243,11 +1376,21 @@
     const streamsMetaEl = document.getElementById("streams-meta");
     const streamsContentEl = document.getElementById("streams-content");
     const streamsRefreshBtn = document.getElementById("streams-refresh");
+    const streamQualityModal = document.getElementById("stream-quality-modal");
+    const streamQualityTitle = document.getElementById("stream-quality-title");
+    const streamQualityContent = document.getElementById("stream-quality-content");
+    const streamQualityClose = document.getElementById("stream-quality-close");
+    const streamPlayerEl = document.getElementById("stream-player");
+    const streamPlayerTitle = document.getElementById("stream-player-title");
+    const streamPlayerVideo = document.getElementById("stream-player-video");
+    const streamPlayerClose = document.getElementById("stream-player-close");
     const viewLibraryEl = document.getElementById("view-library");
     const viewStreamsEl = document.getElementById("view-streams");
     const navItems = document.querySelectorAll(".nav-item[data-view]");
     let streamsPollTimer = null;
     let activeView = "library";
+    let streamsCatalogMovies = [];
+    let streamHls = null;
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -2033,8 +2176,138 @@
       return [...labels];
     }
 
+    function streamQualities(movie) {
+      const out = [];
+      const seen = new Set();
+      for (const stream of movie.streams || []) {
+        const referer = stream.referer || movie.referer || "";
+        for (const q of stream.qualities || []) {
+          if (!q?.url) continue;
+          const key = `${q.label || ""}|${q.url}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({
+            label: q.label || stream.bestQuality || "Auto",
+            url: q.url,
+            referer,
+          });
+        }
+        if (!(stream.qualities || []).length && stream.url) {
+          const key = `auto|${stream.url}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            out.push({
+              label: stream.bestQuality || "Auto",
+              url: stream.url,
+              referer,
+            });
+          }
+        }
+      }
+      return out;
+    }
+
+    function buildHlsProxyUrl(streamUrl, referer) {
+      const params = new URLSearchParams({
+        url: streamUrl,
+        referer: referer || "",
+      });
+      return apiUrl(`hls-proxy?${params.toString()}`);
+    }
+
+    function closeStreamQualityModal() {
+      streamQualityModal.hidden = true;
+      streamQualityContent.innerHTML = "";
+    }
+
+    function stopStreamPlayback() {
+      if (streamHls) {
+        try {
+          streamHls.destroy();
+        } catch {
+          // ignore
+        }
+        streamHls = null;
+      }
+      streamPlayerVideo.removeAttribute("src");
+      streamPlayerVideo.load();
+    }
+
+    function closeStreamPlayer() {
+      stopStreamPlayback();
+      streamPlayerEl.hidden = true;
+      streamPlayerTitle.textContent = "Playing";
+    }
+
+    function playStreamQuality(movie, quality) {
+      closeStreamQualityModal();
+      const proxyUrl = buildHlsProxyUrl(quality.url, quality.referer || movie.referer || "");
+      const title = `${movie.title || "Stream"}${quality.label ? ` · ${quality.label}` : ""}`;
+      streamPlayerTitle.textContent = title;
+      streamPlayerEl.hidden = false;
+      stopStreamPlayback();
+
+      const canNative = streamPlayerVideo.canPlayType("application/vnd.apple.mpegurl");
+      if (window.Hls && Hls.isSupported()) {
+        streamHls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+        });
+        streamHls.loadSource(proxyUrl);
+        streamHls.attachMedia(streamPlayerVideo);
+        streamHls.on(Hls.Events.MANIFEST_PARSED, () => {
+          streamPlayerVideo.play().catch(() => {});
+        });
+        streamHls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data?.fatal) {
+            streamsMetaEl.textContent = `Playback error: ${data.type || "failed"}`;
+          }
+        });
+      } else if (canNative) {
+        streamPlayerVideo.src = proxyUrl;
+        streamPlayerVideo.play().catch(() => {});
+      } else {
+        streamsMetaEl.textContent = "HLS playback is not supported in this browser.";
+        closeStreamPlayer();
+      }
+    }
+
+    function openStreamMovie(movie) {
+      const qualities = streamQualities(movie);
+      if (!qualities.length) {
+        streamsMetaEl.textContent = `No playable qualities for ${movie.title || "this title"}`;
+        return;
+      }
+      if (qualities.length === 1) {
+        playStreamQuality(movie, qualities[0]);
+        return;
+      }
+      streamQualityTitle.textContent = movie.title || "Choose quality";
+      streamQualityContent.innerHTML = `
+        <p class="download-state" style="padding:0 0 0.75rem;margin:0;">Choose quality</p>
+        <ul class="download-list">
+          ${qualities
+            .map(
+              (q, idx) => `
+            <li>
+              <button type="button" class="download-option stream-quality-option" data-quality-index="${idx}">
+                ${escapeHtml(q.label || "Auto")}
+              </button>
+            </li>
+          `
+            )
+            .join("")}
+        </ul>
+      `;
+      streamQualityModal.dataset.movieIndex = String(
+        streamsCatalogMovies.findIndex((m) => m === movie)
+      );
+      streamQualityModal.hidden = false;
+    }
+
     function renderStreamsCatalog(data) {
       const movies = data.movies || [];
+      streamsCatalogMovies = movies;
       const refreshing = Boolean(data.refreshing);
       const playable = data.playable != null ? data.playable : movies.length;
       const parts = [
@@ -2057,22 +2330,27 @@
       }
 
       streamsContentEl.className = "streams-grid";
-      streamsContentEl.innerHTML = movies.map((movie) => {
-        const qualities = streamQualityLabels(movie);
+      streamsContentEl.innerHTML = movies.map((movie, index) => {
+        const qualities = streamQualities(movie);
+        const labels = qualities.map((q) => q.label).filter(Boolean);
         const poster = movie.poster
           ? `<img src="${escapeAttr(movie.poster)}" alt="" loading="lazy" />`
           : "No poster";
         const year = movie.year ? `<div class="stream-card-year">${escapeHtml(String(movie.year))}</div>` : "";
         const chips = qualities.length
           ? `<div class="stream-card-qualities">${qualities
-              .map((q) => `<span class="stream-quality-chip">${escapeHtml(q)}</span>`)
+              .map(
+                (q, qIdx) =>
+                  `<button type="button" class="stream-quality-chip" data-stream-index="${index}" data-quality-index="${qIdx}">${escapeHtml(q.label || "Auto")}</button>`
+              )
               .join("")}</div>`
           : "";
         return `
-          <article class="stream-card">
+          <article class="stream-card" data-stream-index="${index}" tabindex="0" role="button" aria-label="Play ${escapeAttr(movie.title || "stream")}">
             <div class="stream-card-poster">
               ${poster}
-              ${qualities[0] ? `<span class="stream-card-badge">${escapeHtml(qualities[0])}</span>` : ""}
+              ${labels[0] ? `<span class="stream-card-badge">${escapeHtml(labels[0])}</span>` : ""}
+              <div class="stream-card-play" aria-hidden="true"><span>▶</span></div>
             </div>
             <div class="stream-card-body">
               <div class="stream-card-title">${escapeHtml(movie.title || "Untitled")}</div>
@@ -2228,6 +2506,54 @@
 
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
     streamsRefreshBtn.addEventListener("click", () => refreshStreamsCatalog());
+    streamsContentEl.addEventListener("click", (e) => {
+      const chip = e.target.closest(".stream-quality-chip");
+      if (chip) {
+        e.preventDefault();
+        e.stopPropagation();
+        const movie = streamsCatalogMovies[Number(chip.dataset.streamIndex)];
+        const quality = streamQualities(movie || {})[Number(chip.dataset.qualityIndex)];
+        if (movie && quality) playStreamQuality(movie, quality);
+        return;
+      }
+      const card = e.target.closest(".stream-card[data-stream-index]");
+      if (!card) return;
+      e.preventDefault();
+      const movie = streamsCatalogMovies[Number(card.dataset.streamIndex)];
+      if (movie) openStreamMovie(movie);
+    });
+    streamsContentEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const card = e.target.closest(".stream-card[data-stream-index]");
+      if (!card || e.target.closest(".stream-quality-chip")) return;
+      e.preventDefault();
+      const movie = streamsCatalogMovies[Number(card.dataset.streamIndex)];
+      if (movie) openStreamMovie(movie);
+    });
+    streamQualityContent.addEventListener("click", (e) => {
+      const btn = e.target.closest(".stream-quality-option");
+      if (!btn) return;
+      e.preventDefault();
+      const movie = streamsCatalogMovies[Number(streamQualityModal.dataset.movieIndex)];
+      const quality = streamQualities(movie || {})[Number(btn.dataset.qualityIndex)];
+      if (movie && quality) playStreamQuality(movie, quality);
+    });
+    streamQualityClose.addEventListener("click", closeStreamQualityModal);
+    streamQualityModal.addEventListener("click", (e) => {
+      if (e.target === streamQualityModal) closeStreamQualityModal();
+    });
+    streamPlayerClose.addEventListener("click", closeStreamPlayer);
+    streamPlayerEl.addEventListener("click", (e) => {
+      if (e.target === streamPlayerEl) closeStreamPlayer();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!streamPlayerEl.hidden) {
+        closeStreamPlayer();
+        return;
+      }
+      if (!streamQualityModal.hidden) closeStreamQualityModal();
+    });
     navItems.forEach((item) => {
       item.addEventListener("click", () => setView(item.dataset.view));
     });
