@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.4
+
+- Server dashboard sidebar to switch between Library and Streams views (bottom tabs on mobile).
+
 ## 1.6.3
 
 - Quiet Streams refresh logs: only log each title and available qualities (scraper/Chrome noise suppressed).

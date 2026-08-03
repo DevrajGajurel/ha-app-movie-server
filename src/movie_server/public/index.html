@@ -43,10 +43,96 @@
     button:hover:not(:disabled) { background: var(--accent-hover); }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    .sidebar {
+      width: 12.5rem;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    .sidebar-brand {
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 0 0.55rem;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .nav-item:hover:not(:disabled) {
+      background: rgba(108, 140, 255, 0.08);
+      color: var(--text);
+    }
+
+    .nav-item.active {
+      background: rgba(108, 140, 255, 0.14);
+      border-color: rgba(108, 140, 255, 0.35);
+      color: var(--text);
+    }
+
+    .nav-item-icon {
+      width: 1.1rem;
+      height: 1.1rem;
+      flex-shrink: 0;
+      opacity: 0.9;
+    }
+
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .view[hidden] {
+      display: none !important;
+    }
+
+    .view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    main { padding: 1.5rem; max-width: 1200px; width: 100%; margin: 0 auto; }
 
     .filters {
       max-width: 1200px;
+      width: 100%;
       margin: 0 auto;
       padding: 1.25rem 1.5rem 0;
     }
@@ -134,6 +220,7 @@
 
     .source-config-panel {
       max-width: 1200px;
+      width: 100%;
       margin: 0 auto;
       padding: 1rem 1.25rem 0;
     }
@@ -154,8 +241,10 @@
 
     .streams-panel {
       max-width: 1200px;
+      width: 100%;
       margin: 0 auto;
-      padding: 1rem 1.25rem 0;
+      padding: 1.25rem 1.5rem 1.5rem;
+      flex: 1;
     }
 
     .streams-panel-inner {
@@ -163,6 +252,7 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 1rem;
+      min-height: 12rem;
     }
 
     .streams-header {
@@ -761,6 +851,48 @@
     }
 
     @media (max-width: 768px) {
+      .app-shell {
+        flex-direction: column;
+        padding-bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+      }
+
+      .sidebar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.65rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+        border-right: none;
+        border-top: 1px solid var(--border);
+        z-index: 40;
+      }
+
+      .sidebar-brand {
+        display: none;
+      }
+
+      .sidebar-nav {
+        flex-direction: row;
+        width: 100%;
+        gap: 0.4rem;
+      }
+
+      .nav-item {
+        flex: 1;
+        justify-content: center;
+        padding: 0.7rem 0.5rem;
+      }
+
+      .streams-panel {
+        padding: 0.75rem;
+      }
+
       main,
       .filters,
       .source-config-panel {
@@ -985,80 +1117,108 @@
   </style>
 </head>
 <body>
-  <section class="source-config-panel" id="source-config" hidden>
-    <div class="source-config-row">
-      <label for="main-url-input">Source URL</label>
-      <input id="main-url-input" type="url" placeholder="https://filmyfly.luxe/" />
-      <button id="apply-main-url" type="button">Apply</button>
-    </div>
-    <div class="source-config-row">
-      <label for="cineby-url-input">Cineby URL</label>
-      <input id="cineby-url-input" type="url" placeholder="https://…" />
-      <button id="apply-cineby-url" type="button">Apply</button>
-    </div>
-  </section>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary">
+      <div class="sidebar-brand">Movie Server</div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item active" data-view="library" aria-current="page">
+          <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h3A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-13Z" />
+            <path d="M14 5.5A1.5 1.5 0 0 1 15.5 4h3A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 14 18.5v-13Z" />
+          </svg>
+          Library
+        </button>
+        <button type="button" class="nav-item" data-view="streams">
+          <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" />
+            <path d="m10 9.5 5 2.5-5 2.5v-5Z" fill="currentColor" stroke="none" />
+          </svg>
+          Streams
+        </button>
+      </nav>
+    </aside>
 
-  <section class="streams-panel" id="streams-panel">
-    <div class="streams-panel-inner">
-      <div class="streams-header">
-        <h2>Streams</h2>
-        <p class="streams-meta" id="streams-meta">Loading catalog…</p>
-        <button id="streams-refresh" type="button">Refresh catalog</button>
+    <div class="app-main">
+      <div class="view" id="view-library">
+        <section class="source-config-panel" id="source-config" hidden>
+          <div class="source-config-row">
+            <label for="main-url-input">Source URL</label>
+            <input id="main-url-input" type="url" placeholder="https://filmyfly.luxe/" />
+            <button id="apply-main-url" type="button">Apply</button>
+          </div>
+          <div class="source-config-row">
+            <label for="cineby-url-input">Cineby URL</label>
+            <input id="cineby-url-input" type="url" placeholder="https://…" />
+            <button id="apply-cineby-url" type="button">Apply</button>
+          </div>
+        </section>
+
+        <section class="filters" id="filters" hidden>
+          <div class="filters-panel">
+            <div class="filters-row">
+              <input id="search-input" type="search" placeholder="Search titles…" />
+              <select id="sort-select" aria-label="Sort by">
+                <option value="source-order">Source order</option>
+                <option value="release-desc">Newest first</option>
+                <option value="release-asc">Oldest first</option>
+                <option value="rating-desc">Top rated</option>
+                <option value="title-asc">Title A–Z</option>
+              </select>
+              <select id="type-filter" aria-label="Filter by type">
+                <option value="all">All types</option>
+                <option value="movie">Movies</option>
+                <option value="tv">TV Series</option>
+              </select>
+              <select id="genre-filter" aria-label="Filter by genre">
+                <option value="all">All genres</option>
+              </select>
+              <select id="year-filter" aria-label="Filter by year">
+                <option value="all">All years</option>
+                <option value="recent">Recent (2 yrs)</option>
+              </select>
+              <select id="quality-filter" aria-label="Filter by quality">
+                <option value="all">All quality</option>
+                <option value="hd">HD</option>
+                <option value="k4">4K</option>
+              </select>
+              <button id="refresh" type="button">Refresh</button>
+            </div>
+            <div class="filter-chips">
+              <button class="chip" type="button" data-preset="recent">Recent releases</button>
+              <button class="chip" type="button" data-preset="top-rated">Top rated (7+)</button>
+              <button class="chip" type="button" data-preset="movies">Movies only</button>
+              <button class="chip" type="button" data-preset="tv">TV only</button>
+              <button class="chip" type="button" data-preset="hd">HD only</button>
+              <button class="chip" type="button" data-preset="k4">4K only</button>
+              <button class="chip" type="button" data-preset="reset">Reset filters</button>
+            </div>
+            <p class="filter-count" id="filter-count"></p>
+          </div>
+        </section>
+
+        <main>
+          <div id="content" class="state"></div>
+        </main>
+
+        <footer id="footer" hidden>
+          Metadata from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>
+        </footer>
       </div>
-      <div id="streams-content" class="streams-empty">Loading…</div>
-    </div>
-  </section>
 
-  <section class="filters" id="filters" hidden>
-    <div class="filters-panel">
-      <div class="filters-row">
-        <input id="search-input" type="search" placeholder="Search titles…" />
-        <select id="sort-select" aria-label="Sort by">
-          <option value="source-order">Source order</option>
-          <option value="release-desc">Newest first</option>
-          <option value="release-asc">Oldest first</option>
-          <option value="rating-desc">Top rated</option>
-          <option value="title-asc">Title A–Z</option>
-        </select>
-        <select id="type-filter" aria-label="Filter by type">
-          <option value="all">All types</option>
-          <option value="movie">Movies</option>
-          <option value="tv">TV Series</option>
-        </select>
-        <select id="genre-filter" aria-label="Filter by genre">
-          <option value="all">All genres</option>
-        </select>
-        <select id="year-filter" aria-label="Filter by year">
-          <option value="all">All years</option>
-          <option value="recent">Recent (2 yrs)</option>
-        </select>
-        <select id="quality-filter" aria-label="Filter by quality">
-          <option value="all">All quality</option>
-          <option value="hd">HD</option>
-          <option value="k4">4K</option>
-        </select>
-        <button id="refresh" type="button">Refresh</button>
+      <div class="view" id="view-streams" hidden>
+        <section class="streams-panel" id="streams-panel">
+          <div class="streams-panel-inner">
+            <div class="streams-header">
+              <h2>Streams</h2>
+              <p class="streams-meta" id="streams-meta">Loading catalog…</p>
+              <button id="streams-refresh" type="button">Refresh catalog</button>
+            </div>
+            <div id="streams-content" class="streams-empty">Loading…</div>
+          </div>
+        </section>
       </div>
-      <div class="filter-chips">
-        <button class="chip" type="button" data-preset="recent">Recent releases</button>
-        <button class="chip" type="button" data-preset="top-rated">Top rated (7+)</button>
-        <button class="chip" type="button" data-preset="movies">Movies only</button>
-        <button class="chip" type="button" data-preset="tv">TV only</button>
-        <button class="chip" type="button" data-preset="hd">HD only</button>
-        <button class="chip" type="button" data-preset="k4">4K only</button>
-        <button class="chip" type="button" data-preset="reset">Reset filters</button>
-      </div>
-      <p class="filter-count" id="filter-count"></p>
     </div>
-  </section>
-
-  <main>
-    <div id="content" class="state"></div>
-  </main>
-
-  <footer id="footer" hidden>
-    Metadata from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>
-  </footer>
+  </div>
 
   <div class="modal-backdrop" id="download-modal" hidden>
     <div class="modal" role="dialog" aria-labelledby="download-modal-title">
@@ -1083,7 +1243,11 @@
     const streamsMetaEl = document.getElementById("streams-meta");
     const streamsContentEl = document.getElementById("streams-content");
     const streamsRefreshBtn = document.getElementById("streams-refresh");
+    const viewLibraryEl = document.getElementById("view-library");
+    const viewStreamsEl = document.getElementById("view-streams");
+    const navItems = document.querySelectorAll(".nav-item[data-view]");
     let streamsPollTimer = null;
+    let activeView = "library";
     let allMovies = [];
     let nextSourceOrder = 0;
     let tmdbEnabledFlag = false;
@@ -1824,6 +1988,33 @@
       cinebyUrlInput.value = config.cinebyUrl || "";
     }
 
+    function setView(view, { updateHash = true } = {}) {
+      const next = view === "streams" ? "streams" : "library";
+      activeView = next;
+      viewLibraryEl.hidden = next !== "library";
+      viewStreamsEl.hidden = next !== "streams";
+      navItems.forEach((item) => {
+        const on = item.dataset.view === next;
+        item.classList.toggle("active", on);
+        if (on) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+      });
+      if (updateHash) {
+        const hash = next === "streams" ? "#streams" : "#library";
+        if (location.hash !== hash) {
+          history.replaceState(null, "", hash);
+        }
+      }
+      if (next === "streams") {
+        loadStreamsCatalog().catch(() => {});
+      }
+    }
+
+    function viewFromHash() {
+      const hash = (location.hash || "").replace(/^#/, "").toLowerCase();
+      return hash === "streams" ? "streams" : "library";
+    }
+
     function formatStreamsTime(iso) {
       if (!iso) return "never";
       const d = new Date(iso);
@@ -2037,6 +2228,10 @@
 
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
     streamsRefreshBtn.addEventListener("click", () => refreshStreamsCatalog());
+    navItems.forEach((item) => {
+      item.addEventListener("click", () => setView(item.dataset.view));
+    });
+    window.addEventListener("hashchange", () => setView(viewFromHash(), { updateHash: false }));
     applyMainUrlBtn.addEventListener("click", applyMainUrl);
     mainUrlInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") applyMainUrl();
@@ -2100,8 +2295,12 @@
       chip.addEventListener("click", () => togglePreset(chip.dataset.preset));
     });
 
+    setView(viewFromHash(), { updateHash: true });
     load();
-    loadStreamsCatalog();
+    // Warm the streams catalog in the background even on Library.
+    if (activeView !== "streams") {
+      loadStreamsCatalog().catch(() => {});
+    }
   </script>
 </body>
 </html>
