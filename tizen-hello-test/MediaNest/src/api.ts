@@ -251,6 +251,25 @@ export function buildPlayUrl(tmdbId: string | null, title: string, fileToken?: s
   return apiUrl(`downloads/play?${params.toString()}`);
 }
 
+export interface M3u8Playlist {
+  name: string;
+  fileName: string;
+  token: string;
+  size: number;
+}
+
+export async function listM3u8Playlists(): Promise<M3u8Playlist[]> {
+  const res = await fetch(apiUrl("m3u8"));
+  if (!res.ok) throw new Error(`Failed to load playlists: ${res.status}`);
+  const data = await res.json();
+  return data.items || [];
+}
+
+export function buildM3u8PlayUrl(token: string): string {
+  const params = new URLSearchParams({ file: token });
+  return apiUrl(`m3u8/play?${params.toString()}`);
+}
+
 export interface SavedProgress {
   positionSeconds: number;
   durationSeconds: number;

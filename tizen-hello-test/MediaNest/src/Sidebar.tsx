@@ -7,12 +7,13 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { icon: "⌂", label: "Home" },
   { icon: "🔍", label: "Search" },
   { icon: "⬇", label: "Downloads" },
+  { icon: "▶", label: "Streams" },
   { icon: "🎬", label: "Cineby" },
 ];
 
-export type SidebarView = "browse" | "search" | "downloads" | "cineby";
+export type SidebarView = "browse" | "search" | "downloads" | "streams" | "cineby";
 
-export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "downloads", "cineby"];
+export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "downloads", "streams", "cineby"];
 
 interface SidebarProps {
   activeIndex: number;

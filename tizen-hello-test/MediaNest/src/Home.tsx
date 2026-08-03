@@ -10,6 +10,7 @@ import {
   openCinebyUrl,
   type Movie,
   type DownloadedMovie,
+  type M3u8Playlist,
 } from "./api";
 import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
 import { Hero } from "./Hero";
@@ -18,6 +19,7 @@ import { Detail } from "./Detail";
 import { DownloadModal } from "./DownloadModal";
 import { Search } from "./Search";
 import { Downloads } from "./Downloads";
+import { Streams } from "./Streams";
 import { Cineby } from "./Cineby";
 import { ExitConfirm } from "./ExitConfirm";
 
@@ -25,6 +27,7 @@ type View = SidebarView;
 
 interface HomeProps {
   onPlay: (movie: Movie) => void;
+  onPlayStream: (item: M3u8Playlist) => void;
 }
 
 interface RowDef {
@@ -36,7 +39,7 @@ interface RowDef {
 
 const HERO_ROTATE_MS = 8000;
 
-export function Home({ onPlay }: HomeProps) {
+export function Home({ onPlay, onPlayStream }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
   const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
@@ -221,11 +224,9 @@ export function Home({ onPlay }: HomeProps) {
         return;
       }
 
-      // Search/Downloads/Cineby own their own key handling once focus has left
-      // the sidebar (see Search.tsx) - this listener only drives the
-      // browse screen's hero/row navigation below. Left from Cineby returns
-      // focus to the sidebar so the remote isn't trapped in the iframe.
-      if (view === "cineby") {
+      // Search/Downloads/Streams own their own Up/Down/Enter handling.
+      // Left from Cineby/Streams returns focus to the sidebar.
+      if (view === "cineby" || view === "streams") {
         if (e.keyCode === 37) setSidebarFocused(true);
         return;
       }
@@ -326,6 +327,7 @@ export function Home({ onPlay }: HomeProps) {
         />
       )}
       {view === "downloads" && <Downloads />}
+      {view === "streams" && <Streams onPlay={onPlayStream} active={!sidebarFocused} />}
       {view === "cineby" && <Cineby />}
       {openDetail && (
         <Detail

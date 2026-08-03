@@ -368,6 +368,39 @@
       line-height: 1.5;
     }
 
+    .tv-stream-item {
+      display: block;
+      width: 100%;
+      max-width: 52rem;
+      text-align: left;
+      margin: 0 0 0.75rem;
+      padding: 1rem 1.25rem;
+      border: 2px solid transparent;
+      border-radius: 0.6rem;
+      background: rgba(255, 255, 255, 0.04);
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .tv-stream-item:focus,
+    .tv-stream-item.focused {
+      border-color: var(--accent, #00a8e1);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+
+    .tv-stream-item-name {
+      font-weight: 600;
+      font-size: 1.15rem;
+    }
+
+    .tv-stream-item-file {
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 0.9rem;
+      margin-top: 0.25rem;
+    }
+
     /* ---- Rows ---- */
     .tv-rows {
       /* Starts right below the fixed hero and scrolls independently within
@@ -1469,6 +1502,9 @@
       <button class="tv-sidenav-btn" id="nav-library-btn" type="button">
         <span class="tv-sidenav-icon">▶</span> Library
       </button>
+      <button class="tv-sidenav-btn" id="nav-streams-btn" type="button">
+        <span class="tv-sidenav-icon">▤</span> Streams
+      </button>
       <button class="tv-sidenav-btn" id="nav-cineby-btn" type="button">
         <span class="tv-sidenav-icon">🎬</span> Cineby
       </button>
@@ -1683,6 +1719,7 @@
     const navHomeBtn = document.getElementById("nav-home-btn");
     const navSearchBtn = document.getElementById("nav-search-btn");
     const navLibraryBtn = document.getElementById("nav-library-btn");
+    const navStreamsBtn = document.getElementById("nav-streams-btn");
     const navCinebyBtn = document.getElementById("nav-cineby-btn");
     const cinebyPanel = document.getElementById("cineby-panel");
     const cinebyEmpty = document.getElementById("cineby-empty");
@@ -1951,6 +1988,7 @@
     function setActiveNav() {
       navHomeBtn.classList.toggle("active", currentView === "home");
       navLibraryBtn.classList.toggle("active", currentView === "library");
+      navStreamsBtn.classList.toggle("active", currentView === "streams");
       navCinebyBtn.classList.toggle("active", currentView === "cineby");
     }
 
@@ -1975,6 +2013,42 @@
       cinebyPanel.hidden = false;
       cinebyEmpty.hidden = false;
       window.TVFocusManager?.closeSidenav?.();
+    }
+
+    async function showStreamsView() {
+      currentView = "streams";
+      hideCinebyView();
+      setActiveNav();
+      document.getElementById("hero").hidden = true;
+      rowsContainer.hidden = false;
+      rowsContainer.innerHTML = `<div class="state" id="status-state">Loading playlists…</div>`;
+      window.TVFocusManager?.closeSidenav?.();
+
+      try {
+        const res = await fetch(apiUrl("m3u8"));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const items = data.items || [];
+        if (!items.length) {
+          rowsContainer.innerHTML = `<div class="state" id="status-state">No .m3u8 files in PlexMedia/M3U8.</div>`;
+          return;
+        }
+        rowsContainer.innerHTML =
+          `<div class="tv-row"><h2 class="tv-row-title">Streams</h2><div class="tv-stream-list">` +
+          items
+            .map(
+              (item) => `
+            <button class="tv-stream-item" type="button" tabindex="0" data-m3u8-token="${escapeAttr(item.token)}" data-m3u8-name="${escapeAttr(item.name)}">
+              <div class="tv-stream-item-name">${escapeHtml(item.name)}</div>
+              <div class="tv-stream-item-file">${escapeHtml(item.fileName)}</div>
+            </button>`
+            )
+            .join("") +
+          `</div></div>`;
+        window.TVFocusManager?.focusFirst?.();
+      } catch (err) {
+        rowsContainer.innerHTML = `<div class="state error">${escapeHtml(err.message)}</div>`;
+      }
     }
 
     function uniqueMovies(movies) {
@@ -2009,6 +2083,30 @@
       renderCurrentView();
       window.TVFocusManager?.closeSidenav?.();
       window.TVFocusManager?.focusFirst();
+    }
+
+    function startM3u8Player(name, token) {
+      playbackContext = null;
+      lastProgressSaveAt = 0;
+      avPendingResumeMs = null;
+      currentAudioTracks = [];
+      currentSubtitleTracks = [];
+      selectedAudioTrack = 0;
+      selectedSubtitleTrack = null;
+      playerTracksHint.hidden = true;
+      playerTracksPanel.hidden = true;
+
+      playerStatus.hidden = true;
+      playerTitle.textContent = name || "Stream";
+      playerProgressFill.style.width = "0%";
+      playerTimeElapsed.textContent = "0:00";
+      playerTimeDuration.textContent = "0:00";
+      playerOverlay.classList.remove("controls-hidden");
+      playerOverlay.hidden = false;
+      playerSpinner.classList.add("show");
+      playerVideo.focus();
+      avOpenStream(apiUrl(`m3u8/play?${new URLSearchParams({ file: token }).toString()}`));
+      showPlayerControls();
     }
 
     async function fetchPageRange(from, to, { refresh = false } = {}) {
@@ -3732,6 +3830,11 @@
     document.getElementById("player-close-btn").addEventListener("click", closePlayer);
 
     rowsContainer.addEventListener("click", (e) => {
+      const streamBtn = e.target.closest("[data-m3u8-token]");
+      if (streamBtn && rowsContainer.contains(streamBtn)) {
+        startM3u8Player(streamBtn.dataset.m3u8Name || "Stream", streamBtn.dataset.m3u8Token);
+        return;
+      }
       const card = e.target.closest(".tv-poster-card");
       if (!card) return;
       const movie = visibleMovies.find((m) => m.link === card.dataset.link);
@@ -3765,6 +3868,7 @@
     });
 
     navLibraryBtn.addEventListener("click", showLibraryView);
+    navStreamsBtn.addEventListener("click", showStreamsView);
     navCinebyBtn.addEventListener("click", showCinebyView);
 
     searchInput.addEventListener("input", () => {

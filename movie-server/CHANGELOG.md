@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.3
+
+- Added a **Streams** sidebar tab that lists `.m3u8` playlists from `PlexMedia/M3U8` (container `/downloads/M3U8`) and plays them via AVPlay. New APIs: `GET /api/m3u8` and `GET /api/m3u8/play?file=…`.
+
 ## 1.5.2
 
 - Fixed Cineby opening again after a local iframe regression: cineby.at/tech both send `X-Frame-Options: DENY`, so the tab always uses top-level navigation (from the sidebar select path) instead of framing.

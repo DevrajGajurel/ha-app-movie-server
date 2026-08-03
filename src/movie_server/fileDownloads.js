@@ -800,6 +800,81 @@ function streamFile(req, res, filePath) {
   fs.createReadStream(filePath, { start, end }).pipe(res);
 }
 
+const M3U8_DIR_NAME = "M3U8";
+const M3U8_EXTENSIONS = new Set([".m3u8"]);
+
+function getM3u8Dir() {
+  return path.join(path.resolve(getDownloadDir()), M3U8_DIR_NAME);
+}
+
+// Lists every .m3u8 under DOWNLOAD_DIR/M3U8 (recursive). Tokens are paths
+// relative to the download root (e.g. "M3U8/Spiderman.m3u8") so play
+// requests can round-trip without exposing absolute disk paths.
+function listM3u8Playlists() {
+  const base = path.resolve(getDownloadDir());
+  const root = getM3u8Dir();
+  const items = [];
+
+  function walk(current) {
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (!M3U8_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+      let size = 0;
+      try {
+        size = fs.statSync(full).size;
+      } catch {
+        continue;
+      }
+      items.push({
+        name: entry.name.replace(/\.m3u8$/i, ""),
+        fileName: entry.name,
+        token: path.relative(base, full).split(path.sep).join("/"),
+        size,
+      });
+    }
+  }
+
+  walk(root);
+  items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  return { dir: root, items };
+}
+
+function resolveM3u8Token(token) {
+  const base = path.resolve(getDownloadDir());
+  const m3u8Root = getM3u8Dir();
+  const full = path.resolve(base, String(token || ""));
+  if (full !== m3u8Root && !full.startsWith(m3u8Root + path.sep)) return null;
+  if (!M3U8_EXTENSIONS.has(path.extname(full).toLowerCase())) return null;
+  try {
+    if (!fs.statSync(full).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return full;
+}
+
+function streamM3u8Playlist(req, res, filePath) {
+  const stat = fs.statSync(filePath);
+  res.writeHead(200, {
+    "Content-Length": stat.size,
+    "Content-Type": "application/vnd.apple.mpegurl",
+    "Cache-Control": "no-store",
+    "Access-Control-Allow-Origin": "*",
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
 function scanLibrary() {
   const base = path.resolve(getDownloadDir());
   const tmdbIds = new Set();
@@ -980,4 +1055,7 @@ module.exports = {
   prefetchAllSubtitles,
   saveProgress,
   getProgress,
+  listM3u8Playlists,
+  resolveM3u8Token,
+  streamM3u8Playlist,
 };

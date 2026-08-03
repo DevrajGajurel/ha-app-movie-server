@@ -36,6 +36,9 @@ const {
   saveProgress,
   getProgress,
   listProgress,
+  listM3u8Playlists,
+  resolveM3u8Token,
+  streamM3u8Playlist,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
 const { resolveRedirectUrl } = require("./urlUtils");
@@ -645,6 +648,31 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/m3u8" && req.method === "GET") {
+    try {
+      sendJson(res, 200, listM3u8Playlists());
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/m3u8/play" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const token = searchParams.get("file");
+      const filePath = resolveM3u8Token(token);
+      if (!filePath) {
+        sendJson(res, 404, { error: "Playlist not found" });
+        return;
+      }
+      streamM3u8Playlist(req, res, filePath);
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
