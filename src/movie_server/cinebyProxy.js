@@ -2,12 +2,47 @@ const { URL } = require("url");
 
 const PROXY_PREFIX = "/api/cineby-proxy";
 
+function logCineby(level, message, extra) {
+  const suffix = extra ? ` ${JSON.stringify(extra)}` : "";
+  const line = `[cineby-proxy] ${message}${suffix}`;
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+
 // Injected into proxied HTML so the parent MediaNest/HelloTV app can drive
 // Cineby with the TV remote (via postMessage) and so Cineby cannot navigate
 // the top-level widget away from our app.
 const TV_CURSOR_SCRIPT = `<script data-medianest-tv-cursor="1">(function(){
   if (window.__medianestTvCursor) return;
   window.__medianestTvCursor = true;
+
+  function report(source, message, context) {
+    try {
+      fetch("/api/client-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: source || "cineby-frame", message: String(message || ""), context: context || null })
+      }).catch(function () {});
+    } catch (err) {}
+  }
+
+  report("cineby-frame", "virtual cursor script loaded", {
+    href: String(location.href || ""),
+    title: String(document.title || "")
+  });
+
+  window.addEventListener("error", function (e) {
+    report("cineby-frame", e && e.message ? e.message : "window.error", {
+      filename: e && e.filename,
+      lineno: e && e.lineno,
+      colno: e && e.colno
+    });
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var reason = e && e.reason;
+    report("cineby-frame", reason && reason.message ? reason.message : String(reason || "unhandledrejection"));
+  });
 
   // Soft anti-frame-bust: rewrite _top/_parent links; best-effort block
   // top/parent navigations. Hard lock is the iframe sandbox (no allow-top-navigation).
@@ -70,7 +105,10 @@ const TV_CURSOR_SCRIPT = `<script data-medianest-tv-cursor="1">(function(){
 
   function clickAt() {
     var el = deepElementFromPoint(x, y);
-    if (!el) return;
+    if (!el) {
+      report("cineby-cursor", "clickAt: no element at cursor", { x: x, y: y });
+      return;
+    }
     var target = el.closest("a,button,input,textarea,select,[role='button'],[tabindex],video,summary,[onclick]") || el;
     try { if (target.focus) target.focus(); } catch (e) {}
     fire(target, "pointerover", window.PointerEvent || MouseEvent, { pointerType: "mouse", isPrimary: true });
@@ -83,6 +121,14 @@ const TV_CURSOR_SCRIPT = `<script data-medianest-tv-cursor="1">(function(){
     fire(target, "mouseup", MouseEvent, { button: 0 });
     fire(target, "click", MouseEvent, { button: 0 });
     try { if (typeof target.click === "function") target.click(); } catch (e) {}
+    report("cineby-cursor", "clickAt", {
+      tag: target.tagName,
+      id: target.id || null,
+      className: typeof target.className === "string" ? target.className.slice(0, 120) : null,
+      href: target.href || null,
+      x: x,
+      y: y
+    });
   }
 
   function handleKey(code) {
@@ -94,6 +140,7 @@ const TV_CURSOR_SCRIPT = `<script data-medianest-tv-cursor="1">(function(){
     else if (code === 13) { clickAt(); return true; }
     else if (code === 10009 || code === 27) {
       try { window.parent.postMessage({ type: "medianest-cineby-back" }, "*"); } catch (err) {}
+      report("cineby-cursor", "back key -> leave cineby");
       return true;
     }
     if (moved) { place(); return true; }
@@ -169,7 +216,11 @@ async function readRequestBody(req) {
 }
 
 async function handleCinebyProxy(req, res, cinebyUrl) {
+  const started = Date.now();
+  const incomingPath = String(req.url || "/");
+
   if (!cinebyUrl) {
+    logCineby("error", "rejected: cinebyUrl not configured", { path: incomingPath });
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "cinebyUrl is not configured" }));
     return;
@@ -178,7 +229,8 @@ async function handleCinebyProxy(req, res, cinebyUrl) {
   let base;
   try {
     base = new URL(cinebyUrl);
-  } catch {
+  } catch (err) {
+    logCineby("error", "rejected: cinebyUrl invalid", { cinebyUrl, message: err.message });
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "cinebyUrl is invalid" }));
     return;
@@ -186,9 +238,18 @@ async function handleCinebyProxy(req, res, cinebyUrl) {
 
   const incoming = new URL(req.url || "/", "http://localhost");
   const suffix = incoming.pathname.slice(PROXY_PREFIX.length) || "/";
-  const target = new URL(suffix + incoming.search, base.href.endsWith("/") ? base.href : `${base.href}/`);
+  let target;
+  try {
+    target = new URL(suffix + incoming.search, base.href.endsWith("/") ? base.href : `${base.href}/`);
+  } catch (err) {
+    logCineby("error", "rejected: bad proxy path", { path: incomingPath, message: err.message });
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid proxy path" }));
+    return;
+  }
 
   if (target.origin !== base.origin) {
+    logCineby("warn", "rejected: escaped cineby origin", { target: target.href, allowed: base.origin });
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Proxy target escaped cineby origin" }));
     return;
@@ -214,6 +275,12 @@ async function handleCinebyProxy(req, res, cinebyUrl) {
   try {
     upstream = await fetch(target.href, init);
   } catch (err) {
+    logCineby("error", "upstream fetch failed", {
+      method: req.method,
+      target: target.href,
+      message: err.message,
+      ms: Date.now() - started,
+    });
     res.writeHead(502, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: `Cineby proxy fetch failed: ${err.message}` }));
     return;
@@ -226,9 +293,19 @@ async function handleCinebyProxy(req, res, cinebyUrl) {
       const headers = stripFramingHeaders(upstream.headers);
       if (next.origin === base.origin) {
         headers.Location = `${PROXY_PREFIX}${next.pathname}${next.search}`;
+        logCineby("info", "upstream redirect (same origin)", {
+          from: target.href,
+          to: next.href,
+          status: upstream.status,
+          ms: Date.now() - started,
+        });
       } else {
-        // Refuse off-origin redirects that would break out of the proxied
-        // iframe experience (and often the whole TV app via target=_top).
+        logCineby("warn", "blocked off-origin redirect", {
+          from: target.href,
+          to: next.href,
+          status: upstream.status,
+          ms: Date.now() - started,
+        });
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: `Blocked off-origin redirect to ${next.origin}` }));
         return;
@@ -246,14 +323,29 @@ async function handleCinebyProxy(req, res, cinebyUrl) {
 
   const raw = Buffer.from(await upstream.arrayBuffer());
   let body = raw;
+  const isHtml = /text\/html/i.test(contentType);
+  const isCss = /text\/css/i.test(contentType);
 
-  if (/text\/html/i.test(contentType)) {
+  if (isHtml) {
     const host = req.headers.host || "127.0.0.1:3001";
     const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
     const proxyAbsoluteBase = `${proto}://${host}${PROXY_PREFIX}`;
     body = Buffer.from(rewriteHtml(raw.toString("utf8"), base.origin, proxyAbsoluteBase), "utf8");
-  } else if (/text\/css/i.test(contentType)) {
+  } else if (isCss) {
     body = Buffer.from(rewriteCss(raw.toString("utf8"), base.origin), "utf8");
+  }
+
+  // Log HTML pages and failures; skip noisy successful asset fetches.
+  if (isHtml || upstream.status >= 400) {
+    logCineby(upstream.status >= 400 ? "warn" : "info", "proxied", {
+      method: req.method,
+      target: target.href,
+      status: upstream.status,
+      contentType,
+      bytes: body.length,
+      rewritten: isHtml || isCss,
+      ms: Date.now() - started,
+    });
   }
 
   headers["Content-Type"] = contentType;

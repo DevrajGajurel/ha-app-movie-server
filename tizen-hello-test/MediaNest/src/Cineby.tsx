@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCinebyProxyUrl } from "./api";
+import { getCinebyProxyUrl, reportClientError } from "./api";
 
 interface CinebyProps {
   onBack?: () => void;
@@ -17,21 +17,27 @@ export function Cineby({ onBack, active = true }: CinebyProps) {
 
   useEffect(() => {
     let cancelled = false;
+    reportClientError("cineby", "opening Cineby view");
     getCinebyProxyUrl()
       .then((url) => {
         if (cancelled) return;
         if (!url) {
-          setError("Set cineby_url in the Movie Server config (or CINEBY_URL in .env) to open a page here.");
+          const message = "Set cineby_url in the Movie Server config (or CINEBY_URL in .env) to open a page here.";
+          setError(message);
           setLoading(false);
+          reportClientError("cineby", "cinebyUrl not configured");
           return;
         }
+        reportClientError("cineby", "proxy url ready", { proxyUrl: url });
         setProxyUrl(url);
         setLoading(false);
       })
       .catch((err) => {
         if (!cancelled) {
-          setError("Failed to load Cineby: " + err.message);
+          const message = "Failed to load Cineby: " + err.message;
+          setError(message);
           setLoading(false);
+          reportClientError("cineby", message, { stack: err?.stack || null });
         }
       });
     return () => {
@@ -41,7 +47,10 @@ export function Cineby({ onBack, active = true }: CinebyProps) {
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      if (event.data?.type === "medianest-cineby-back") onBack?.();
+      if (event.data?.type === "medianest-cineby-back") {
+        reportClientError("cineby", "back from iframe postMessage");
+        onBack?.();
+      }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -55,7 +64,14 @@ export function Cineby({ onBack, active = true }: CinebyProps) {
       if (![37, 38, 39, 40, 13].includes(e.keyCode)) return;
       e.preventDefault();
       e.stopPropagation();
-      iframeRef.current?.contentWindow?.postMessage({ type: "medianest-tv-key", keyCode: e.keyCode }, "*");
+      try {
+        iframeRef.current?.contentWindow?.postMessage({ type: "medianest-tv-key", keyCode: e.keyCode }, "*");
+      } catch (err) {
+        reportClientError("cineby", "failed to forward remote key", {
+          keyCode: e.keyCode,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
@@ -97,6 +113,8 @@ export function Cineby({ onBack, active = true }: CinebyProps) {
         // No allow-top-navigation: Cineby must not replace MediaNest.
         sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
         allow="fullscreen; autoplay"
+        onLoad={() => reportClientError("cineby", "iframe load fired", { proxyUrl })}
+        onError={() => reportClientError("cineby", "iframe error event", { proxyUrl })}
       />
     </div>
   );

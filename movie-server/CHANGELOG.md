@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.7
+
+- Added Cineby diagnostics: proxy logs (`[cineby-proxy]`) for HTML fetches, failures, and blocked redirects; TV apps report open/load/error via `/api/client-log`; the injected cursor script reports load, JS errors, and OK-clicks into `movieserver-client.log`.
+
 ## 1.5.6
 
 - Streams tab shows TMDB posters in a Home-style horizontal poster row (MediaNest + HelloTV). `GET /api/m3u8` enriches each playlist filename via TMDB when configured.

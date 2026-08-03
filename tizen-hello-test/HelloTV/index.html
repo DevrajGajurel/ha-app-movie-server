@@ -2047,6 +2047,7 @@
       cinebyPanel.hidden = false;
       cinebyEmpty.hidden = false;
       window.TVFocusManager?.closeSidenav?.();
+      reportClientError("cineby", new Error("opening Cineby view"), { cinebyUrl: cinebyUrl || null });
 
       const url = (cinebyUrl || "").trim();
       if (!url) {
@@ -2054,6 +2055,7 @@
           "<h1>Cineby</h1><p>Set <code>cineby_url</code> in the Movie Server config (or <code>CINEBY_URL</code> in .env) to open a page here.</p>";
         const oldFrame = document.getElementById("cineby-frame");
         if (oldFrame) oldFrame.remove();
+        reportClientError("cineby", new Error("cinebyUrl not configured"));
         return;
       }
 
@@ -2068,11 +2070,19 @@
         frame.setAttribute("allow", "fullscreen; autoplay");
         // No allow-top-navigation: Cineby must not replace HelloTV.
         frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-presentation");
+        frame.addEventListener("load", () => {
+          reportClientError("cineby", new Error("iframe load fired"), { src: frame.src });
+        });
+        frame.addEventListener("error", () => {
+          reportClientError("cineby", new Error("iframe error event"), { src: frame.src });
+        });
         cinebyPanel.appendChild(frame);
       }
       cinebyEmpty.hidden = true;
       frame.hidden = false;
-      frame.src = apiUrl("cineby-proxy/");
+      const proxySrc = apiUrl("cineby-proxy/");
+      reportClientError("cineby", new Error("proxy url ready"), { proxyUrl: proxySrc });
+      frame.src = proxySrc;
     }
 
     async function showStreamsView() {
