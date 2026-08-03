@@ -666,7 +666,23 @@ const server = http.createServer(async (req, res) => {
 
   if (url === "/api/m3u8" && req.method === "GET") {
     try {
-      sendJson(res, 200, listM3u8Playlists());
+      const listed = listM3u8Playlists();
+      let items = listed.items || [];
+      if (TMDB_API_KEY && items.length) {
+        const enriched = await enrichMovies(
+          items.map((item) => ({ title: item.name, link: item.token })),
+          TMDB_API_KEY
+        );
+        items = items.map((item, i) => ({
+          ...item,
+          tmdb: enriched[i]?.tmdb || null,
+        }));
+      }
+      sendJson(res, 200, {
+        dir: listed.dir,
+        items,
+        tmdbEnabled: Boolean(TMDB_API_KEY),
+      });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

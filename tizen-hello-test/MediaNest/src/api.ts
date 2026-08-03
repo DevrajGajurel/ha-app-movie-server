@@ -257,6 +257,7 @@ export interface M3u8Playlist {
   fileName: string;
   token: string;
   size: number;
+  tmdb?: TmdbInfo | null;
 }
 
 export async function listM3u8Playlists(): Promise<M3u8Playlist[]> {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.6
+
+- Streams tab shows TMDB posters in a Home-style horizontal poster row (MediaNest + HelloTV). `GET /api/m3u8` enriches each playlist filename via TMDB when configured.
+
 ## 1.5.5
 
 - Keep Cineby inside MediaNest/HelloTV: sandboxed iframe (no top-level navigation), MediaNest chrome bar, block off-origin redirects, and forward the TV remote into the proxied page so D-pad moves the cursor and OK clicks instead of only scrolling the outer app.

@@ -1,12 +1,22 @@
-import { useEffect, useState } from "react";
-import { listM3u8Playlists, type M3u8Playlist } from "./api";
+import { useEffect, useMemo, useState } from "react";
+import { listM3u8Playlists, type M3u8Playlist, type Movie } from "./api";
+import { Row } from "./Row";
 
 interface StreamsProps {
   onPlay: (item: M3u8Playlist) => void;
   active?: boolean;
+  onRequestSidebar?: () => void;
 }
 
-export function Streams({ onPlay, active = true }: StreamsProps) {
+function playlistAsMovie(item: M3u8Playlist): Movie {
+  return {
+    title: item.tmdb?.tmdbTitle || item.name,
+    link: `m3u8:${item.token}`,
+    tmdb: item.tmdb || undefined,
+  };
+}
+
+export function Streams({ onPlay, active = true, onRequestSidebar }: StreamsProps) {
   const [items, setItems] = useState<M3u8Playlist[]>([]);
   const [status, setStatus] = useState("Loading playlists…");
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -28,32 +38,43 @@ export function Streams({ onPlay, active = true }: StreamsProps) {
     };
   }, []);
 
+  const movies = useMemo(() => items.map(playlistAsMovie), [items]);
+
   useEffect(() => {
     if (!active) return;
     function onKeyDown(e: KeyboardEvent) {
       if (!items.length) return;
-      if (e.keyCode === 40) setFocusedIndex((i) => Math.min(items.length - 1, i + 1));
-      else if (e.keyCode === 38) setFocusedIndex((i) => Math.max(0, i - 1));
-      else if (e.keyCode === 13) onPlay(items[focusedIndex]);
+      if (e.keyCode === 39) {
+        setFocusedIndex((i) => Math.min(items.length - 1, i + 1));
+      } else if (e.keyCode === 37) {
+        setFocusedIndex((i) => {
+          if (i <= 0) {
+            onRequestSidebar?.();
+            return 0;
+          }
+          return i - 1;
+        });
+      } else if (e.keyCode === 13) {
+        onPlay(items[focusedIndex]);
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [items, focusedIndex, onPlay, active]);
+  }, [items, focusedIndex, onPlay, active, onRequestSidebar]);
 
   return (
     <div className="rows" style={{ marginTop: 0, paddingTop: 48 }}>
-      <h1 className="hero-title" style={{ fontSize: 32 }}>Streams</h1>
-      {status ? <p className="status" style={{ paddingLeft: 0 }}>{status}</p> : null}
-      {items.map((item, i) => (
-        <div
-          key={item.token}
-          className={"stream-item" + (active && i === focusedIndex ? " focused" : "")}
-          onClick={() => onPlay(item)}
-        >
-          <div style={{ fontWeight: 600 }}>{item.name}</div>
-          <div style={{ color: "var(--muted)", fontSize: 15 }}>{item.fileName}</div>
-        </div>
-      ))}
+      <h1 className="hero-title" style={{ fontSize: 32, paddingLeft: 25 }}>Streams</h1>
+      {status ? <p className="status">{status}</p> : null}
+      {movies.length ? (
+        <Row
+          title="Playlists"
+          movies={movies}
+          badge="LIVE"
+          focusedIndex={active ? focusedIndex : null}
+          onSelect={(_movie, index) => onPlay(items[index])}
+        />
+      ) : null}
     </div>
   );
 }
