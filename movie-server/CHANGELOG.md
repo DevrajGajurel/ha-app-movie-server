@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0
+
+- Renamed the advanced TV app from AVPlayPOC to **MediaNest**, marking it as a production app rather than a proof of concept - new icon, display name, and project folder. The underlying Tizen package id was left unchanged so this updates the existing install rather than orphaning it.
+- Added Delete and Trailer actions to MediaNest's movie detail screen: Delete removes the downloaded file (with a confirm step, defaulting to Cancel) via the existing `/api/downloads/media` route; Trailer plays the existing `/api/trailer` proxied stream in a fullscreen video overlay, available for any title with a TMDB trailer regardless of download status.
+
 ## 1.4.57
 
 - Added a Cineby sidebar tab on the TV apps (MediaNest + HelloTV) that loads a configurable webpage in an iframe. Set `cineby_url` in Home Assistant add-on options (or `CINEBY_URL` / the local dashboard's Cineby URL field). Exposed as `cinebyUrl` on `GET/PUT /api/config`.

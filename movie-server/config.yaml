@@ -1,5 +1,5 @@
 name: Movie Server
-version: "1.4.57"
+version: "1.5.0"
 slug: movie_server
 description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
 url: https://github.com/DevrajGajurel/ha-app-movie-server
