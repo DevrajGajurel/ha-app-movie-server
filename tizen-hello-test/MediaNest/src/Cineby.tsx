@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "./api";
 
+// Sites like cineby.tech set CSP frame-ancestors 'none', which blocks iframes
+// in every browser. Loading as a top-level navigation (not a frame) is the
+// only reliable approach — remote Back returns here via history.
 export function Cineby() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -11,8 +14,14 @@ export function Cineby() {
     getConfig()
       .then((config) => {
         if (cancelled) return;
-        setUrl((config.cinebyUrl || "").trim());
-        setLoading(false);
+        const next = (config.cinebyUrl || "").trim();
+        if (!next) {
+          setUrl("");
+          setLoading(false);
+          return;
+        }
+        setUrl(next);
+        window.location.assign(next);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -25,14 +34,6 @@ export function Cineby() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="cineby-view">
-        <p className="status" style={{ paddingLeft: 0 }}>Loading…</p>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="cineby-view">
@@ -41,20 +42,21 @@ export function Cineby() {
     );
   }
 
-  if (!url) {
+  if (loading || url) {
     return (
       <div className="cineby-view">
         <h1 className="hero-title" style={{ fontSize: 32 }}>Cineby</h1>
-        <p className="status" style={{ paddingLeft: 0 }}>
-          Set <code>cineby_url</code> in the Movie Server config (or <code>CINEBY_URL</code> in .env) to load a page here.
-        </p>
+        <p className="status" style={{ paddingLeft: 0 }}>{url ? "Opening…" : "Loading…"}</p>
       </div>
     );
   }
 
   return (
-    <div className="cineby-view cineby-view-frame">
-      <iframe className="cineby-frame" src={url} title="Cineby" allow="fullscreen; autoplay" />
+    <div className="cineby-view">
+      <h1 className="hero-title" style={{ fontSize: 32 }}>Cineby</h1>
+      <p className="status" style={{ paddingLeft: 0 }}>
+        Set <code>cineby_url</code> in the Movie Server config (or <code>CINEBY_URL</code> in .env) to open a page here.
+      </p>
     </div>
   );
 }

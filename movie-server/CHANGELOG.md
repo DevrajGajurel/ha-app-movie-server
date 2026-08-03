@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- Cineby tab no longer uses an iframe: sites such as cineby.tech set CSP `frame-ancestors 'none'`, which browsers always enforce. The tab now opens the configured URL as a top-level page instead (remote Back returns via history).
+
 ## 1.5.0
 
 - Renamed the advanced TV app from AVPlayPOC to **MediaNest**, marking it as a production app rather than a proof of concept - new icon, display name, and project folder. The underlying Tizen package id was left unchanged so this updates the existing install rather than orphaning it.
