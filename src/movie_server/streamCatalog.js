@@ -119,9 +119,22 @@ function runPythonRefreshIncremental(reason) {
           count: catalog.count || Number(event.total) || movies.length,
         };
         const title = event.movie.title || event.movie.tmdbId || "?";
-        const ok = Array.isArray(event.movie.streams) && event.movie.streams.length > 0;
+        const labels = [];
+        const seen = new Set();
+        for (const stream of event.movie.streams || []) {
+          for (const q of stream.qualities || []) {
+            if (q?.label && !seen.has(q.label)) {
+              seen.add(q.label);
+              labels.push(q.label);
+            }
+          }
+          if (stream.bestQuality && !seen.has(stream.bestQuality)) {
+            seen.add(stream.bestQuality);
+            labels.push(stream.bestQuality);
+          }
+        }
         console.log(
-          `[streams] saved ${event.index}/${event.total || "?"} ${title} (${ok ? "playable" : "no streams"})`
+          `[streams] ${event.index}/${event.total || "?"} ${title} — ${labels.length ? labels.join(", ") : "no streams"}`
         );
         return queueWrite(catalog);
       }
@@ -166,8 +179,11 @@ function runPythonRefreshIncremental(reason) {
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString("utf8");
       stderr += text;
+      // Only forward the brief per-title summaries (and failures); drop Chrome noise.
       for (const line of text.split(/\r?\n/).filter(Boolean)) {
-        console.log(`[vidsrc-refresh] ${line}`);
+        if (line.startsWith("[vidsrc-refresh]")) {
+          console.log(line);
+        }
       }
     });
 

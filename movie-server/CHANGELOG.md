@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.3
+
+- Quiet Streams refresh logs: only log each title and available qualities (scraper/Chrome noise suppressed).
+
 ## 1.6.2
 
 - Fix Streams scrape NDJSON pollution: scraper/Chrome progress logs go to stderr so Redis updates reliably; non-JSON stdout lines are treated as log noise instead of parse errors.

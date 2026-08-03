@@ -88,77 +88,78 @@ def main() -> None:
     total = len(movies)
     playable = 0
 
-    # Route all incidental prints (scraper + deps) to stderr for the scrape loop.
-    sys.stdout = sys.stderr
+    # Silence scraper/Chrome/undetected-chromedriver prints. NDJSON still uses
+    # _NDJSON_OUT; brief progress goes to real stderr only.
+    real_stderr = sys.stderr
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        sys.stdout = devnull
+        sys.stderr = devnull
 
-    emit({"event": "start", "window": args.window, "total": total, "refererHint": REFERER_DEFAULT})
+        emit({"event": "start", "window": args.window, "total": total, "refererHint": REFERER_DEFAULT})
 
-    for i, movie in enumerate(movies):
-        entry = {
-            **movie,
-            "referer": REFERER_DEFAULT,
-            "playerHost": None,
-            "streams": [],
-            "errors": [],
-        }
-        try:
-            print(
-                f"[vidsrc-refresh] [{i + 1}/{total}] {movie.get('title')} ({movie.get('tmdbId')})",
-                file=sys.stderr,
-            )
-            result = scrape(
-                "movie",
-                str(movie["tmdbId"]),
-                use_browser=True,
-                browser_timeout=args.browser_timeout,
-            )
-            entry["streams"] = [
-                {
-                    "url": s["url"],
-                    "type": s.get("type", "hls"),
-                    "referer": s.get("referer", REFERER_DEFAULT),
-                    "bestQuality": s.get("best_quality"),
-                    "qualities": [
-                        {
-                            "label": q.get("label"),
-                            "resolution": q.get("resolution"),
-                            "width": q.get("width"),
-                            "height": q.get("height"),
-                            "bandwidth": q.get("bandwidth"),
-                            "frameRate": q.get("frame_rate"),
-                            "codecs": q.get("codecs"),
-                            "url": q.get("url"),
-                        }
-                        for q in (s.get("qualities") or [])
-                        if q.get("url")
-                    ],
-                }
-                for s in result.get("streams", [])
-            ]
-            entry["errors"] = result.get("errors", [])
-            entry["playerHost"] = result.get("player_host")
-            if entry["streams"]:
-                entry["referer"] = entry["streams"][0].get("referer") or REFERER_DEFAULT
-                playable += 1
-        except Exception as exc:  # noqa: BLE001
-            entry["errors"] = [{"error": str(exc)}]
-            print(f"[vidsrc-refresh] failed: {exc}", file=sys.stderr)
+        for i, movie in enumerate(movies):
+            entry = {
+                **movie,
+                "referer": REFERER_DEFAULT,
+                "playerHost": None,
+                "streams": [],
+                "errors": [],
+            }
+            title = movie.get("title") or movie.get("tmdbId") or "?"
+            try:
+                result = scrape(
+                    "movie",
+                    str(movie["tmdbId"]),
+                    use_browser=True,
+                    browser_timeout=args.browser_timeout,
+                )
+                entry["streams"] = [
+                    {
+                        "url": s["url"],
+                        "type": s.get("type", "hls"),
+                        "referer": s.get("referer", REFERER_DEFAULT),
+                        "bestQuality": s.get("best_quality"),
+                        "qualities": [
+                            {
+                                "label": q.get("label"),
+                                "resolution": q.get("resolution"),
+                                "width": q.get("width"),
+                                "height": q.get("height"),
+                                "bandwidth": q.get("bandwidth"),
+                                "frameRate": q.get("frame_rate"),
+                                "codecs": q.get("codecs"),
+                                "url": q.get("url"),
+                            }
+                            for q in (s.get("qualities") or [])
+                            if q.get("url")
+                        ],
+                    }
+                    for s in result.get("streams", [])
+                ]
+                entry["errors"] = result.get("errors", [])
+                entry["playerHost"] = result.get("player_host")
+                if entry["streams"]:
+                    entry["referer"] = entry["streams"][0].get("referer") or REFERER_DEFAULT
+                    playable += 1
+            except Exception as exc:  # noqa: BLE001
+                entry["errors"] = [{"error": str(exc)}]
+                print(f"[vidsrc-refresh] {i + 1}/{total} {title} — failed: {exc}", file=real_stderr)
 
-        emit({"event": "movie", "index": i + 1, "total": total, "movie": entry})
+            emit({"event": "movie", "index": i + 1, "total": total, "movie": entry})
 
-        if i < total - 1 and args.delay > 0:
-            time.sleep(args.delay)
+            if i < total - 1 and args.delay > 0:
+                time.sleep(args.delay)
 
-    emit(
-        {
-            "event": "done",
-            "refreshedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "window": args.window,
-            "count": total,
-            "playable": playable,
-            "refererHint": REFERER_DEFAULT,
-        }
-    )
+        emit(
+            {
+                "event": "done",
+                "refreshedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "window": args.window,
+                "count": total,
+                "playable": playable,
+                "refererHint": REFERER_DEFAULT,
+            }
+        )
 
 
 if __name__ == "__main__":
