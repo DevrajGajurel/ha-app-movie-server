@@ -165,6 +165,17 @@ export async function getConfig(): Promise<Config> {
   return res.json();
 }
 
+// Opens the configured Cineby URL as a top-level navigation. Iframes are
+// blocked by cineby.* (X-Frame-Options / CSP frame-ancestors). Returns
+// false when no URL is configured so the caller can show a setup screen.
+export async function openCinebyUrl(): Promise<boolean> {
+  const config = await getConfig();
+  const url = (config.cinebyUrl || "").trim();
+  if (!url) return false;
+  window.location.assign(url);
+  return true;
+}
+
 async function getMoviesPage(from: number, to: number): Promise<{ movies: Movie[]; tmdbEnabled: boolean }> {
   const res = await fetch(apiUrl(`movies?from=${from}&to=${to}`));
   if (!res.ok) throw new Error(`Failed to load movies: ${res.status}`);

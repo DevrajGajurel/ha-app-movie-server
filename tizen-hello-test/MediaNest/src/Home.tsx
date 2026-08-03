@@ -7,6 +7,7 @@ import {
   matchMovieForDownload,
   getMoviePageLink,
   isDownloaded,
+  openCinebyUrl,
   type Movie,
   type DownloadedMovie,
 } from "./api";
@@ -202,8 +203,19 @@ export function Home({ onPlay }: HomeProps) {
             setSidebarIndex((i) => Math.min(SIDEBAR_ITEMS.length - 1, i + 1));
             break;
           case 13:
-            setView(SIDEBAR_VIEWS[sidebarIndex] || "browse");
-            setSidebarFocused(false);
+            {
+              const next = SIDEBAR_VIEWS[sidebarIndex] || "browse";
+              if (next === "cineby") {
+                openCinebyUrl()
+                  .then((opened) => {
+                    if (!opened) setView("cineby");
+                  })
+                  .catch(() => setView("cineby"));
+              } else {
+                setView(next);
+              }
+              setSidebarFocused(false);
+            }
             break;
         }
         return;
@@ -262,8 +274,17 @@ export function Home({ onPlay }: HomeProps) {
 
   function selectSidebar(index: number) {
     setSidebarIndex(index);
-    setView(SIDEBAR_VIEWS[index] || "browse");
     setSidebarFocused(false);
+    const next = SIDEBAR_VIEWS[index] || "browse";
+    if (next === "cineby") {
+      openCinebyUrl()
+        .then((opened) => {
+          if (!opened) setView("cineby");
+        })
+        .catch(() => setView("cineby"));
+      return;
+    }
+    setView(next);
   }
 
   return (

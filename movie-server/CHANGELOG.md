@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2
+
+- Fixed Cineby opening again after a local iframe regression: cineby.at/tech both send `X-Frame-Options: DENY`, so the tab always uses top-level navigation (from the sidebar select path) instead of framing.
+
 ## 1.5.1
 
 - Cineby tab no longer uses an iframe: sites such as cineby.tech set CSP `frame-ancestors 'none'`, which browsers always enforce. The tab now opens the configured URL as a top-level page instead (remote Back returns via history).
