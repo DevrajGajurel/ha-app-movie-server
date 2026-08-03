@@ -9,7 +9,8 @@ import {
   isDownloaded,
   type Movie,
   type DownloadedMovie,
-  type M3u8Playlist,
+  type StreamMovie,
+  type StreamQuality,
 } from "./api";
 import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
 import { Hero } from "./Hero";
@@ -26,7 +27,7 @@ type View = SidebarView;
 
 interface HomeProps {
   onPlay: (movie: Movie) => void;
-  onPlayStream: (item: M3u8Playlist) => void;
+  onPlayStream: (item: StreamMovie, quality: StreamQuality) => void;
 }
 
 interface RowDef {

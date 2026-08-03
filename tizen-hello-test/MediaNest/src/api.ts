@@ -252,24 +252,104 @@ export function buildPlayUrl(tmdbId: string | null, title: string, fileToken?: s
   return apiUrl(`downloads/play?${params.toString()}`);
 }
 
-export interface M3u8Playlist {
-  name: string;
-  fileName: string;
-  token: string;
-  size: number;
-  tmdb?: TmdbInfo | null;
+export interface StreamQuality {
+  label: string;
+  resolution: string | null;
+  width: number | null;
+  height: number | null;
+  bandwidth: number | null;
+  frameRate: number | null;
+  codecs: string | null;
+  url: string;
 }
 
-export async function listM3u8Playlists(): Promise<M3u8Playlist[]> {
-  const res = await fetch(apiUrl("m3u8"));
-  if (!res.ok) throw new Error(`Failed to load playlists: ${res.status}`);
-  const data = await res.json();
-  return data.items || [];
+export interface StreamSource {
+  url: string;
+  type: string;
+  referer: string;
+  bestQuality: string | null;
+  qualities: StreamQuality[];
 }
 
-export function buildM3u8PlayUrl(token: string): string {
-  const params = new URLSearchParams({ file: token });
-  return apiUrl(`m3u8/play?${params.toString()}`);
+export interface StreamMovie {
+  tmdbId: string | null;
+  title: string;
+  overview: string | null;
+  year: string | null;
+  rating: number | null;
+  poster: string | null;
+  backdrop: string | null;
+  referer: string;
+  playerHost: string | null;
+  streams: StreamSource[];
+}
+
+export interface StreamsCatalog {
+  refreshedAt: string | null;
+  window: string | null;
+  count: number;
+  playable: number;
+  refreshing: boolean;
+  lastError: string | null;
+  movies: StreamMovie[];
+}
+
+export async function listStreams(): Promise<StreamsCatalog> {
+  const res = await fetch(apiUrl("streams"));
+  if (!res.ok) throw new Error(`Failed to load streams: ${res.status}`);
+  return res.json();
+}
+
+export async function refreshStreams(): Promise<void> {
+  await fetch(apiUrl("streams/refresh"), { method: "POST" });
+}
+
+export function buildHlsProxyUrl(streamUrl: string, referer: string): string {
+  const params = new URLSearchParams({ url: streamUrl, referer });
+  return apiUrl(`hls-proxy?${params.toString()}`);
+}
+
+/** Map a Redis stream entry into the Movie shape PosterCard/Row expect. */
+export function streamMovieAsMovie(item: StreamMovie): Movie {
+  return {
+    title: item.title,
+    link: `stream:${item.tmdbId || item.title}`,
+    tmdb: item.tmdbId
+      ? {
+          tmdbId: Number(item.tmdbId),
+          tmdbTitle: item.title,
+          type: "movie",
+          poster: item.poster,
+          backdrop: item.backdrop,
+          rating: item.rating,
+          year: item.year,
+          genres: [],
+          overview: item.overview,
+          tagline: null,
+          runtimeMinutes: null,
+          certification: null,
+          director: null,
+          trailerKey: null,
+        }
+      : item.poster
+        ? {
+            tmdbId: 0,
+            tmdbTitle: item.title,
+            type: "movie",
+            poster: item.poster,
+            backdrop: item.backdrop,
+            rating: item.rating,
+            year: item.year,
+            genres: [],
+            overview: item.overview,
+            tagline: null,
+            runtimeMinutes: null,
+            certification: null,
+            director: null,
+            trailerKey: null,
+          }
+        : undefined,
+  };
 }
 
 export interface SavedProgress {

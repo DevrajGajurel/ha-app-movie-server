@@ -3,10 +3,12 @@ services:
     build: .
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
+    shm_size: "2gb"
     environment:
       MAIN_URL: ${MAIN_URL}
       PORT: ${PORT:-3001}
       DOWNLOAD_DIR: /downloads
+      VIDSRC_PYTHON: python3
     env_file:
       - .env
     volumes:

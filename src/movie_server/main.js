@@ -45,6 +45,13 @@ const { resolveRedirectUrl } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
+const { PROXY_PREFIX: HLS_PROXY_PREFIX, handleHlsProxy, REFERER_DEFAULT } = require("./hlsProxy");
+const {
+  initStreamCatalog,
+  getCatalog,
+  refreshCatalog,
+  getRefreshStatus,
+} = require("./streamCatalog");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -534,6 +541,55 @@ const server = http.createServer(async (req, res) => {
       await handleCinebyProxy(req, res, cinebyUrl);
     } catch (err) {
       if (!res.headersSent) sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url.startsWith(HLS_PROXY_PREFIX)) {
+    try {
+      await handleHlsProxy(req, res);
+    } catch (err) {
+      if (!res.headersSent) sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/streams" && req.method === "GET") {
+    try {
+      const catalog = await getCatalog();
+      const movies = (catalog.movies || [])
+        .filter((m) => Array.isArray(m.streams) && m.streams.length > 0)
+        .map((m) => normalizeStreamMovie(m));
+      sendJson(res, 200, {
+        refreshedAt: catalog.refreshedAt || null,
+        window: catalog.window || null,
+        count: movies.length,
+        playable: movies.length,
+        refreshing: Boolean(catalog.refreshing),
+        lastError: catalog.lastError || catalog.error || null,
+        refererHint: catalog.refererHint || REFERER_DEFAULT,
+        movies,
+      });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/streams/refresh" && req.method === "POST") {
+    try {
+      const status = getRefreshStatus();
+      if (status.refreshing) {
+        sendJson(res, 202, { ok: false, refreshing: true, message: "Refresh already in progress" });
+        return;
+      }
+      // Kick off in background so the HTTP call returns quickly; clients poll GET /api/streams.
+      refreshCatalog("manual").catch((err) => {
+        console.warn("[streams] manual refresh failed:", err.message);
+      });
+      sendJson(res, 202, { ok: true, refreshing: true, message: "Refresh started" });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
     }
     return;
   }
@@ -1033,6 +1089,59 @@ const server = http.createServer(async (req, res) => {
 
 const CACHE_REFRESH_MS =
   (Number.parseFloat(process.env.CACHE_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
+const STREAM_REFRESH_MS =
+  (Number.parseFloat(process.env.STREAM_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
+
+function normalizeStreamMovie(movie) {
+  const referer = movie.referer || movie.streams?.[0]?.referer || REFERER_DEFAULT;
+  const streams = (movie.streams || []).map((stream) => {
+    const qualities = Array.isArray(stream.qualities) ? stream.qualities.filter((q) => q?.url) : [];
+    const normalizedQualities =
+      qualities.length > 0
+        ? qualities.map((q) => ({
+            label: q.label || q.resolution || "Auto",
+            resolution: q.resolution || null,
+            width: q.width || null,
+            height: q.height || null,
+            bandwidth: q.bandwidth || null,
+            frameRate: q.frameRate || q.frame_rate || null,
+            codecs: q.codecs || null,
+            url: q.url,
+          }))
+        : [
+            {
+              label: stream.bestQuality || stream.best_quality || "Auto",
+              resolution: null,
+              width: null,
+              height: null,
+              bandwidth: null,
+              frameRate: null,
+              codecs: null,
+              url: stream.url,
+            },
+          ];
+    return {
+      url: stream.url,
+      type: stream.type || "hls",
+      referer: stream.referer || referer,
+      bestQuality: stream.bestQuality || stream.best_quality || normalizedQualities[0]?.label || null,
+      qualities: normalizedQualities,
+    };
+  });
+
+  return {
+    tmdbId: movie.tmdbId != null ? String(movie.tmdbId) : null,
+    title: movie.title || "Untitled",
+    overview: movie.overview || null,
+    year: movie.year || null,
+    rating: movie.rating != null ? Number(movie.rating) : null,
+    poster: movie.poster || null,
+    backdrop: movie.backdrop || null,
+    referer,
+    playerHost: movie.playerHost || movie.player_host || null,
+    streams,
+  };
+}
 
 // Background subtitle prefetch (see fileDownloads.js's prefetchAllSubtitles
 // for why): each new download already triggers this for just its own file,
@@ -1078,6 +1187,18 @@ async function startServer() {
     console.warn("TMDB cache Redis init failed, continuing without it:", err.message);
   }
 
+  let streamCatalogEnabled = false;
+  try {
+    streamCatalogEnabled = await initStreamCatalog({
+      redisUrl: process.env.REDIS_URL,
+      refreshMs: STREAM_REFRESH_MS,
+      // Don't block listen on a long scrape; kick after listen below.
+      refreshOnStartup: false,
+    });
+  } catch (err) {
+    console.warn("Stream catalog Redis init failed, continuing without it:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
@@ -1091,6 +1212,15 @@ async function startServer() {
     console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    console.log(
+      `Streams:     ${streamCatalogEnabled ? `enabled (refresh every ${Math.round(STREAM_REFRESH_MS / 3600000)}h)` : "disabled (no REDIS_URL)"}`
+    );
+
+    if (streamCatalogEnabled) {
+      refreshCatalog("startup").catch((err) => {
+        console.warn("[streams] startup refresh failed:", err.message);
+      });
+    }
   });
 
   runSubtitlePrefetchSweep();

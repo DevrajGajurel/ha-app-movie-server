@@ -2085,27 +2085,32 @@
       frame.src = proxySrc;
     }
 
+    let streamCatalogMovies = [];
+
     async function showStreamsView() {
       currentView = "streams";
       hideCinebyView();
       setActiveNav();
       document.getElementById("hero").hidden = true;
       rowsContainer.hidden = false;
-      rowsContainer.innerHTML = `<div class="state" id="status-state">Loading playlists…</div>`;
+      rowsContainer.innerHTML = `<div class="state" id="status-state">Loading streams…</div>`;
       window.TVFocusManager?.closeSidenav?.();
 
       try {
-        const res = await fetch(apiUrl("m3u8"));
+        const res = await fetch(apiUrl("streams"));
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        const items = data.items || [];
-        if (!items.length) {
-          rowsContainer.innerHTML = `<div class="state" id="status-state">No .m3u8 files in PlexMedia/M3U8.</div>`;
+        streamCatalogMovies = data.movies || [];
+        if (!streamCatalogMovies.length) {
+          const msg = data.refreshing
+            ? "Refreshing stream catalog…"
+            : data.lastError || "No playable streams yet.";
+          rowsContainer.innerHTML = `<div class="state" id="status-state">${escapeHtml(msg)}</div>`;
           return;
         }
         rowsContainer.innerHTML =
           `<div class="tv-row"><h2 class="tv-row-title">Streams</h2><div class="tv-row-track">` +
-          items.map(renderStreamPosterCard).join("") +
+          streamCatalogMovies.map((item, index) => renderStreamPosterCard(item, index)).join("") +
           `</div></div>`;
         window.TVFocusManager?.focusFirst?.();
       } catch (err) {
@@ -2113,23 +2118,60 @@
       }
     }
 
-    function renderStreamPosterCard(item) {
-      const t = item.tmdb;
-      const displayTitle = t?.tmdbTitle || item.name || "Untitled";
-      const poster = t?.poster
-        ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
+    function renderStreamPosterCard(item, index) {
+      const displayTitle = item.title || "Untitled";
+      const poster = item.poster
+        ? `<img src="${escapeAttr(item.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
         : "No poster";
 
       return `
-        <article class="tv-poster-card" tabindex="0" data-m3u8-token="${escapeAttr(item.token)}" data-m3u8-name="${escapeAttr(displayTitle)}">
+        <article class="tv-poster-card" tabindex="0" data-stream-index="${index}">
           <div class="tv-poster-wrap">
             ${poster}
             <div class="quality-badges"><span class="quality-badge hd">LIVE</span></div>
           </div>
           <div class="tv-poster-title">${escapeHtml(displayTitle)}</div>
-          ${t?.year ? `<div class="tv-poster-year">${escapeHtml(String(t.year))}</div>` : ""}
+          ${item.year ? `<div class="tv-poster-year">${escapeHtml(String(item.year))}</div>` : ""}
         </article>
       `;
+    }
+
+    function chooseStreamQuality(item) {
+      const qualities = item?.streams?.[0]?.qualities || [];
+      const referer = item?.streams?.[0]?.referer || item?.referer || "";
+      if (!qualities.length) {
+        rowsContainer.innerHTML = `<div class="state error">No playable qualities for ${escapeHtml(item?.title || "stream")}</div>`;
+        return;
+      }
+      if (qualities.length === 1) {
+        startHlsProxyPlayer(item.title, qualities[0].url, referer, qualities[0].label);
+        return;
+      }
+
+      versionModalMovie = null;
+      versionModalOverrides = null;
+      versionModalVersions = [];
+      document.getElementById("version-modal-title").textContent = "Choose quality";
+      versionModalContent.innerHTML = qualities
+        .map(
+          (q, i) => `
+        <button type="button" class="download-option" tabindex="0"
+          data-stream-play-url="${escapeAttr(q.url)}"
+          data-stream-referer="${escapeAttr(referer)}"
+          data-stream-title="${escapeAttr(item.title || "Stream")}"
+          data-stream-label="${escapeAttr(q.label || `Quality ${i + 1}`)}">
+          ${escapeHtml(q.label || "Auto")}${q.resolution ? ` · ${escapeHtml(q.resolution)}` : ""}
+        </button>`
+        )
+        .join("");
+      versionModal.hidden = false;
+      window.TVFocusManager?.focusFirst();
+    }
+
+    function startHlsProxyPlayer(name, remoteUrl, referer, label) {
+      const params = new URLSearchParams({ url: remoteUrl, referer: referer || "" });
+      const title = label ? `${name} · ${label}` : name;
+      startM3u8Player(title, null, apiUrl(`hls-proxy?${params.toString()}`));
     }
 
     function uniqueMovies(movies) {
@@ -2166,7 +2208,7 @@
       window.TVFocusManager?.focusFirst();
     }
 
-    function startM3u8Player(name, token) {
+    function startM3u8Player(name, token, directUrl) {
       playbackContext = null;
       lastProgressSaveAt = 0;
       avPendingResumeMs = null;
@@ -2186,7 +2228,9 @@
       playerOverlay.hidden = false;
       playerSpinner.classList.add("show");
       playerVideo.focus();
-      avOpenStream(apiUrl(`m3u8/play?${new URLSearchParams({ file: token }).toString()}`));
+      const streamUrl =
+        directUrl || apiUrl(`m3u8/play?${new URLSearchParams({ file: token }).toString()}`);
+      avOpenStream(streamUrl);
       showPlayerControls();
     }
 
@@ -2865,10 +2909,22 @@
       versionModalMovie = null;
       versionModalOverrides = null;
       versionModalVersions = [];
+      document.getElementById("version-modal-title").textContent = "Choose version";
       restoreFocusAfterModalClose();
     }
 
     versionModalContent.addEventListener("click", (e) => {
+      const streamBtn = e.target.closest("[data-stream-play-url]");
+      if (streamBtn) {
+        const playUrl = streamBtn.dataset.streamPlayUrl;
+        const referer = streamBtn.dataset.streamReferer || "";
+        const title = streamBtn.dataset.streamTitle || "Stream";
+        const label = streamBtn.dataset.streamLabel || "";
+        versionModal.hidden = true;
+        document.getElementById("version-modal-title").textContent = "Choose version";
+        startHlsProxyPlayer(title, playUrl, referer, label);
+        return;
+      }
       const btn = e.target.closest("[data-token]");
       if (!btn || !versionModalMovie) return;
       const movie = versionModalMovie;
@@ -2878,6 +2934,7 @@
       versionModalMovie = null;
       versionModalOverrides = null;
       versionModalVersions = [];
+      document.getElementById("version-modal-title").textContent = "Choose version";
       startPlayer(movie, token, overrides);
     });
 
@@ -3911,9 +3968,11 @@
     document.getElementById("player-close-btn").addEventListener("click", closePlayer);
 
     rowsContainer.addEventListener("click", (e) => {
-      const streamBtn = e.target.closest("[data-m3u8-token]");
-      if (streamBtn && rowsContainer.contains(streamBtn)) {
-        startM3u8Player(streamBtn.dataset.m3u8Name || "Stream", streamBtn.dataset.m3u8Token);
+      const streamCard = e.target.closest("[data-stream-index]");
+      if (streamCard && rowsContainer.contains(streamCard)) {
+        const index = Number(streamCard.dataset.streamIndex);
+        const item = streamCatalogMovies[index];
+        if (item) chooseStreamQuality(item);
         return;
       }
       const card = e.target.closest(".tv-poster-card");

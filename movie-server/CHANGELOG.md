@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- Streams now come from a Redis-backed vidsrc trending catalog (refreshed every 4 hours via Chrome/Selenium scrape), not local `M3U8/` files.
+- New `GET /api/streams`, `POST /api/streams/refresh`, and `GET /api/hls-proxy` (Referer-injecting HLS proxy). MediaNest/HelloTV show TMDB posters and a quality picker before play.
+- Docker images move to Debian bookworm with Python, Chrome, and Xvfb so the in-app scrape can run.
+
 ## 1.5.8
 
 - Version bump to sync Home Assistant with the current state of the app.

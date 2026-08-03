@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Home } from "./Home";
 import { Player } from "./Player";
-import { buildM3u8PlayUrl, type Movie, type M3u8Playlist } from "./api";
+import { buildHlsProxyUrl, type Movie, type StreamMovie, type StreamQuality } from "./api";
 
 type Playing =
   | { kind: "movie"; movie: Movie }
-  | { kind: "stream"; item: M3u8Playlist };
+  | { kind: "stream"; item: StreamMovie; quality: StreamQuality };
 
 export function App() {
   const [playing, setPlaying] = useState<Playing | null>(null);
@@ -24,11 +24,12 @@ export function App() {
   }
 
   if (playing?.kind === "stream") {
+    const referer = playing.item.streams?.[0]?.referer || playing.item.referer;
     return (
       <div className="app">
         <Player
-          title={playing.item.name}
-          streamUrl={buildM3u8PlayUrl(playing.item.token)}
+          title={`${playing.item.title}${playing.quality.label ? ` · ${playing.quality.label}` : ""}`}
+          streamUrl={buildHlsProxyUrl(playing.quality.url, referer)}
           onClose={() => setPlaying(null)}
         />
       </div>
@@ -39,7 +40,7 @@ export function App() {
     <div className="app">
       <Home
         onPlay={(movie) => setPlaying({ kind: "movie", movie })}
-        onPlayStream={(item) => setPlaying({ kind: "stream", item })}
+        onPlayStream={(item, quality) => setPlaying({ kind: "stream", item, quality })}
       />
     </div>
   );
