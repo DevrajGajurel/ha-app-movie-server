@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1
+
+- Streams Redis catalog now updates after each scraped title (NDJSON progress), so posters appear one-by-one during refresh instead of only at the end.
+
 ## 1.6.0
 
 - Streams now come from a Redis-backed vidsrc trending catalog (refreshed every 4 hours via Chrome/Selenium scrape), not local `M3U8/` files.

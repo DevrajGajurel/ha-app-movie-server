@@ -5,6 +5,7 @@ const { createClient } = require("redis");
 const CACHE_KEY = "movieserver:v1:vidsrc:catalog";
 const DEFAULT_REFRESH_MS = 4 * 60 * 60 * 1000;
 const VIDSRC_DIR = path.join(__dirname, "..", "vidsrc");
+const REFERER_HINT = "https://cloudorchestranova.com/";
 
 let client = null;
 let refreshTimer = null;
@@ -48,8 +49,24 @@ function scheduleBackgroundRefresh(refreshMs) {
   }, refreshMs);
 }
 
-function runPythonRefresh() {
-    const python = process.env.VIDSRC_PYTHON || (process.platform === "win32" ? "python" : "python3");
+async function writeCatalog(catalog) {
+  await client.set(CACHE_KEY, JSON.stringify(catalog));
+}
+
+function emptyCatalog(reason, window = "week") {
+  return {
+    refreshedAt: null,
+    window,
+    count: 0,
+    playable: 0,
+    refererHint: REFERER_HINT,
+    refreshReason: reason,
+    movies: [],
+  };
+}
+
+function runPythonRefreshIncremental(reason) {
+  const python = process.env.VIDSRC_PYTHON || (process.platform === "win32" ? "python" : "python3");
   const script = path.join(VIDSRC_DIR, "refresh_trending.py");
   const limit = String(process.env.STREAM_TRENDING_LIMIT || "20");
   const window = process.env.STREAM_TRENDING_WINDOW || "week";
@@ -61,11 +78,86 @@ function runPythonRefresh() {
       windowsHide: true,
     });
 
-    let stdout = "";
     let stderr = "";
+    let lineBuf = "";
+    let catalog = emptyCatalog(reason, window);
+    let writeChain = Promise.resolve();
+    let failed = false;
+
+    const queueWrite = (nextCatalog) => {
+      catalog = nextCatalog;
+      writeChain = writeChain
+        .then(() => writeCatalog(catalog))
+        .catch((err) => {
+          console.warn("[streams] incremental Redis write failed:", err.message);
+        });
+      return writeChain;
+    };
+
+    const handleEvent = (event) => {
+      if (!event || typeof event !== "object") return;
+
+      if (event.event === "start") {
+        catalog = {
+          ...emptyCatalog(reason, event.window || window),
+          window: event.window || window,
+          count: Number(event.total) || 0,
+          refererHint: event.refererHint || REFERER_HINT,
+        };
+        console.log(`[streams] scrape started (${catalog.count} titles)`);
+        return queueWrite(catalog);
+      }
+
+      if (event.event === "movie" && event.movie) {
+        const movies = [...(catalog.movies || []), event.movie];
+        const playable = movies.filter((m) => Array.isArray(m.streams) && m.streams.length > 0).length;
+        catalog = {
+          ...catalog,
+          movies,
+          playable,
+          // Keep declared total from start; fall back to progress index.
+          count: catalog.count || Number(event.total) || movies.length,
+        };
+        const title = event.movie.title || event.movie.tmdbId || "?";
+        const ok = Array.isArray(event.movie.streams) && event.movie.streams.length > 0;
+        console.log(
+          `[streams] saved ${event.index}/${event.total || "?"} ${title} (${ok ? "playable" : "no streams"})`
+        );
+        return queueWrite(catalog);
+      }
+
+      if (event.event === "done") {
+        catalog = {
+          ...catalog,
+          refreshedAt: event.refreshedAt || new Date().toISOString(),
+          window: event.window || catalog.window,
+          count: event.count != null ? event.count : catalog.movies.length,
+          playable:
+            event.playable != null
+              ? event.playable
+              : catalog.movies.filter((m) => Array.isArray(m.streams) && m.streams.length > 0).length,
+          refererHint: event.refererHint || catalog.refererHint || REFERER_HINT,
+          refreshReason: reason,
+        };
+        return queueWrite(catalog);
+      }
+    };
+
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf8");
+      lineBuf += chunk.toString("utf8");
+      const parts = lineBuf.split(/\r?\n/);
+      lineBuf = parts.pop() || "";
+      for (const line of parts) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          handleEvent(JSON.parse(trimmed));
+        } catch (err) {
+          console.warn("[streams] bad NDJSON line:", err.message);
+        }
+      }
     });
+
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString("utf8");
       stderr += text;
@@ -73,17 +165,35 @@ function runPythonRefresh() {
         console.log(`[vidsrc-refresh] ${line}`);
       }
     });
-    child.on("error", reject);
+
+    child.on("error", (err) => {
+      failed = true;
+      reject(err);
+    });
+
     child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`vidsrc refresh exited ${code}: ${stderr.slice(-800) || "no stderr"}`));
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (err) {
-        reject(new Error(`vidsrc refresh returned invalid JSON: ${err.message}`));
-      }
+      const finish = async () => {
+        try {
+          await writeChain;
+        } catch {
+          // already logged
+        }
+        if (failed) return;
+        if (lineBuf.trim()) {
+          try {
+            handleEvent(JSON.parse(lineBuf.trim()));
+            await writeChain;
+          } catch {
+            // ignore trailing garbage
+          }
+        }
+        if (code !== 0) {
+          reject(new Error(`vidsrc refresh exited ${code}: ${stderr.slice(-800) || "no stderr"}`));
+          return;
+        }
+        resolve(catalog);
+      };
+      finish().catch(reject);
     });
   });
 }
@@ -97,11 +207,11 @@ async function refreshCatalog(reason = "manual") {
   refreshInProgress = true;
   lastRefreshError = null;
   console.log(`[streams] refreshing catalog (${reason})…`);
+
   try {
-    const payload = await runPythonRefresh();
-    payload.refreshedAt = payload.refreshedAt || new Date().toISOString();
-    payload.refreshReason = reason;
-    await client.set(CACHE_KEY, JSON.stringify(payload));
+    // Clear previous catalog so the TV shows titles as they arrive.
+    await writeCatalog(emptyCatalog(reason));
+    const payload = await runPythonRefreshIncremental(reason);
     console.log(
       `[streams] refresh complete (${reason}): ${payload.playable || 0}/${payload.count || 0} playable`
     );

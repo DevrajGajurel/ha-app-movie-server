@@ -1,6 +1,13 @@
-"""Refresh TMDB trending movie streams and print one JSON catalog to stdout.
+"""Refresh TMDB trending movie streams.
 
-Used by Movie Server's streamCatalog.js (no local EXPORT_DIR writes).
+Emits NDJSON on stdout (one event per line) so Movie Server can write Redis
+after each title instead of waiting for the full batch:
+
+  {"event":"start","window":"week","total":20}
+  {"event":"movie","index":1,"total":20,"movie":{...}}
+  {"event":"done","refreshedAt":"...","count":20,"playable":12,"window":"week"}
+
+Progress logs go to stderr.
 """
 
 from __future__ import annotations
@@ -26,6 +33,11 @@ def _tmdb_key() -> str:
     if not key:
         raise SystemExit("TMDB_API_KEY is not set")
     return key
+
+
+def emit(event: dict) -> None:
+    sys.stdout.write(json.dumps(event, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
 
 
 def fetch_trending(window: Literal["day", "week"], limit: int) -> list[dict]:
@@ -58,7 +70,7 @@ def fetch_trending(window: Literal["day", "week"], limit: int) -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Refresh vidsrc trending streams (JSON on stdout)")
+    parser = argparse.ArgumentParser(description="Refresh vidsrc trending streams (NDJSON on stdout)")
     parser.add_argument("--window", choices=("day", "week"), default="week")
     parser.add_argument("--limit", type=int, default=int(os.environ.get("STREAM_TRENDING_LIMIT", "20")))
     parser.add_argument("--delay", type=float, default=2.0)
@@ -67,7 +79,10 @@ def main() -> None:
 
     limit = max(1, min(20, args.limit))
     movies = fetch_trending(args.window, limit)
-    catalog_movies = []
+    total = len(movies)
+    playable = 0
+
+    emit({"event": "start", "window": args.window, "total": total, "refererHint": REFERER_DEFAULT})
 
     for i, movie in enumerate(movies):
         entry = {
@@ -79,7 +94,7 @@ def main() -> None:
         }
         try:
             print(
-                f"[vidsrc-refresh] [{i + 1}/{len(movies)}] {movie.get('title')} ({movie.get('tmdbId')})",
+                f"[vidsrc-refresh] [{i + 1}/{total}] {movie.get('title')} ({movie.get('tmdbId')})",
                 file=sys.stderr,
             )
             result = scrape(
@@ -115,24 +130,26 @@ def main() -> None:
             entry["playerHost"] = result.get("player_host")
             if entry["streams"]:
                 entry["referer"] = entry["streams"][0].get("referer") or REFERER_DEFAULT
-        except Exception as exc:  # noqa: BLE001 - surface per-title failures in catalog
+                playable += 1
+        except Exception as exc:  # noqa: BLE001
             entry["errors"] = [{"error": str(exc)}]
             print(f"[vidsrc-refresh] failed: {exc}", file=sys.stderr)
 
-        catalog_movies.append(entry)
-        if i < len(movies) - 1 and args.delay > 0:
+        emit({"event": "movie", "index": i + 1, "total": total, "movie": entry})
+
+        if i < total - 1 and args.delay > 0:
             time.sleep(args.delay)
 
-    payload = {
-        "refreshedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "window": args.window,
-        "count": len(catalog_movies),
-        "playable": sum(1 for m in catalog_movies if m.get("streams")),
-        "refererHint": REFERER_DEFAULT,
-        "movies": catalog_movies,
-    }
-    sys.stdout.write(json.dumps(payload))
-    sys.stdout.flush()
+    emit(
+        {
+            "event": "done",
+            "refreshedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "window": args.window,
+            "count": total,
+            "playable": playable,
+            "refererHint": REFERER_DEFAULT,
+        }
+    )
 
 
 if __name__ == "__main__":
