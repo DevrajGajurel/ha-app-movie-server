@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Movie Server API",
-    "version": "1.6.9",
+    "version": "1.6.10",
     "description": "HTTP API for the Movie Server dashboard, downloads, and Streams catalog."
   },
   "servers": [
@@ -46,6 +46,7 @@
                 "type": "object",
                 "properties": {
                   "mainUrl": { "type": "string", "format": "uri" },
+                  "secondaryUrl": { "type": "string", "format": "uri", "description": "Optional second listing site; only HD-keyword titles are merged" },
                   "cinebyUrl": { "type": "string" },
                   "maxPages": { "type": "integer", "minimum": 1 }
                 }

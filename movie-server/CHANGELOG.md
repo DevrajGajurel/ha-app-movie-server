@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.10
+
+- Added optional secondary listing URL (`SECONDARY_URL` / HA `secondary_url` / dashboard "Secondary URL (HD only)"): scraped alongside the main source, but only titles matching `HD_KEYWORDS` are merged into the catalog (and search).
+
 ## 1.6.9
 
 - Added `GET /api/streams/by-tmdb` to resolve proxied HLS URLs for a TMDB movie or TV episode (`type`, `season`, `episode`).

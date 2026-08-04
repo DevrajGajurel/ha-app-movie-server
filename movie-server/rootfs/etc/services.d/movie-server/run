@@ -44,9 +44,14 @@ CINEBY_URL="$(bashio::config 'cineby_url')"
 CINEBY_URL="${CINEBY_URL#"${CINEBY_URL%%[![:space:]]*}"}"
 CINEBY_URL="${CINEBY_URL%"${CINEBY_URL##*[![:space:]]}"}"
 
+SECONDARY_URL="$(bashio::config 'secondary_url')"
+SECONDARY_URL="${SECONDARY_URL#"${SECONDARY_URL%%[![:space:]]*}"}"
+SECONDARY_URL="${SECONDARY_URL%"${SECONDARY_URL##*[![:space:]]}"}"
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
+SECONDARY_URL=${SECONDARY_URL}
 PORT=3001
 MAX_PAGES=${MAX_PAGES}
 INITIAL_PAGES=${INITIAL_PAGES}

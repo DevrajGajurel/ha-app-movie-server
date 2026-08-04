@@ -74,6 +74,7 @@ let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
 let initialPages = parseInitialPages(process.env.INITIAL_PAGES);
 let cinebyUrl = String(process.env.CINEBY_URL || "").trim();
+let secondaryUrl = String(process.env.SECONDARY_URL || "").trim();
 
 function isHomeAssistantAddon() {
   return process.env.HOME_ASSISTANT_ADDON === "true";
@@ -82,6 +83,7 @@ function isHomeAssistantAddon() {
 function getConfigPayload(extra = {}) {
   return {
     mainUrl,
+    secondaryUrl,
     maxPages,
     initialPages,
     cinebyUrl,
@@ -174,6 +176,7 @@ function setEnvVar(key, value) {
 function persistConfig() {
   try {
     setEnvVar("MAIN_URL", mainUrl);
+    setEnvVar("SECONDARY_URL", secondaryUrl);
     setEnvVar("MAX_PAGES", String(maxPages));
     setEnvVar("INITIAL_PAGES", String(initialPages));
     setEnvVar("CINEBY_URL", cinebyUrl);
@@ -185,6 +188,12 @@ function persistConfig() {
 function setMainUrl(newUrl) {
   mainUrl = newUrl;
   process.env.MAIN_URL = newUrl;
+  persistConfig();
+}
+
+function setSecondaryUrl(newUrl) {
+  secondaryUrl = String(newUrl || "").trim();
+  process.env.SECONDARY_URL = secondaryUrl;
   persistConfig();
 }
 
@@ -432,22 +441,70 @@ async function resolveDownloadLinks(movies, concurrency = 5) {
   return resolved;
 }
 
-async function scrapeMoviesRange(fromPage, toPage) {
+function movieTitleKey(movie) {
+  return String(movie?.title || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Scrapes one listing site over a page range. When hdOnly is set, titles that
+// don't match HD_KEYWORDS are dropped (used for the secondary HD source).
+async function scrapeSourceRange(baseUrl, fromPage, toPage, { hdOnly = false } = {}) {
   const start = Math.max(1, Math.min(fromPage, toPage));
   const end = Math.min(maxPages, Math.max(fromPage, toPage));
   const seen = new Set();
   const movies = [];
 
   for (let page = start; page <= end; page++) {
-    const pageUrl = buildPageUrl(mainUrl, page);
+    const pageUrl = buildPageUrl(baseUrl, page);
     const pageMovies = await scrapePage(pageUrl);
 
     for (const movie of pageMovies) {
       const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
+      if (hdOnly && !tagged.quality?.hd) continue;
       if (!seen.has(tagged.link)) {
         seen.add(tagged.link);
         movies.push(tagged);
       }
+    }
+  }
+
+  return movies;
+}
+
+function mergeSecondaryHd(primary, secondary) {
+  const seenLinks = new Set(primary.map((m) => m.link));
+  const hdTitles = new Set(
+    primary.filter((m) => m.quality?.hd).map(movieTitleKey).filter(Boolean)
+  );
+  const merged = [...primary];
+
+  for (const movie of secondary) {
+    if (seenLinks.has(movie.link)) continue;
+    const key = movieTitleKey(movie);
+    if (key && hdTitles.has(key)) continue;
+    seenLinks.add(movie.link);
+    if (key) hdTitles.add(key);
+    merged.push(movie);
+  }
+
+  return merged;
+}
+
+async function scrapeMoviesRange(fromPage, toPage) {
+  const primary = await scrapeSourceRange(mainUrl, fromPage, toPage);
+  let movies = primary;
+
+  if (secondaryUrl) {
+    try {
+      const secondaryHd = await scrapeSourceRange(secondaryUrl, fromPage, toPage, { hdOnly: true });
+      movies = mergeSecondaryHd(primary, secondaryHd);
+      console.log(
+        `[scrape] secondary HD source: kept ${secondaryHd.length} HD title(s) from ${secondaryUrl} (merged total ${movies.length})`
+      );
+    } catch (err) {
+      console.warn(`[scrape] secondary HD source failed (${secondaryUrl}): ${err.message}`);
     }
   }
 
@@ -465,16 +522,31 @@ async function searchSourceMovies(query) {
   const q = String(query || "").trim();
   if (!q) return [];
 
-  const searchUrl = buildSearchUrl(mainUrl, q);
-  const pageMovies = await scrapePage(searchUrl);
-  const seen = new Set();
-  const movies = [];
+  async function searchOne(baseUrl, { hdOnly = false } = {}) {
+    const searchUrl = buildSearchUrl(baseUrl, q);
+    const pageMovies = await scrapePage(searchUrl);
+    const seen = new Set();
+    const movies = [];
+    for (const movie of pageMovies) {
+      const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
+      if (hdOnly && !tagged.quality?.hd) continue;
+      if (!seen.has(tagged.link)) {
+        seen.add(tagged.link);
+        movies.push(tagged);
+      }
+    }
+    return movies;
+  }
 
-  for (const movie of pageMovies) {
-    const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
-    if (!seen.has(tagged.link)) {
-      seen.add(tagged.link);
-      movies.push(tagged);
+  const primary = await searchOne(mainUrl);
+  let movies = primary;
+
+  if (secondaryUrl) {
+    try {
+      const secondaryHd = await searchOne(secondaryUrl, { hdOnly: true });
+      movies = mergeSecondaryHd(primary, secondaryHd);
+    } catch (err) {
+      console.warn(`[search] secondary HD source failed (${secondaryUrl}): ${err.message}`);
     }
   }
 
@@ -661,6 +733,12 @@ const server = http.createServer(async (req, res) => {
         }
         new URL(nextUrl);
         setMainUrl(nextUrl);
+      }
+
+      if (body.secondaryUrl !== undefined) {
+        const nextSecondary = String(body.secondaryUrl).trim();
+        if (nextSecondary) new URL(nextSecondary);
+        setSecondaryUrl(nextSecondary);
       }
 
       if (body.maxPages !== undefined) {
@@ -1220,6 +1298,7 @@ async function startServer() {
       scrapeMoviesRange,
       getConfig: () => ({
         mainUrl,
+        secondaryUrl,
         maxPages,
         cinebyUrl,
         initialPages,
@@ -1268,6 +1347,9 @@ async function startServer() {
     console.log(`Swagger:   http://localhost:${PORT}/swagger`);
     console.log(`API:       http://localhost:${PORT}/api/movies`);
     console.log(`Scraping:  ${mainUrl}`);
+    console.log(
+      `Secondary: ${secondaryUrl ? `${secondaryUrl} (HD only)` : "disabled (set SECONDARY_URL)"}`
+    );
     console.log(`Pages:     1-${maxPages}`);
     console.log(`TMDB:      ${TMDB_API_KEY ? "enabled" : "disabled (set TMDB_API_KEY in .env)"}`);
     console.log(`Downloads: ${getDownloadDir()}`);

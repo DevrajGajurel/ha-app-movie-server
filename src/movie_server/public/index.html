@@ -1377,6 +1377,11 @@
             <button id="apply-main-url" type="button">Apply</button>
           </div>
           <div class="source-config-row">
+            <label for="secondary-url-input">Secondary URL (HD only)</label>
+            <input id="secondary-url-input" type="url" placeholder="https://… (optional)" />
+            <button id="apply-secondary-url" type="button">Apply</button>
+          </div>
+          <div class="source-config-row">
             <label for="cineby-url-input">Cineby URL</label>
             <input id="cineby-url-input" type="url" placeholder="https://…" />
             <button id="apply-cineby-url" type="button">Apply</button>
@@ -1508,6 +1513,8 @@
     const sourceConfigEl = document.getElementById("source-config");
     const mainUrlInput = document.getElementById("main-url-input");
     const applyMainUrlBtn = document.getElementById("apply-main-url");
+    const secondaryUrlInput = document.getElementById("secondary-url-input");
+    const applySecondaryUrlBtn = document.getElementById("apply-secondary-url");
     const cinebyUrlInput = document.getElementById("cineby-url-input");
     const applyCinebyUrlBtn = document.getElementById("apply-cineby-url");
     const streamsMetaEl = document.getElementById("streams-meta");
@@ -2269,6 +2276,7 @@
 
       sourceConfigEl.hidden = false;
       mainUrlInput.value = config.mainUrl || "";
+      secondaryUrlInput.value = config.secondaryUrl || "";
       cinebyUrlInput.value = config.cinebyUrl || "";
     }
 
@@ -2729,6 +2737,31 @@
       }
     }
 
+    async function applySecondaryUrl() {
+      const nextUrl = secondaryUrlInput.value.trim();
+
+      applySecondaryUrlBtn.disabled = true;
+      applySecondaryUrlBtn.textContent = "Saving…";
+
+      try {
+        const res = await fetch(apiUrl("config"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secondaryUrl: nextUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        secondaryUrlInput.value = data.secondaryUrl || "";
+        await load({ refresh: true });
+      } catch (err) {
+        content.className = "state error";
+        content.textContent = err.message;
+      } finally {
+        applySecondaryUrlBtn.disabled = false;
+        applySecondaryUrlBtn.textContent = "Apply";
+      }
+    }
+
     async function applyCinebyUrl() {
       const nextUrl = cinebyUrlInput.value.trim();
 
@@ -2897,6 +2930,10 @@
     applyMainUrlBtn.addEventListener("click", applyMainUrl);
     mainUrlInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") applyMainUrl();
+    });
+    applySecondaryUrlBtn.addEventListener("click", applySecondaryUrl);
+    secondaryUrlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") applySecondaryUrl();
     });
     applyCinebyUrlBtn.addEventListener("click", applyCinebyUrl);
     cinebyUrlInput.addEventListener("keydown", (event) => {
