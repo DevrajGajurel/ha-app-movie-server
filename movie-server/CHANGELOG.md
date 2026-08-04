@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.16
+
+- Fixed TMDB matching for secondary TV titles (e.g. "The Summer I Turned Pretty"): prefer the TV search endpoint without appending "series" to the query, which was returning zero TMDB hits.
+
 ## 1.6.15
 
 - Source search now queries primary and secondary (`/?s=…`) in parallel when the local cache has no matches; primary search resolves the live domain and ignores the homepage "Latest Movies" block appended under search results.

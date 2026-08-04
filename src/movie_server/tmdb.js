@@ -27,6 +27,8 @@ function stripTvMarkers(title) {
     .replace(/\bs\d{1,2}(\s*e\d{1,2})?.*$/i, "")
     .replace(/\b(s\d{1,2}\s*e\d{1,2}|season\s*\d+|episode\s*\d+)\b/gi, " ")
     .replace(/\s+S\d{1,2}\b/gi, " ")
+    .replace(/\b(completed\s+)?web\s*series\b/gi, " ")
+    .replace(/\bseries\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -197,7 +199,7 @@ function scoreCandidate(candidate, parsed, context = {}) {
     else if (yearDiff > 2) score -= 0.12;
   }
 
-  if (looksLikeTv(parsed.raw)) {
+  if (context.preferTv || looksLikeTv(parsed.raw)) {
     if (candidate.media_type === "tv") score += 0.12;
     else if (candidate.media_type === "movie") score -= 0.15;
   } else if (candidate.media_type === "movie") {
@@ -403,9 +405,9 @@ async function mapResult(apiKey, match, genres) {
   };
 }
 
-async function gatherCandidates(apiKey, parsed, { useYear = true } = {}) {
+async function gatherCandidates(apiKey, parsed, { useYear = true, preferTv = false } = {}) {
   const { query, altQuery, year } = parsed;
-  const wantTv = looksLikeTv(parsed.raw);
+  const wantTv = preferTv || looksLikeTv(parsed.raw);
   const queries = [...new Set([query, altQuery].filter(Boolean))];
   const searches = [];
   const searchRanks = new Map();
@@ -430,18 +432,30 @@ async function gatherCandidates(apiKey, parsed, { useYear = true } = {}) {
       );
 
       if (useYear && year) {
-        searches.push(
-          fetchSearch(apiKey, "movie", variant, year).then((data) => {
-            trackResults(normalizeCandidates(data));
-            return data;
-          })
-        );
+        if (!wantTv) {
+          searches.push(
+            fetchSearch(apiKey, "movie", variant, year).then((data) => {
+              trackResults(normalizeCandidates(data));
+              return data;
+            })
+          );
+        }
         searches.push(
           fetchSearch(apiKey, "tv", variant, year).then((data) => {
             trackResults(normalizeCandidates(data));
             return data;
           })
         );
+        // Also search TV without the year gate — scraped years are often
+        // wrong/current, and first_air_date_year=wrongYear returns zero hits.
+        if (wantTv) {
+          searches.push(
+            fetchSearch(apiKey, "tv", variant).then((data) => {
+              trackResults(normalizeCandidates(data));
+              return data;
+            })
+          );
+        }
       } else if (wantTv) {
         searches.push(
           fetchSearch(apiKey, "tv", variant).then((data) => {
@@ -470,16 +484,17 @@ async function gatherCandidates(apiKey, parsed, { useYear = true } = {}) {
 async function searchMedia(apiKey, title, genres, opts = {}) {
   const yearHint = Number.isFinite(opts.year) ? opts.year : null;
   const preferTv = Boolean(opts.preferTv);
-  const searchTitle =
-    preferTv && title && !looksLikeTv(title) ? `${title} series` : title;
-  const parsed = parseSourceTitle(searchTitle);
+  // Keep the TMDB query clean — appending "series" previously zeroed out
+  // exact matches like "The Summer I Turned Pretty". Prefer TV via search
+  // endpoints + scoring instead.
+  const parsed = parseSourceTitle(title);
   if (yearHint && !parsed.year) {
     parsed.year = yearHint;
   }
   const { query, altQuery } = parsed;
   if (!query && !altQuery) return null;
 
-  const cacheKey = `v2|${query}|${altQuery || ""}|${parsed.year || ""}|${
+  const cacheKey = `v3|${query}|${altQuery || ""}|${parsed.year || ""}|${
     preferTv || looksLikeTv(parsed.raw) ? "tv" : "movie"
   }`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
@@ -495,12 +510,18 @@ async function searchMedia(apiKey, title, genres, opts = {}) {
     return cached;
   }
 
-  let { candidates, searchRanks } = await gatherCandidates(apiKey, parsed, { useYear: true });
-  let match = pickBestMatch(candidates, parsed, { searchRanks });
+  let { candidates, searchRanks } = await gatherCandidates(apiKey, parsed, {
+    useYear: true,
+    preferTv,
+  });
+  let match = pickBestMatch(candidates, parsed, { searchRanks, preferTv });
 
   if (!match) {
-    ({ candidates, searchRanks } = await gatherCandidates(apiKey, parsed, { useYear: false }));
-    match = pickBestMatch(candidates, parsed, { searchRanks });
+    ({ candidates, searchRanks } = await gatherCandidates(apiKey, parsed, {
+      useYear: false,
+      preferTv,
+    }));
+    match = pickBestMatch(candidates, parsed, { searchRanks, preferTv });
   }
 
   const meta = match ? await mapResult(apiKey, match, genres) : null;
