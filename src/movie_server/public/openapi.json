@@ -1,0 +1,397 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Movie Server API",
+    "version": "1.6.8",
+    "description": "HTTP API for the Movie Server dashboard, downloads, and Streams catalog."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin (works with Home Assistant Ingress and direct port access)"
+    }
+  ],
+  "tags": [
+    { "name": "Config" },
+    { "name": "Movies" },
+    { "name": "Streams" },
+    { "name": "Downloads" },
+    { "name": "Proxy" },
+    { "name": "Emby" }
+  ],
+  "paths": {
+    "/api/config": {
+      "get": {
+        "tags": ["Config"],
+        "summary": "Get server config",
+        "responses": {
+          "200": {
+            "description": "Current config",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Config"],
+        "summary": "Update config (not available in HA add-on mode)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mainUrl": { "type": "string", "format": "uri" },
+                  "cinebyUrl": { "type": "string" },
+                  "maxPages": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated config" },
+          "403": { "description": "Managed by Home Assistant options" },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/movies": {
+      "get": {
+        "tags": ["Movies"],
+        "summary": "List scraped movies",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "schema": { "type": "boolean" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Movie list",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/movies/search": {
+      "get": {
+        "tags": ["Movies"],
+        "summary": "Search scraped source titles",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Search results" }
+        }
+      }
+    },
+    "/api/streams": {
+      "get": {
+        "tags": ["Streams"],
+        "summary": "Get Redis Streams catalog (playable titles)",
+        "responses": {
+          "200": {
+            "description": "Catalog payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "refreshedAt": { "type": "string", "nullable": true },
+                    "window": { "type": "string", "nullable": true },
+                    "count": { "type": "integer" },
+                    "playable": { "type": "integer" },
+                    "refreshing": { "type": "boolean" },
+                    "lastError": { "type": "string", "nullable": true },
+                    "refererHint": { "type": "string" },
+                    "movies": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StreamMovie" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/streams/refresh": {
+      "post": {
+        "tags": ["Streams"],
+        "summary": "Start a trending Streams catalog refresh",
+        "responses": {
+          "202": { "description": "Refresh started or already running" },
+          "500": { "description": "Refresh failed to start" }
+        }
+      }
+    },
+    "/api/streams/manual": {
+      "post": {
+        "tags": ["Streams"],
+        "summary": "Add a manual m3u8 entry to the Streams cache",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "url"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "url": { "type": "string", "format": "uri", "description": "m3u8 URL" },
+                  "referer": { "type": "string", "format": "uri" },
+                  "poster": { "type": "string", "format": "uri" },
+                  "year": { "type": "string" },
+                  "tmdbId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "description": "Validation error" }
+        }
+      },
+      "delete": {
+        "tags": ["Streams"],
+        "summary": "Remove a manual Streams cache entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Removed" },
+          "400": { "description": "Missing id" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/hls-proxy": {
+      "get": {
+        "tags": ["Proxy"],
+        "summary": "Proxy an HLS playlist/segment with Referer injection",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" }
+          },
+          {
+            "name": "referer",
+            "in": "query",
+            "schema": { "type": "string", "format": "uri" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Proxied HLS content" },
+          "400": { "description": "Invalid url" }
+        }
+      }
+    },
+    "/api/downloads": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "Discover download options for a source page URL",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["quality", "direct"] }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Download options" }
+        }
+      }
+    },
+    "/api/downloads/save": {
+      "post": {
+        "tags": ["Downloads"],
+        "summary": "Start a server-side download",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "additionalProperties": true }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Job started" }
+        }
+      }
+    },
+    "/api/downloads/jobs": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "List download jobs",
+        "responses": {
+          "200": { "description": "Jobs list" }
+        }
+      }
+    },
+    "/api/downloads/library": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "Scan downloaded library markers",
+        "responses": {
+          "200": { "description": "Downloaded titles / TMDB ids" }
+        }
+      }
+    },
+    "/api/downloads/versions": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "List local download versions for a title",
+        "parameters": [
+          {
+            "name": "title",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tmdbId",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Versions with probe info" }
+        }
+      }
+    },
+    "/api/downloads/play": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "Stream a downloaded media file",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "audioTrack",
+            "in": "query",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Media stream" }
+        }
+      }
+    },
+    "/api/downloads/media": {
+      "delete": {
+        "tags": ["Downloads"],
+        "summary": "Delete downloaded media for a title",
+        "parameters": [
+          {
+            "name": "title",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tmdbId",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Deleted" }
+        }
+      }
+    },
+    "/api/emby/status": {
+      "get": {
+        "tags": ["Emby"],
+        "summary": "Emby integration status",
+        "responses": {
+          "200": { "description": "Status" }
+        }
+      }
+    },
+    "/api/emby/refresh": {
+      "post": {
+        "tags": ["Emby"],
+        "summary": "Trigger Emby library refresh",
+        "responses": {
+          "200": { "description": "Refresh requested" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StreamMovie": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "nullable": true },
+          "manual": { "type": "boolean" },
+          "tmdbId": { "type": "string", "nullable": true },
+          "title": { "type": "string" },
+          "year": { "type": "string", "nullable": true },
+          "poster": { "type": "string", "nullable": true },
+          "referer": { "type": "string" },
+          "streams": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": { "type": "string" },
+                "type": { "type": "string" },
+                "referer": { "type": "string" },
+                "bestQuality": { "type": "string", "nullable": true },
+                "qualities": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": { "type": "string" },
+                      "url": { "type": "string" },
+                      "height": { "type": "integer", "nullable": true }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

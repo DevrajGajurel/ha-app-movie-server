@@ -511,6 +511,7 @@ function serveFile(res, filePath) {
     ".html": "text/html",
     ".css": "text/css",
     ".js": "application/javascript",
+    ".json": "application/json",
   };
 
   fs.readFile(filePath, (err, data) => {
@@ -1111,6 +1112,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === "/swagger" || url === "/swagger.html") {
+    serveFile(res, path.join(PUBLIC_DIR, "swagger.html"));
+    return;
+  }
+
+  if (url === "/openapi.json") {
+    serveFile(res, path.join(PUBLIC_DIR, "openapi.json"));
+    return;
+  }
+
   sendJson(res, 404, { error: "Not found" });
 });
 
@@ -1231,6 +1242,7 @@ async function startServer() {
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
+    console.log(`Swagger:   http://localhost:${PORT}/swagger`);
     console.log(`API:       http://localhost:${PORT}/api/movies`);
     console.log(`Scraping:  ${mainUrl}`);
     console.log(`Pages:     1-${maxPages}`);
