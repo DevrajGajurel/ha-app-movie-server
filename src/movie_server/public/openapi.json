@@ -320,6 +320,24 @@
             "in": "query",
             "schema": { "type": "string" },
             "description": "Required when source=secondary."
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["movie", "tv"] },
+            "description": "movie → /movie/{id}; tv → /tv/{id}/{season}/{episode}."
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 },
+            "description": "Required when mediaType=tv."
+          },
+          {
+            "name": "episode",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 },
+            "description": "Required when mediaType=tv."
           }
         ],
         "responses": {

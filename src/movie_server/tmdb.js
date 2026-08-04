@@ -361,6 +361,14 @@ async function mapResult(apiKey, match, genres) {
   };
 
   if (isTv) {
+    const seasons = (details?.seasons || [])
+      .filter((s) => Number(s.season_number) > 0)
+      .map((s) => ({
+        seasonNumber: Number(s.season_number),
+        episodeCount: Number(s.episode_count) || 0,
+        name: s.name || `Season ${s.season_number}`,
+      }));
+
     return {
       type: "tv",
       tmdbId: match.id,
@@ -373,6 +381,8 @@ async function mapResult(apiKey, match, genres) {
       poster: match.poster_path ? `${POSTER_BASE}${match.poster_path}` : null,
       backdrop: match.backdrop_path ? `${BACKDROP_BASE}${match.backdrop_path}` : null,
       tmdbUrl: `https://www.themoviedb.org/tv/${match.id}`,
+      numberOfSeasons: details?.number_of_seasons || seasons.length || null,
+      seasons,
       ...extras,
     };
   }
@@ -469,7 +479,7 @@ async function searchMedia(apiKey, title, genres, opts = {}) {
   const { query, altQuery } = parsed;
   if (!query && !altQuery) return null;
 
-  const cacheKey = `${query}|${altQuery || ""}|${parsed.year || ""}|${
+  const cacheKey = `v2|${query}|${altQuery || ""}|${parsed.year || ""}|${
     preferTv || looksLikeTv(parsed.raw) ? "tv" : "movie"
   }`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);

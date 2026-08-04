@@ -294,17 +294,57 @@ function scrapeSecondaryPage(pageUrl) {
     });
 }
 
-const SHEGU_DOWNLOADS_BASE = String(
-  process.env.SHEGU_DOWNLOADS_URL || "https://downloads.shegu.st/movie"
-).replace(/\/$/, "");
+const SHEGU_DOWNLOADS_ORIGIN = String(
+  process.env.SHEGU_DOWNLOADS_URL || "https://downloads.shegu.st"
+)
+  .replace(/\/$/, "")
+  .replace(/\/(movie|tv)$/i, "");
 
-async function fetchSheguDownloadOptions(tmdbId) {
+function parseScrapedSeasonRange(seasonsText) {
+  const text = String(seasonsText || "");
+  const range = text.match(/S(\d{1,2})\s*-\s*S(\d{1,2})/i);
+  if (range) {
+    return {
+      from: Number.parseInt(range[1], 10),
+      to: Number.parseInt(range[2], 10),
+    };
+  }
+  const single = text.match(/S(\d{1,2})/i);
+  if (single) {
+    const n = Number.parseInt(single[1], 10);
+    return { from: n, to: n };
+  }
+  return null;
+}
+
+async function fetchSheguDownloadOptions({
+  tmdbId,
+  mediaType = "movie",
+  season = null,
+  episode = null,
+} = {}) {
   const id = String(tmdbId || "").trim();
   if (!id) {
     throw new Error("tmdbId is required");
   }
 
-  const apiUrl = `${SHEGU_DOWNLOADS_BASE}/${encodeURIComponent(id)}`;
+  const type = String(mediaType || "movie").toLowerCase() === "tv" ? "tv" : "movie";
+  let apiUrl;
+  let selector;
+
+  if (type === "tv") {
+    const s = Number.parseInt(season, 10);
+    const e = Number.parseInt(episode, 10);
+    if (!Number.isFinite(s) || s < 1 || !Number.isFinite(e) || e < 1) {
+      throw new Error("season and episode are required for TV downloads");
+    }
+    apiUrl = `${SHEGU_DOWNLOADS_ORIGIN}/tv/${encodeURIComponent(id)}/${s}/${e}`;
+    selector = "downloads.shegu.st/tv/{tmdbId}/{season}/{episode}";
+  } else {
+    apiUrl = `${SHEGU_DOWNLOADS_ORIGIN}/movie/${encodeURIComponent(id)}`;
+    selector = "downloads.shegu.st/movie/{tmdbId}";
+  }
+
   const response = await fetch(apiUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch secondary downloads: ${response.status}`);
@@ -326,7 +366,8 @@ async function fetchSheguDownloadOptions(tmdbId) {
 
   return {
     options: sortDownloadOptions(options),
-    selectors: [{ selector: "downloads.shegu.st/movie/{tmdbId}", matches: options.length }],
+    selectors: [{ selector, matches: options.length }],
+    requestUrl: apiUrl,
   };
 }
 
@@ -1320,20 +1361,33 @@ const server = http.createServer(async (req, res) => {
       const tmdbId = searchParams.get("tmdbId") || searchParams.get("tmdb_id");
 
       // Secondary (4khdhub) downloads are resolved via shegu.st using TMDB id —
-      // the links in the response are already direct file URLs.
+      // movies: /movie/{id}, TV: /tv/{id}/{season}/{episode}. Links are direct.
       if (source === "secondary" || searchParams.get("type") === "shegu") {
         if (!tmdbId) {
           sendJson(res, 400, { error: "tmdbId query parameter is required for secondary downloads" });
           return;
         }
-        const result = await fetchSheguDownloadOptions(tmdbId);
+        const mediaType =
+          String(searchParams.get("mediaType") || "").toLowerCase() === "tv" ? "tv" : "movie";
+        const season = searchParams.get("season");
+        const episode = searchParams.get("episode");
+        const result = await fetchSheguDownloadOptions({
+          tmdbId,
+          mediaType,
+          season,
+          episode,
+        });
         sendJson(res, 200, {
           tmdbId: String(tmdbId),
           type: "direct",
           source: "secondary",
+          mediaType,
+          season: mediaType === "tv" ? Number.parseInt(season, 10) : null,
+          episode: mediaType === "tv" ? Number.parseInt(episode, 10) : null,
           count: result.options.length,
           options: result.options,
           selectors: result.selectors,
+          requestUrl: result.requestUrl,
         });
         return;
       }

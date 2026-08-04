@@ -1486,6 +1486,19 @@
       margin-bottom: 0.75rem;
     }
 
+    .episode-picker-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .episode-picker-grid .download-option {
+      flex: 0 0 auto;
+      min-width: 5.5rem;
+      text-align: center;
+    }
+
     .selector-debug {
       margin: 0.75rem 0;
       padding: 0.65rem 0.75rem;
@@ -2675,7 +2688,7 @@
         <div class="tv-detail-actions">
           ${playable ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
           ${t?.trailerKey ? `<button class="tv-hero-btn" id="detail-trailer-btn" type="button">🎬 Trailer</button>` : ""}
-          ${sourcePageLink ? `<a class="tv-hero-btn${playable ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(movie.source || "")}">⬇ Download</a>` : ""}
+          ${sourcePageLink ? `<a class="tv-hero-btn${playable ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(movie.source || "")}" data-media-type="${escapeAttr(t?.type || (movie.seasons ? "tv" : "movie"))}" data-season-hint="${escapeAttr(movie.seasons || "")}">⬇ Download</a>` : ""}
           ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
           ${downloaded ? `<button class="tv-icon-circle-btn danger" id="detail-delete-btn" type="button" aria-label="Delete downloaded movie">🗑</button>` : ""}
         </div>
@@ -2693,7 +2706,15 @@
       document.getElementById("detail-download-link")?.addEventListener("click", (e) => {
         e.preventDefault();
         const el = e.currentTarget;
-        openDownloadModal(el.dataset.link, el.dataset.title, el.dataset.tmdbId || null, el.dataset.source || "");
+        openDownloadModal(
+          el.dataset.link,
+          el.dataset.title,
+          el.dataset.tmdbId || null,
+          el.dataset.source || "",
+          el.dataset.mediaType || "",
+          movie.tmdb?.seasons || [],
+          el.dataset.seasonHint || ""
+        );
       });
       document.getElementById("detail-delete-btn")?.addEventListener("click", () => openDeleteConfirm(movie));
 
@@ -3787,7 +3808,126 @@
       window.TVFocusManager?.focusFirst();
     }
 
-    async function openDownloadModal(pageUrl, title, tmdbId, source) {
+    function parseSeasonHint(seasonsText) {
+      const text = String(seasonsText || "");
+      const range = text.match(/S(\d{1,2})\s*-\s*S(\d{1,2})/i);
+      if (range) {
+        return { from: Number.parseInt(range[1], 10), to: Number.parseInt(range[2], 10) };
+      }
+      const single = text.match(/S(\d{1,2})/i);
+      if (single) {
+        const n = Number.parseInt(single[1], 10);
+        return { from: n, to: n };
+      }
+      return null;
+    }
+
+    function buildSeasonOptions(seasons, seasonHint) {
+      if (Array.isArray(seasons) && seasons.length) {
+        return seasons
+          .filter((s) => Number(s.seasonNumber) > 0)
+          .map((s) => ({
+            seasonNumber: Number(s.seasonNumber),
+            episodeCount: Number(s.episodeCount) || 24,
+            name: s.name || `Season ${s.seasonNumber}`,
+          }));
+      }
+      const hint = parseSeasonHint(seasonHint);
+      const from = hint?.from || 1;
+      const to = hint?.to || 1;
+      const options = [];
+      for (let n = from; n <= to; n++) {
+        options.push({ seasonNumber: n, episodeCount: 24, name: `Season ${n}` });
+      }
+      return options.length ? options : [{ seasonNumber: 1, episodeCount: 24, name: "Season 1" }];
+    }
+
+    function pad2(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function renderSeasonPicker(seasons) {
+      return `
+        <p class="download-save-hint">Choose a season</p>
+        <div class="episode-picker-grid">
+          ${seasons
+            .map(
+              (s) => `
+            <button type="button" class="download-option shegu-season-pick" data-season="${s.seasonNumber}">
+              ${escapeHtml(s.name || `Season ${s.seasonNumber}`)}
+            </button>`
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    function renderEpisodeButtons(seasonMeta) {
+      const count = Math.max(1, Number(seasonMeta?.episodeCount) || 24);
+      const season = seasonMeta.seasonNumber;
+      return `
+        <button type="button" class="btn-secondary download-back-seasons">← Seasons</button>
+        <p class="download-save-hint">${escapeHtml(seasonMeta.name || `Season ${season}`)} — choose an episode</p>
+        <div class="episode-picker-grid">
+          ${Array.from({ length: count }, (_, i) => i + 1)
+            .map(
+              (ep) => `
+            <button type="button" class="download-option shegu-episode-pick" data-season="${season}" data-episode="${ep}">
+              E${pad2(ep)}
+            </button>`
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    async function loadSecondaryEpisodeDownloads(season, episode) {
+      downloadModalContent.className = "download-state";
+      downloadModalContent.textContent = `Loading S${pad2(season)}E${pad2(episode)}…`;
+      window.TVFocusManager?.focusFirst();
+
+      const params = new URLSearchParams({
+        source: "secondary",
+        tmdbId: String(downloadModalState.tmdbId),
+        mediaType: "tv",
+        season: String(season),
+        episode: String(episode),
+      });
+      const res = await fetch(apiUrl(`downloads?${params}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      const episodeTitle = `${downloadModalState.baseTitle || downloadModalState.movieTitle} S${pad2(season)}E${pad2(episode)}`;
+      downloadModalState.movieTitle = episodeTitle;
+      downloadModalState.season = season;
+      downloadModalState.episode = episode;
+      downloadModalState.options = data.options || [];
+
+      if (!data.options?.length) {
+        downloadModalContent.className = "download-state";
+        downloadModalContent.innerHTML = `
+          <button type="button" class="btn-secondary download-back-episodes">← Episodes</button>
+          <p>No download links found for S${pad2(season)}E${pad2(episode)}.</p>
+          ${renderSelectorDebug(data.selectors)}
+        `;
+        window.TVFocusManager?.focusFirst();
+        return;
+      }
+
+      downloadModalContent.innerHTML = `
+        <button type="button" class="btn-secondary download-back-episodes">← Episodes</button>
+        ${renderDirectOptions(
+          data.options,
+          `S${pad2(season)}E${pad2(episode)}`,
+          episodeTitle,
+          downloadModalState.tmdbId,
+          { showBack: false }
+        )}
+      `;
+      window.TVFocusManager?.focusFirst();
+    }
+
+    async function openDownloadModal(pageUrl, title, tmdbId, source, mediaType, seasonsList, seasonHint) {
       if (detailPage.hidden && downloadModal.hidden) preModalFocus = document.activeElement;
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
@@ -3805,19 +3945,33 @@
             return;
           }
 
+          const isTv = String(mediaType || "").toLowerCase() === "tv" || Boolean(seasonHint);
+          const seasons = buildSeasonOptions(seasonsList, seasonHint);
+          downloadModalState = {
+            title: title || "Download options",
+            options: [],
+            movieTitle: title || "",
+            baseTitle: title || "",
+            tmdbId: tmdbId || null,
+            source: "secondary",
+            mediaType: isTv ? "tv" : "movie",
+            seasons,
+            selectedSeason: null,
+          };
+
+          if (isTv) {
+            downloadModalContent.innerHTML = renderSeasonPicker(seasons);
+            window.TVFocusManager?.focusFirst();
+            return;
+          }
+
           const res = await fetch(
-            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}`)
+            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie`)
           );
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || res.statusText);
 
-          downloadModalState = {
-            title: title || "Download options",
-            options: data.options || [],
-            movieTitle: title || "",
-            tmdbId: tmdbId || null,
-            source: "secondary",
-          };
+          downloadModalState.options = data.options || [];
 
           if (!data.options?.length) {
             downloadModalContent.className = "download-state";
@@ -4107,6 +4261,55 @@
     });
 
     downloadModalContent.addEventListener("click", async (e) => {
+      const seasonPick = e.target.closest(".shegu-season-pick");
+      if (seasonPick) {
+        e.preventDefault();
+        const season = Number.parseInt(seasonPick.dataset.season, 10);
+        const meta =
+          (downloadModalState.seasons || []).find((s) => s.seasonNumber === season) ||
+          { seasonNumber: season, episodeCount: 24, name: `Season ${season}` };
+        downloadModalState.selectedSeason = season;
+        downloadModalContent.innerHTML = renderEpisodeButtons(meta);
+        window.TVFocusManager?.focusFirst();
+        return;
+      }
+
+      const episodePick = e.target.closest(".shegu-episode-pick");
+      if (episodePick) {
+        e.preventDefault();
+        try {
+          await loadSecondaryEpisodeDownloads(
+            Number.parseInt(episodePick.dataset.season, 10),
+            Number.parseInt(episodePick.dataset.episode, 10)
+          );
+        } catch (err) {
+          downloadModalContent.className = "download-state";
+          downloadModalContent.textContent = err.message;
+          window.TVFocusManager?.focusFirst();
+        }
+        return;
+      }
+
+      const backSeasons = e.target.closest(".download-back-seasons");
+      if (backSeasons) {
+        e.preventDefault();
+        downloadModalContent.innerHTML = renderSeasonPicker(downloadModalState.seasons || []);
+        window.TVFocusManager?.focusFirst();
+        return;
+      }
+
+      const backEpisodes = e.target.closest(".download-back-episodes");
+      if (backEpisodes) {
+        e.preventDefault();
+        const season = downloadModalState.selectedSeason || downloadModalState.season || 1;
+        const meta =
+          (downloadModalState.seasons || []).find((s) => s.seasonNumber === season) ||
+          { seasonNumber: season, episodeCount: 24, name: `Season ${season}` };
+        downloadModalContent.innerHTML = renderEpisodeButtons(meta);
+        window.TVFocusManager?.focusFirst();
+        return;
+      }
+
       const picker = e.target.closest(".download-picker");
       if (picker) {
         e.preventDefault();

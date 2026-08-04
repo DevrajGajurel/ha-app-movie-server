@@ -953,6 +953,39 @@
       margin-bottom: 0.75rem;
     }
 
+    .episode-picker {
+      display: grid;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .episode-picker-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .episode-picker label {
+      min-width: 4.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .episode-picker select {
+      flex: 1;
+      min-width: 8rem;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.6rem;
+    }
+
+    .episode-picker .btn-secondary {
+      width: 100%;
+    }
+
     .card-download-status {
       margin-top: 0.5rem;
       font-size: 0.7rem;
@@ -1979,7 +2012,7 @@
               ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
             ` : (tmdbEnabled ? `<p class="overview">No TMDB match</p>` : "")}
             <div class="links">
-              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}">Download</a>
+              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}" data-media-type="${escapeAttr(t?.type || (m.seasons ? "tv" : "movie"))}" data-seasons="${escapeAttr(JSON.stringify(t?.seasons || []))}" data-season-hint="${escapeAttr(m.seasons || "")}">Download</a>
               ${t?.tmdbUrl ? `<a class="card-action-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
             </div>
             ${renderCardDownloadStatus(displayTitle)}
@@ -2234,7 +2267,152 @@
       );
     }
 
-    async function openDownloadModal(pageUrl, title, tmdbId, source) {
+    function parseSeasonHint(seasonsText) {
+      const text = String(seasonsText || "");
+      const range = text.match(/S(\d{1,2})\s*-\s*S(\d{1,2})/i);
+      if (range) {
+        return { from: Number.parseInt(range[1], 10), to: Number.parseInt(range[2], 10) };
+      }
+      const single = text.match(/S(\d{1,2})/i);
+      if (single) {
+        const n = Number.parseInt(single[1], 10);
+        return { from: n, to: n };
+      }
+      return null;
+    }
+
+    function buildSeasonOptions(seasonsJson, seasonHint) {
+      let seasons = [];
+      try {
+        seasons = JSON.parse(seasonsJson || "[]");
+      } catch {
+        seasons = [];
+      }
+      if (Array.isArray(seasons) && seasons.length) {
+        return seasons
+          .filter((s) => Number(s.seasonNumber) > 0)
+          .map((s) => ({
+            seasonNumber: Number(s.seasonNumber),
+            episodeCount: Number(s.episodeCount) || 24,
+            name: s.name || `Season ${s.seasonNumber}`,
+          }));
+      }
+
+      const hint = parseSeasonHint(seasonHint);
+      const from = hint?.from || 1;
+      const to = hint?.to || 1;
+      const options = [];
+      for (let n = from; n <= to; n++) {
+        options.push({ seasonNumber: n, episodeCount: 24, name: `Season ${n}` });
+      }
+      return options.length ? options : [{ seasonNumber: 1, episodeCount: 24, name: "Season 1" }];
+    }
+
+    function pad2(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function renderEpisodePicker(seasons, selectedSeason, selectedEpisode) {
+      const seasonMeta = seasons.find((s) => s.seasonNumber === selectedSeason) || seasons[0];
+      const episodeCount = Math.max(1, Number(seasonMeta?.episodeCount) || 24);
+      const seasonOptions = seasons
+        .map(
+          (s) =>
+            `<option value="${s.seasonNumber}"${s.seasonNumber === selectedSeason ? " selected" : ""}>${escapeHtml(
+              s.name || `Season ${s.seasonNumber}`
+            )}</option>`
+        )
+        .join("");
+      const episodeOptions = Array.from({ length: episodeCount }, (_, i) => i + 1)
+        .map(
+          (ep) =>
+            `<option value="${ep}"${ep === selectedEpisode ? " selected" : ""}>Episode ${ep}</option>`
+        )
+        .join("");
+
+      return `
+        <div class="episode-picker">
+          <p class="download-save-hint">Choose a season and episode, then load download links.</p>
+          <div class="episode-picker-row">
+            <label for="shegu-season">Season</label>
+            <select id="shegu-season">${seasonOptions}</select>
+          </div>
+          <div class="episode-picker-row">
+            <label for="shegu-episode">Episode</label>
+            <select id="shegu-episode">${episodeOptions}</select>
+          </div>
+          <button type="button" class="btn-secondary" id="shegu-load-episode">Load downloads</button>
+        </div>
+        <div id="shegu-episode-results"></div>
+      `;
+    }
+
+    async function loadSecondaryEpisodeDownloads() {
+      const season = Number.parseInt(document.getElementById("shegu-season")?.value, 10);
+      const episode = Number.parseInt(document.getElementById("shegu-episode")?.value, 10);
+      const resultsEl = document.getElementById("shegu-episode-results");
+      if (!resultsEl || !downloadModalState.tmdbId) return;
+
+      resultsEl.innerHTML = `<p class="download-state">Loading S${pad2(season)}E${pad2(episode)}…</p>`;
+
+      const params = new URLSearchParams({
+        source: "secondary",
+        tmdbId: String(downloadModalState.tmdbId),
+        mediaType: "tv",
+        season: String(season),
+        episode: String(episode),
+      });
+      const res = await fetch(apiUrl(`downloads?${params}`));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      const episodeTitle = `${downloadModalState.baseTitle || downloadModalState.movieTitle} S${pad2(season)}E${pad2(episode)}`;
+      downloadModalState.movieTitle = episodeTitle;
+      downloadModalState.season = season;
+      downloadModalState.episode = episode;
+
+      if (!data.options?.length) {
+        resultsEl.innerHTML = `
+          <p>No download links found for S${pad2(season)}E${pad2(episode)}.</p>
+          ${renderSelectorDebug(data.selectors)}
+        `;
+        return;
+      }
+
+      resultsEl.innerHTML = renderDirectOptions(
+        data.options,
+        `S${pad2(season)}E${pad2(episode)}`,
+        episodeTitle,
+        downloadModalState.tmdbId,
+        { showBack: false }
+      );
+    }
+
+    function wireEpisodePicker(seasons) {
+      const seasonSelect = document.getElementById("shegu-season");
+      const episodeSelect = document.getElementById("shegu-episode");
+      const loadBtn = document.getElementById("shegu-load-episode");
+
+      seasonSelect?.addEventListener("change", () => {
+        const selected = Number.parseInt(seasonSelect.value, 10);
+        const meta = seasons.find((s) => s.seasonNumber === selected) || seasons[0];
+        const count = Math.max(1, Number(meta?.episodeCount) || 24);
+        episodeSelect.innerHTML = Array.from({ length: count }, (_, i) => i + 1)
+          .map((ep) => `<option value="${ep}">Episode ${ep}</option>`)
+          .join("");
+      });
+
+      loadBtn?.addEventListener("click", async () => {
+        try {
+          await loadSecondaryEpisodeDownloads();
+        } catch (err) {
+          const resultsEl = document.getElementById("shegu-episode-results");
+          if (resultsEl) resultsEl.textContent = err.message;
+        }
+      });
+    }
+
+    async function openDownloadModal(pageUrl, title, tmdbId, source, mediaType, seasonsJson, seasonHint) {
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
       downloadModalContent.textContent = "Loading download options…";
@@ -2249,19 +2427,32 @@
             return;
           }
 
+          const isTv = String(mediaType || "").toLowerCase() === "tv" || Boolean(seasonHint);
+          downloadModalState = {
+            title: title || "Download options",
+            options: [],
+            movieTitle: title || "",
+            baseTitle: title || "",
+            tmdbId: tmdbId || null,
+            source: "secondary",
+            mediaType: isTv ? "tv" : "movie",
+          };
+
+          if (isTv) {
+            const seasons = buildSeasonOptions(seasonsJson, seasonHint);
+            const firstSeason = seasons[0]?.seasonNumber || 1;
+            downloadModalContent.innerHTML = renderEpisodePicker(seasons, firstSeason, 1);
+            wireEpisodePicker(seasons);
+            return;
+          }
+
           const res = await fetch(
-            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}`)
+            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie`)
           );
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || res.statusText);
 
-          downloadModalState = {
-            title: title || "Download options",
-            options: data.options || [],
-            movieTitle: title || "",
-            tmdbId: tmdbId || null,
-            source: "secondary",
-          };
+          downloadModalState.options = data.options || [];
 
           if (!data.options?.length) {
             downloadModalContent.className = "download-state";
@@ -2986,7 +3177,15 @@
       const btn = e.target.closest("[data-download-link]");
       if (!btn) return;
       e.preventDefault();
-      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle, btn.dataset.tmdbId || null, btn.dataset.source || "");
+      openDownloadModal(
+        btn.dataset.downloadLink,
+        btn.dataset.downloadTitle,
+        btn.dataset.tmdbId || null,
+        btn.dataset.source || "",
+        btn.dataset.mediaType || "",
+        btn.dataset.seasons || "[]",
+        btn.dataset.seasonHint || ""
+      );
     });
 
     document.getElementById("download-modal-close").addEventListener("click", closeDownloadModal);
