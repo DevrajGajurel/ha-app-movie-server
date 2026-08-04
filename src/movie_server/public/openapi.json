@@ -295,18 +295,31 @@
     "/api/downloads": {
       "get": {
         "tags": ["Downloads"],
-        "summary": "Discover download options for a source page URL",
+        "summary": "Discover download options for a source page URL, or secondary (shegu) links by TMDB id",
         "parameters": [
           {
             "name": "url",
             "in": "query",
-            "required": true,
-            "schema": { "type": "string", "format": "uri" }
+            "required": false,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Source detail page URL (primary site). Required unless source=secondary."
           },
           {
             "name": "type",
             "in": "query",
-            "schema": { "type": "string", "enum": ["quality", "direct"] }
+            "schema": { "type": "string", "enum": ["quality", "direct", "shegu"] }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["secondary"] },
+            "description": "When secondary, resolve downloads via downloads.shegu.st using tmdbId."
+          },
+          {
+            "name": "tmdbId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Required when source=secondary."
           }
         ],
         "responses": {

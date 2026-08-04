@@ -219,11 +219,108 @@ function buildPageUrl(baseUrl, page) {
   return url.href;
 }
 
-function buildSearchUrl(baseUrl, query) {
+function buildSearchUrl(baseUrl, query, { secondary = false } = {}) {
+  if (secondary) {
+    const url = new URL(baseUrl);
+    url.searchParams.set("s", query);
+    return url.href;
+  }
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("search.html", base);
   url.searchParams.set("search", query);
   return url.href;
+}
+
+function parseSecondaryMeta(text) {
+  const cleaned = String(text || "")
+    .replace(/[\u0000-\u001f]/g, " ")
+    .replace(/[•·|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const yearMatch = cleaned.match(/\b((?:19|20)\d{2})\b/);
+  const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : null;
+  const seasonMatch = cleaned.match(/\b(S\d{1,2}(?:\s*-\s*S\d{1,2})?(?:\s*EP\d{1,2})?)\b/i);
+  const seasons = seasonMatch ? seasonMatch[1].replace(/\s+/g, " ").trim() : null;
+  return { year, seasons, meta: cleaned };
+}
+
+function scrapeSecondaryPage(pageUrl) {
+  return fetch(pageUrl)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
+      }
+
+      const html = await response.text();
+      const { document } = parseHTML(html);
+      const cards = [...document.querySelectorAll("a.movie-card")];
+
+      const results = cards.map((card) => {
+        const aria = String(card.getAttribute("aria-label") || "");
+        const titleFromAria = aria.replace(/\s+details\s*$/i, "").trim();
+        const title = titleFromAria || card.querySelector("img")?.alt || "";
+        const href = card.getAttribute("href");
+        const { year, seasons, meta } = parseSecondaryMeta(
+          card.querySelector(".movie-card-meta")?.textContent
+        );
+        const formats = [...card.querySelectorAll(".movie-card-format")]
+          .map((el) => String(el.textContent || "").trim())
+          .filter(Boolean);
+
+        return {
+          title,
+          link: href ? new URL(href, pageUrl).href : pageUrl,
+          year,
+          seasons,
+          meta,
+          formats,
+          source: "secondary",
+        };
+      }).filter((movie) => movie.title && movie.link);
+
+      recordScrapeSuccess();
+      return results;
+    })
+    .catch((err) => {
+      recordScrapeError(err);
+      throw err;
+    });
+}
+
+const SHEGU_DOWNLOADS_BASE = String(
+  process.env.SHEGU_DOWNLOADS_URL || "https://downloads.shegu.st/movie"
+).replace(/\/$/, "");
+
+async function fetchSheguDownloadOptions(tmdbId) {
+  const id = String(tmdbId || "").trim();
+  if (!id) {
+    throw new Error("tmdbId is required");
+  }
+
+  const apiUrl = `${SHEGU_DOWNLOADS_BASE}/${encodeURIComponent(id)}`;
+  const response = await fetch(apiUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch secondary downloads: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const links = Array.isArray(data?.links) ? data.links : [];
+  const options = links
+    .filter((link) => link?.url)
+    .map((link) => ({
+      label: link.name || `${link.source || "Download"}${link.size ? ` [${link.size}]` : ""}`,
+      href: link.url,
+      quality: link.quality || null,
+      size: link.size || null,
+      source: link.source || null,
+      provider: link.provider || "4khdhub",
+      direct: true,
+    }));
+
+  return {
+    options: sortDownloadOptions(options),
+    selectors: [{ selector: "downloads.shegu.st/movie/{tmdbId}", matches: options.length }],
+  };
 }
 
 function readBody(req) {
@@ -432,13 +529,37 @@ async function resolveDownloadLinks(movies, concurrency = 5) {
 
   for (let i = 0; i < resolved.length; i += concurrency) {
     const batch = resolved.slice(i, i + concurrency);
-    const links = await Promise.all(batch.map((movie) => resolveDownloadLink(movie.link)));
+    const links = await Promise.all(
+      batch.map((movie) =>
+        movie.source === "secondary" ? Promise.resolve(movie.link) : resolveDownloadLink(movie.link)
+      )
+    );
     links.forEach((link, j) => {
       resolved[i + j] = { ...resolved[i + j], link };
     });
   }
 
   return resolved;
+}
+
+function tagSecondaryMovie(movie) {
+  const formatText = [...(movie.formats || []), movie.meta, movie.title].filter(Boolean).join(" ");
+  const tagged = tagQuality({ ...movie, title: formatText }, HD_KEYWORDS, K4_KEYWORDS);
+  return {
+    ...movie,
+    source: "secondary",
+    quality: {
+      hd: true,
+      k4: Boolean(tagged.quality?.k4),
+    },
+  };
+}
+
+function finalizeQuality(movie) {
+  if (movie.source === "secondary") {
+    return tagSecondaryMovie(movie);
+  }
+  return tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
 }
 
 function movieTitleKey(movie) {
@@ -448,9 +569,10 @@ function movieTitleKey(movie) {
     .trim();
 }
 
-// Scrapes one listing site over a page range. When hdOnly is set, titles that
-// don't match HD_KEYWORDS are dropped (used for the secondary HD source).
-async function scrapeSourceRange(baseUrl, fromPage, toPage, { hdOnly = false } = {}) {
+// Scrapes one listing site over a page range. When secondary is set, uses the
+// 4khdhub movie-card scraper (and treats every card as HD). When hdOnly is set
+// on the primary-style scraper, titles that don't match HD_KEYWORDS are dropped.
+async function scrapeSourceRange(baseUrl, fromPage, toPage, { hdOnly = false, secondary = false } = {}) {
   const start = Math.max(1, Math.min(fromPage, toPage));
   const end = Math.min(maxPages, Math.max(fromPage, toPage));
   const seen = new Set();
@@ -458,10 +580,14 @@ async function scrapeSourceRange(baseUrl, fromPage, toPage, { hdOnly = false } =
 
   for (let page = start; page <= end; page++) {
     const pageUrl = buildPageUrl(baseUrl, page);
-    const pageMovies = await scrapePage(pageUrl);
+    const pageMovies = secondary
+      ? await scrapeSecondaryPage(pageUrl)
+      : await scrapePage(pageUrl);
 
     for (const movie of pageMovies) {
-      const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
+      const tagged = secondary
+        ? tagSecondaryMovie(movie)
+        : tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
       if (hdOnly && !tagged.quality?.hd) continue;
       if (!seen.has(tagged.link)) {
         seen.add(tagged.link);
@@ -498,10 +624,12 @@ async function scrapeMoviesRange(fromPage, toPage) {
 
   if (secondaryUrl) {
     try {
-      const secondaryHd = await scrapeSourceRange(secondaryUrl, fromPage, toPage, { hdOnly: true });
+      const secondaryHd = await scrapeSourceRange(secondaryUrl, fromPage, toPage, {
+        secondary: true,
+      });
       movies = mergeSecondaryHd(primary, secondaryHd);
       console.log(
-        `[scrape] secondary HD source: kept ${secondaryHd.length} HD title(s) from ${secondaryUrl} (merged total ${movies.length})`
+        `[scrape] secondary HD source: kept ${secondaryHd.length} title(s) from ${secondaryUrl} (merged total ${movies.length})`
       );
     } catch (err) {
       console.warn(`[scrape] secondary HD source failed (${secondaryUrl}): ${err.message}`);
@@ -515,20 +643,24 @@ async function scrapeMoviesRange(fromPage, toPage) {
     result = await enrichMovies(withDownloadLinks, TMDB_API_KEY);
   }
 
-  return result.map((movie) => tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS));
+  return result.map((movie) => finalizeQuality(movie));
 }
 
 async function searchSourceMovies(query) {
   const q = String(query || "").trim();
   if (!q) return [];
 
-  async function searchOne(baseUrl, { hdOnly = false } = {}) {
-    const searchUrl = buildSearchUrl(baseUrl, q);
-    const pageMovies = await scrapePage(searchUrl);
+  async function searchOne(baseUrl, { hdOnly = false, secondary = false } = {}) {
+    const searchUrl = buildSearchUrl(baseUrl, q, { secondary });
+    const pageMovies = secondary
+      ? await scrapeSecondaryPage(searchUrl)
+      : await scrapePage(searchUrl);
     const seen = new Set();
     const movies = [];
     for (const movie of pageMovies) {
-      const tagged = tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
+      const tagged = secondary
+        ? tagSecondaryMovie(movie)
+        : tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
       if (hdOnly && !tagged.quality?.hd) continue;
       if (!seen.has(tagged.link)) {
         seen.add(tagged.link);
@@ -543,7 +675,7 @@ async function searchSourceMovies(query) {
 
   if (secondaryUrl) {
     try {
-      const secondaryHd = await searchOne(secondaryUrl, { hdOnly: true });
+      const secondaryHd = await searchOne(secondaryUrl, { secondary: true });
       movies = mergeSecondaryHd(primary, secondaryHd);
     } catch (err) {
       console.warn(`[search] secondary HD source failed (${secondaryUrl}): ${err.message}`);
@@ -556,7 +688,7 @@ async function searchSourceMovies(query) {
     result = await enrichMovies(withDownloadLinks, TMDB_API_KEY);
   }
 
-  return result.map((movie) => tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS));
+  return result.map((movie) => finalizeQuality(movie));
 }
 
 async function scrapeMovies() {
@@ -1176,14 +1308,37 @@ const server = http.createServer(async (req, res) => {
 
   if (url === "/api/downloads" && req.method === "GET") {
     try {
-      const pageUrl = new URL(req.url, "http://localhost").searchParams.get("url");
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const source = String(searchParams.get("source") || "").trim().toLowerCase();
+      const tmdbId = searchParams.get("tmdbId") || searchParams.get("tmdb_id");
+
+      // Secondary (4khdhub) downloads are resolved via shegu.st using TMDB id —
+      // the links in the response are already direct file URLs.
+      if (source === "secondary" || searchParams.get("type") === "shegu") {
+        if (!tmdbId) {
+          sendJson(res, 400, { error: "tmdbId query parameter is required for secondary downloads" });
+          return;
+        }
+        const result = await fetchSheguDownloadOptions(tmdbId);
+        sendJson(res, 200, {
+          tmdbId: String(tmdbId),
+          type: "direct",
+          source: "secondary",
+          count: result.options.length,
+          options: result.options,
+          selectors: result.selectors,
+        });
+        return;
+      }
+
+      const pageUrl = searchParams.get("url");
       if (!pageUrl) {
         sendJson(res, 400, { error: "url query parameter is required" });
         return;
       }
 
       new URL(pageUrl);
-      const type = new URL(req.url, "http://localhost").searchParams.get("type") || "quality";
+      const type = searchParams.get("type") || "quality";
       const result =
         type === "direct"
           ? await fetchDirectDownloadOptions(pageUrl)

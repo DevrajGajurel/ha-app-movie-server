@@ -1979,7 +1979,7 @@
               ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
             ` : (tmdbEnabled ? `<p class="overview">No TMDB match</p>` : "")}
             <div class="links">
-              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">Download</a>
+              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}">Download</a>
               ${t?.tmdbUrl ? `<a class="card-action-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
             </div>
             ${renderCardDownloadStatus(displayTitle)}
@@ -2183,9 +2183,9 @@
       `;
     }
 
-    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId) {
+    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId, { showBack = true } = {}) {
       return `
-        <button type="button" class="btn-secondary download-back">← Back</button>
+        ${showBack ? `<button type="button" class="btn-secondary download-back">← Back</button>` : ""}
         ${parentLabel ? `<p class="empty-hint">${escapeHtml(parentLabel)}</p>` : ""}
         <p class="download-save-hint">Click to download to PlexMedia on the server (background download).</p>
         <ul class="download-list">
@@ -2234,13 +2234,54 @@
       );
     }
 
-    async function openDownloadModal(pageUrl, title, tmdbId) {
+    async function openDownloadModal(pageUrl, title, tmdbId, source) {
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
       downloadModalContent.textContent = "Loading download options…";
       downloadModal.hidden = false;
 
       try {
+        const isSecondary = String(source || "").toLowerCase() === "secondary";
+        if (isSecondary) {
+          if (!tmdbId) {
+            downloadModalContent.className = "download-state";
+            downloadModalContent.textContent = "No TMDB match — cannot load secondary downloads.";
+            return;
+          }
+
+          const res = await fetch(
+            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}`)
+          );
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+
+          downloadModalState = {
+            title: title || "Download options",
+            options: data.options || [],
+            movieTitle: title || "",
+            tmdbId: tmdbId || null,
+            source: "secondary",
+          };
+
+          if (!data.options?.length) {
+            downloadModalContent.className = "download-state";
+            downloadModalContent.innerHTML = `
+              <p>No download links found for this title.</p>
+              ${renderSelectorDebug(data.selectors)}
+            `;
+            return;
+          }
+
+          downloadModalContent.innerHTML = renderDirectOptions(
+            data.options,
+            null,
+            downloadModalState.movieTitle,
+            downloadModalState.tmdbId,
+            { showBack: false }
+          );
+          return;
+        }
+
         const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}`));
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
@@ -2260,6 +2301,7 @@
           options: data.options,
           movieTitle: title || "",
           tmdbId: tmdbId || null,
+          source: "",
         };
         downloadModalContent.innerHTML = renderQualityOptions(data.options);
       } catch (err) {
@@ -2944,7 +2986,7 @@
       const btn = e.target.closest("[data-download-link]");
       if (!btn) return;
       e.preventDefault();
-      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle, btn.dataset.tmdbId || null);
+      openDownloadModal(btn.dataset.downloadLink, btn.dataset.downloadTitle, btn.dataset.tmdbId || null, btn.dataset.source || "");
     });
 
     document.getElementById("download-modal-close").addEventListener("click", closeDownloadModal);

@@ -2675,7 +2675,7 @@
         <div class="tv-detail-actions">
           ${playable ? `<button class="tv-hero-btn primary" id="detail-play-btn" type="button">▶ Play</button>` : ""}
           ${t?.trailerKey ? `<button class="tv-hero-btn" id="detail-trailer-btn" type="button">🎬 Trailer</button>` : ""}
-          ${sourcePageLink ? `<a class="tv-hero-btn${playable ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}">⬇ Download</a>` : ""}
+          ${sourcePageLink ? `<a class="tv-hero-btn${playable ? "" : " primary"}" href="#" id="detail-download-link" data-link="${escapeAttr(sourcePageLink)}" data-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(movie.source || "")}">⬇ Download</a>` : ""}
           ${t?.tmdbUrl ? `<a class="tv-hero-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
           ${downloaded ? `<button class="tv-icon-circle-btn danger" id="detail-delete-btn" type="button" aria-label="Delete downloaded movie">🗑</button>` : ""}
         </div>
@@ -2693,7 +2693,7 @@
       document.getElementById("detail-download-link")?.addEventListener("click", (e) => {
         e.preventDefault();
         const el = e.currentTarget;
-        openDownloadModal(el.dataset.link, el.dataset.title, el.dataset.tmdbId || null);
+        openDownloadModal(el.dataset.link, el.dataset.title, el.dataset.tmdbId || null, el.dataset.source || "");
       });
       document.getElementById("detail-delete-btn")?.addEventListener("click", () => openDeleteConfirm(movie));
 
@@ -3730,9 +3730,9 @@
       `;
     }
 
-    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId) {
+    function renderDirectOptions(options, parentLabel, movieTitle, tmdbId, { showBack = true } = {}) {
       return `
-        <button type="button" class="btn-secondary download-back">← Back</button>
+        ${showBack ? `<button type="button" class="btn-secondary download-back">← Back</button>` : ""}
         ${parentLabel ? `<p>${escapeHtml(parentLabel)}</p>` : ""}
         <p class="download-save-hint">Click to download to PlexMedia on the server (background download).</p>
         <ul class="download-list">
@@ -3787,7 +3787,7 @@
       window.TVFocusManager?.focusFirst();
     }
 
-    async function openDownloadModal(pageUrl, title, tmdbId) {
+    async function openDownloadModal(pageUrl, title, tmdbId, source) {
       if (detailPage.hidden && downloadModal.hidden) preModalFocus = document.activeElement;
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
@@ -3796,6 +3796,50 @@
       window.TVFocusManager?.focusFirst();
 
       try {
+        const isSecondary = String(source || "").toLowerCase() === "secondary";
+        if (isSecondary) {
+          if (!tmdbId) {
+            downloadModalContent.className = "download-state";
+            downloadModalContent.textContent = "No TMDB match — cannot load secondary downloads.";
+            window.TVFocusManager?.focusFirst();
+            return;
+          }
+
+          const res = await fetch(
+            apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}`)
+          );
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+
+          downloadModalState = {
+            title: title || "Download options",
+            options: data.options || [],
+            movieTitle: title || "",
+            tmdbId: tmdbId || null,
+            source: "secondary",
+          };
+
+          if (!data.options?.length) {
+            downloadModalContent.className = "download-state";
+            downloadModalContent.innerHTML = `
+              <p>No download links found for this title.</p>
+              ${renderSelectorDebug(data.selectors)}
+            `;
+            window.TVFocusManager?.focusFirst();
+            return;
+          }
+
+          downloadModalContent.innerHTML = renderDirectOptions(
+            data.options,
+            null,
+            downloadModalState.movieTitle,
+            downloadModalState.tmdbId,
+            { showBack: false }
+          );
+          window.TVFocusManager?.focusFirst();
+          return;
+        }
+
         const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}`));
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
@@ -3816,6 +3860,7 @@
           options: data.options,
           movieTitle: title || "",
           tmdbId: tmdbId || null,
+          source: "",
         };
         downloadModalContent.innerHTML = renderQualityOptions(data.options);
         window.TVFocusManager?.focusFirst();

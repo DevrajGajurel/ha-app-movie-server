@@ -457,12 +457,21 @@ async function gatherCandidates(apiKey, parsed, { useYear = true } = {}) {
   };
 }
 
-async function searchMedia(apiKey, title, genres) {
-  const parsed = parseSourceTitle(title);
+async function searchMedia(apiKey, title, genres, opts = {}) {
+  const yearHint = Number.isFinite(opts.year) ? opts.year : null;
+  const preferTv = Boolean(opts.preferTv);
+  const searchTitle =
+    preferTv && title && !looksLikeTv(title) ? `${title} series` : title;
+  const parsed = parseSourceTitle(searchTitle);
+  if (yearHint && !parsed.year) {
+    parsed.year = yearHint;
+  }
   const { query, altQuery } = parsed;
   if (!query && !altQuery) return null;
 
-  const cacheKey = `${query}|${altQuery || ""}|${parsed.year || ""}|${looksLikeTv(parsed.raw) ? "tv" : "movie"}`;
+  const cacheKey = `${query}|${altQuery || ""}|${parsed.year || ""}|${
+    preferTv || looksLikeTv(parsed.raw) ? "tv" : "movie"
+  }`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
   // Redis is a second tier behind the in-memory Map: same-process repeat
@@ -497,7 +506,12 @@ async function enrichMovies(movies, apiKey, concurrency = 5) {
   for (let i = 0; i < enriched.length; i += concurrency) {
     const batch = enriched.slice(i, i + concurrency);
     const results = await Promise.all(
-      batch.map((movie) => searchMedia(apiKey, movie.title, genres).catch(() => null))
+      batch.map((movie) =>
+        searchMedia(apiKey, movie.title, genres, {
+          year: movie.year || null,
+          preferTv: Boolean(movie.seasons),
+        }).catch(() => null)
+      )
     );
 
     results.forEach((meta, j) => {
