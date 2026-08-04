@@ -3,6 +3,7 @@ const path = require("path");
 const { createClient } = require("redis");
 
 const CACHE_KEY = "movieserver:v1:vidsrc:catalog";
+const MANUAL_KEY = "movieserver:v1:vidsrc:manual";
 const DEFAULT_REFRESH_MS = 4 * 60 * 60 * 1000;
 const VIDSRC_DIR = path.join(__dirname, "..", "vidsrc");
 const REFERER_HINT = "https://cloudorchestranova.com/";
@@ -51,6 +52,107 @@ function scheduleBackgroundRefresh(refreshMs) {
 
 async function writeCatalog(catalog) {
   await client.set(CACHE_KEY, JSON.stringify(catalog));
+}
+
+async function readManualMovies() {
+  if (!isReady()) return [];
+  try {
+    const raw = await client.get(MANUAL_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeManualMovies(movies) {
+  await client.set(MANUAL_KEY, JSON.stringify(movies));
+}
+
+function safeHttpUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(String(raw || "").trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (!parsed.host) return null;
+  return parsed.href;
+}
+
+function buildManualEntry({ title, url, referer, poster, year, tmdbId, overview }) {
+  const streamUrl = safeHttpUrl(url);
+  if (!streamUrl) {
+    throw new Error("url must be a valid http(s) address");
+  }
+  const cleanTitle = String(title || "").trim();
+  if (!cleanTitle) {
+    throw new Error("title is required");
+  }
+  const cleanReferer = safeHttpUrl(referer) || REFERER_HINT;
+  const cleanPoster = poster ? safeHttpUrl(poster) : null;
+  const id = `manual-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    id,
+    manual: true,
+    tmdbId: tmdbId != null && String(tmdbId).trim() ? String(tmdbId).trim() : null,
+    title: cleanTitle,
+    overview: overview ? String(overview).trim() : null,
+    year: year != null && String(year).trim() ? String(year).trim().slice(0, 4) : null,
+    rating: null,
+    poster: cleanPoster,
+    backdrop: null,
+    referer: cleanReferer,
+    playerHost: null,
+    streams: [
+      {
+        url: streamUrl,
+        type: "hls",
+        referer: cleanReferer,
+        bestQuality: "Auto",
+        qualities: [
+          {
+            label: "Auto",
+            resolution: null,
+            width: null,
+            height: null,
+            bandwidth: null,
+            frameRate: null,
+            codecs: null,
+            url: streamUrl,
+          },
+        ],
+      },
+    ],
+    errors: [],
+    addedAt: new Date().toISOString(),
+  };
+}
+
+async function addManualStream(input) {
+  if (!isReady()) throw new Error("Stream catalog Redis is not ready");
+  const entry = buildManualEntry(input || {});
+  const manuals = await readManualMovies();
+  const next = [entry, ...manuals.filter((m) => m?.streams?.[0]?.url !== entry.streams[0].url)];
+  await writeManualMovies(next);
+  console.log(`[streams] manual add: ${entry.title}`);
+  return entry;
+}
+
+async function removeManualStream(id) {
+  if (!isReady()) throw new Error("Stream catalog Redis is not ready");
+  const cleanId = String(id || "").trim();
+  if (!cleanId) throw new Error("id is required");
+  const manuals = await readManualMovies();
+  const next = manuals.filter((m) => m?.id !== cleanId);
+  if (next.length === manuals.length) {
+    throw new Error("Manual stream not found");
+  }
+  await writeManualMovies(next);
+  console.log(`[streams] manual remove: ${cleanId}`);
+  return { ok: true, id: cleanId };
 }
 
 function emptyCatalog(reason, window = "week") {
@@ -279,9 +381,12 @@ async function getCatalog() {
   }
 
   if (!raw) {
+    const manuals = await readManualMovies();
     return {
-      movies: [],
+      movies: manuals,
       refreshedAt: null,
+      count: manuals.length,
+      playable: manuals.filter((m) => Array.isArray(m.streams) && m.streams.length > 0).length,
       refreshing: refreshInProgress,
       lastError: lastRefreshError,
     };
@@ -289,9 +394,14 @@ async function getCatalog() {
 
   try {
     const catalog = JSON.parse(raw);
+    const scraped = Array.isArray(catalog.movies) ? catalog.movies : [];
+    const manuals = await readManualMovies();
+    const movies = [...manuals, ...scraped.filter((m) => !m?.manual)];
     return {
       ...catalog,
-      movies: Array.isArray(catalog.movies) ? catalog.movies : [],
+      movies,
+      count: movies.length,
+      playable: movies.filter((m) => Array.isArray(m.streams) && m.streams.length > 0).length,
       refreshing: refreshInProgress,
       lastError: lastRefreshError,
     };
@@ -332,6 +442,8 @@ module.exports = {
   refreshCatalog,
   getCatalog,
   getRefreshStatus,
+  addManualStream,
+  removeManualStream,
   shutdownStreamCatalog,
   isReady,
 };

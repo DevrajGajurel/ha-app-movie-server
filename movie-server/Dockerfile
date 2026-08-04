@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.6.6
+ARG APP_BUILD_VERSION=1.6.7
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \

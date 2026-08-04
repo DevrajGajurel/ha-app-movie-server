@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.7
+
+- Server Streams: manually add an m3u8 URL (title + URL + optional Referer) to the Redis cache; manuals survive catalog refresh and can be removed from the card.
+
 ## 1.6.6
 
 - Server Streams player starts at highest quality and lets you switch Quality/Audio in the player (no pre-play picker).

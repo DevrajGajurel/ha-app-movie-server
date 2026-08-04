@@ -51,6 +51,8 @@ const {
   getCatalog,
   refreshCatalog,
   getRefreshStatus,
+  addManualStream,
+  removeManualStream,
 } = require("./streamCatalog");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
@@ -594,6 +596,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === "/api/streams/manual" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const entry = await addManualStream(body);
+      sendJson(res, 201, { ok: true, movie: normalizeStreamMovie(entry) });
+    } catch (err) {
+      const status = /required|must be/i.test(err.message) ? 400 : 500;
+      sendJson(res, status, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/streams/manual" && req.method === "DELETE") {
+    try {
+      const incoming = new URL(req.url || "/", "http://localhost");
+      const id = incoming.searchParams.get("id");
+      const result = await removeManualStream(id);
+      sendJson(res, 200, result);
+    } catch (err) {
+      const status = /required/i.test(err.message) ? 400 : /not found/i.test(err.message) ? 404 : 500;
+      sendJson(res, status, { error: err.message });
+    }
+    return;
+  }
+
   if (url === "/api/config" && req.method === "GET") {
     sendJson(res, 200, await getConfigPayloadAsync());
     return;
@@ -1130,6 +1157,8 @@ function normalizeStreamMovie(movie) {
   });
 
   return {
+    id: movie.id || null,
+    manual: Boolean(movie.manual),
     tmdbId: movie.tmdbId != null ? String(movie.tmdbId) : null,
     title: movie.title || "Untitled",
     overview: movie.overview || null,

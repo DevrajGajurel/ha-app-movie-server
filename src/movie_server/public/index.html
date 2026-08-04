@@ -281,6 +281,67 @@
       font-weight: 500;
     }
 
+    .streams-add {
+      margin-bottom: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .streams-add-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.55rem;
+    }
+
+    .streams-add-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 2fr 1.2fr auto;
+      gap: 0.5rem;
+      align-items: end;
+    }
+
+    .streams-add-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      min-width: 0;
+    }
+
+    .streams-add-field label {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .streams-add-field input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      font-size: 0.8rem;
+      width: 100%;
+    }
+
+    .streams-add-field input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .streams-add-status {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-height: 1.1em;
+    }
+
+    .streams-add-status.error {
+      color: var(--danger);
+    }
+
+    .streams-add-status.ok {
+      color: var(--success);
+    }
+
     .streams-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -372,6 +433,34 @@
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
       z-index: 1;
+    }
+
+    .stream-card-badge.manual {
+      left: auto;
+      right: 0.4rem;
+      background: rgba(74, 222, 128, 0.95);
+      color: #0f1117;
+    }
+
+    .stream-card-remove {
+      position: absolute;
+      bottom: 0.4rem;
+      right: 0.4rem;
+      z-index: 2;
+      background: rgba(15, 17, 23, 0.85);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.2rem 0.45rem;
+      font-size: 0.65rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .stream-card-remove:hover:not(:disabled) {
+      background: rgba(255, 107, 107, 0.2);
+      border-color: var(--danger);
+      color: var(--danger);
     }
 
     .stream-card-body {
@@ -1030,6 +1119,10 @@
         padding: 0.75rem;
       }
 
+      .streams-add-grid {
+        grid-template-columns: 1fr;
+      }
+
       main,
       .filters,
       .source-config-panel {
@@ -1350,6 +1443,25 @@
               <p class="streams-meta" id="streams-meta">Loading catalog…</p>
               <button id="streams-refresh" type="button">Refresh catalog</button>
             </div>
+            <div class="streams-add" id="streams-add">
+              <div class="streams-add-title">Add m3u8 to cache</div>
+              <div class="streams-add-grid">
+                <div class="streams-add-field">
+                  <label for="manual-stream-title">Title</label>
+                  <input id="manual-stream-title" type="text" placeholder="Movie title" autocomplete="off" />
+                </div>
+                <div class="streams-add-field">
+                  <label for="manual-stream-url">m3u8 URL</label>
+                  <input id="manual-stream-url" type="url" placeholder="https://…/master.m3u8" autocomplete="off" />
+                </div>
+                <div class="streams-add-field">
+                  <label for="manual-stream-referer">Referer (optional)</label>
+                  <input id="manual-stream-referer" type="url" placeholder="https://…" autocomplete="off" />
+                </div>
+                <button id="manual-stream-add" type="button">Add</button>
+              </div>
+              <p class="streams-add-status" id="manual-stream-status"></p>
+            </div>
             <div id="streams-content" class="streams-empty">Loading…</div>
           </div>
         </section>
@@ -1401,6 +1513,11 @@
     const streamsMetaEl = document.getElementById("streams-meta");
     const streamsContentEl = document.getElementById("streams-content");
     const streamsRefreshBtn = document.getElementById("streams-refresh");
+    const manualStreamTitle = document.getElementById("manual-stream-title");
+    const manualStreamUrl = document.getElementById("manual-stream-url");
+    const manualStreamReferer = document.getElementById("manual-stream-referer");
+    const manualStreamAddBtn = document.getElementById("manual-stream-add");
+    const manualStreamStatus = document.getElementById("manual-stream-status");
     const streamPlayerEl = document.getElementById("stream-player");
     const streamPlayerTitle = document.getElementById("stream-player-title");
     const streamPlayerVideo = document.getElementById("stream-player-video");
@@ -2467,11 +2584,18 @@
               .map((label) => `<span class="stream-quality-chip">${escapeHtml(label)}</span>`)
               .join("")}</div>`
           : "";
+        const manualBadge = movie.manual ? `<span class="stream-card-badge manual">Manual</span>` : "";
+        const removeBtn =
+          movie.manual && movie.id
+            ? `<button type="button" class="stream-card-remove" data-manual-id="${escapeAttr(movie.id)}">Remove</button>`
+            : "";
         return `
           <article class="stream-card" data-stream-index="${index}" tabindex="0" role="button" aria-label="Play ${escapeAttr(movie.title || "stream")}">
             <div class="stream-card-poster">
               ${poster}
               ${labels[0] ? `<span class="stream-card-badge">${escapeHtml(labels[0])}</span>` : ""}
+              ${manualBadge}
+              ${removeBtn}
               <div class="stream-card-play" aria-hidden="true"><span>▶</span></div>
             </div>
             <div class="stream-card-body">
@@ -2482,6 +2606,63 @@
           </article>
         `;
       }).join("");
+    }
+
+    async function addManualStreamFromForm() {
+      const title = manualStreamTitle.value.trim();
+      const url = manualStreamUrl.value.trim();
+      const referer = manualStreamReferer.value.trim();
+      if (!title || !url) {
+        manualStreamStatus.className = "streams-add-status error";
+        manualStreamStatus.textContent = "Title and m3u8 URL are required.";
+        return;
+      }
+
+      manualStreamAddBtn.disabled = true;
+      manualStreamAddBtn.textContent = "Adding…";
+      manualStreamStatus.className = "streams-add-status";
+      manualStreamStatus.textContent = "Saving to Redis…";
+
+      try {
+        const res = await fetch(apiUrl("streams/manual"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, url, referer: referer || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        manualStreamTitle.value = "";
+        manualStreamUrl.value = "";
+        manualStreamReferer.value = "";
+        manualStreamStatus.className = "streams-add-status ok";
+        manualStreamStatus.textContent = `Added “${data.movie?.title || title}” to cache.`;
+        await loadStreamsCatalog();
+      } catch (err) {
+        manualStreamStatus.className = "streams-add-status error";
+        manualStreamStatus.textContent = err.message;
+      } finally {
+        manualStreamAddBtn.disabled = false;
+        manualStreamAddBtn.textContent = "Add";
+      }
+    }
+
+    async function removeManualStreamFromUi(id) {
+      if (!id) return;
+      manualStreamStatus.className = "streams-add-status";
+      manualStreamStatus.textContent = "Removing…";
+      try {
+        const res = await fetch(apiUrl(`streams/manual?id=${encodeURIComponent(id)}`), {
+          method: "DELETE",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        manualStreamStatus.className = "streams-add-status ok";
+        manualStreamStatus.textContent = "Removed from cache.";
+        await loadStreamsCatalog();
+      } catch (err) {
+        manualStreamStatus.className = "streams-add-status error";
+        manualStreamStatus.textContent = err.message;
+      }
     }
 
     async function loadStreamsCatalog() {
@@ -2629,6 +2810,13 @@
     refreshBtn.addEventListener("click", () => load({ refresh: true }));
     streamsRefreshBtn.addEventListener("click", () => refreshStreamsCatalog());
     streamsContentEl.addEventListener("click", (e) => {
+      const removeBtn = e.target.closest(".stream-card-remove");
+      if (removeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        removeManualStreamFromUi(removeBtn.dataset.manualId);
+        return;
+      }
       const card = e.target.closest(".stream-card[data-stream-index]");
       if (!card) return;
       e.preventDefault();
@@ -2637,11 +2825,18 @@
     });
     streamsContentEl.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
+      if (e.target.closest(".stream-card-remove")) return;
       const card = e.target.closest(".stream-card[data-stream-index]");
       if (!card) return;
       e.preventDefault();
       const movie = streamsCatalogMovies[Number(card.dataset.streamIndex)];
       if (movie) openStreamMovie(movie);
+    });
+    manualStreamAddBtn.addEventListener("click", () => addManualStreamFromForm());
+    [manualStreamTitle, manualStreamUrl, manualStreamReferer].forEach((input) => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") addManualStreamFromForm();
+      });
     });
     streamPlayerQuality.addEventListener("change", () => {
       const index = Number(streamPlayerQuality.value);
