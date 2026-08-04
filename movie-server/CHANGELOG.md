@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.15
+
+- Source search now queries primary and secondary (`/?s=…`) in parallel when the local cache has no matches; primary search resolves the live domain and ignores the homepage "Latest Movies" block appended under search results.
+
 ## 1.6.14
 
 - Secondary TV: "Download entire season" queues every episode in the background, picks the highest-quality shegu link first, and falls back to the next link if one fails.

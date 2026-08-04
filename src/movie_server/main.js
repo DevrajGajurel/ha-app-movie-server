@@ -475,7 +475,7 @@ function documentOrderIndex(document) {
   return index;
 }
 
-function scrapePage(pageUrl) {
+function scrapePage(pageUrl, { search = false } = {}) {
   return fetch(pageUrl)
     .then(async (response) => {
       if (!response.ok) {
@@ -484,17 +484,23 @@ function scrapePage(pageUrl) {
 
       const html = await response.text();
       const { document } = parseHTML(html);
+      const latestMarker = findLatestMoviesMarker(document);
+      const order = latestMarker ? documentOrderIndex(document) : null;
+      const markerIndex = order?.get(latestMarker);
 
-      const marker = findLatestMoviesMarker(document);
-      const order = marker ? documentOrderIndex(document) : null;
-      const markerIndex = order?.get(marker);
-      const anchors = [...document.querySelectorAll(".row-thumb-link")].filter(
-        (a) => markerIndex === undefined || order.get(a) > markerIndex
-      );
+      // Listing pages: keep cards after "Latest Movies" (skip trending ads).
+      // Search pages: keep cards before "Latest Movies" (search hits come
+      // first; the homepage grid is appended below on the same page).
+      let anchors = [...document.querySelectorAll(".row-thumb-link")];
+      if (markerIndex !== undefined) {
+        anchors = search
+          ? anchors.filter((a) => order.get(a) < markerIndex)
+          : anchors.filter((a) => order.get(a) > markerIndex);
+      }
 
       const results = anchors.map((a) => ({
         title: a.querySelector("img")?.alt ?? "",
-        link: new URL(a.getAttribute("href"), pageUrl).href,
+        link: new URL(a.getAttribute("href"), response.url || pageUrl).href,
       }));
       recordScrapeSuccess();
       return results;
@@ -766,37 +772,71 @@ async function searchSourceMovies(query) {
   const q = String(query || "").trim();
   if (!q) return [];
 
-  async function searchOne(baseUrl, { hdOnly = false, secondary = false } = {}) {
+  // MAIN_URL may be a rotated domain (e.g. .faith) that redirects search
+  // pages to the homepage. Resolve the live origin first so search.html
+  // stays on the current domain.
+  let primaryBase = mainUrl;
+  try {
+    primaryBase = await resolveRedirectUrl(mainUrl);
+  } catch (err) {
+    console.warn(`[search] resolve main URL failed: ${err.message}`);
+  }
+
+  async function searchOne(baseUrl, { secondary = false } = {}) {
     const searchUrl = buildSearchUrl(baseUrl, q, { secondary });
+    console.log(`[search] ${secondary ? "secondary" : "primary"}: ${searchUrl}`);
     const pageMovies = secondary
       ? await scrapeSecondaryPage(searchUrl)
-      : await scrapePage(searchUrl);
+      : await scrapePage(searchUrl, { search: true });
     const seen = new Set();
     const movies = [];
     for (const movie of pageMovies) {
       const tagged = secondary
         ? tagSecondaryMovie(movie)
         : tagQuality(movie, HD_KEYWORDS, K4_KEYWORDS);
-      if (hdOnly && !tagged.quality?.hd) continue;
       if (!seen.has(tagged.link)) {
         seen.add(tagged.link);
         movies.push(tagged);
       }
     }
-    return movies;
+    return { movies, searchUrl };
   }
 
-  const primary = await searchOne(mainUrl);
-  let movies = primary;
-
+  const tasks = [searchOne(primaryBase, { secondary: false })];
   if (secondaryUrl) {
-    try {
-      const secondaryHd = await searchOne(secondaryUrl, { secondary: true });
-      movies = mergeSecondaryHd(primary, secondaryHd);
-    } catch (err) {
-      console.warn(`[search] secondary HD source failed (${secondaryUrl}): ${err.message}`);
+    tasks.push(searchOne(secondaryUrl, { secondary: true }));
+  }
+
+  const settled = await Promise.allSettled(tasks);
+  const primaryResult = settled[0];
+  const secondaryResult = settled[1];
+
+  let primary = [];
+  let primarySearchUrl = buildSearchUrl(primaryBase, q);
+  if (primaryResult.status === "fulfilled") {
+    primary = primaryResult.value.movies;
+    primarySearchUrl = primaryResult.value.searchUrl;
+  } else {
+    console.warn(`[search] primary source failed: ${primaryResult.reason?.message || primaryResult.reason}`);
+  }
+
+  let secondary = [];
+  let secondarySearchUrl = secondaryUrl ? buildSearchUrl(secondaryUrl, q, { secondary: true }) : null;
+  if (secondaryResult) {
+    if (secondaryResult.status === "fulfilled") {
+      secondary = secondaryResult.value.movies;
+      secondarySearchUrl = secondaryResult.value.searchUrl;
+    } else {
+      console.warn(
+        `[search] secondary source failed (${secondaryUrl}): ${secondaryResult.reason?.message || secondaryResult.reason}`
+      );
     }
   }
+
+  const movies = secondary.length ? mergeSecondaryHd(primary, secondary) : primary;
+  console.log(
+    `[search] "${q}": primary ${primary.length}, secondary ${secondary.length}, merged ${movies.length}`
+  );
 
   const withDownloadLinks = await resolveDownloadLinks(movies);
   let result = withDownloadLinks;
@@ -804,7 +844,14 @@ async function searchSourceMovies(query) {
     result = await enrichMovies(withDownloadLinks, TMDB_API_KEY);
   }
 
-  return result.map((movie) => finalizeQuality(movie));
+  const finalized = result.map((movie) => finalizeQuality(movie));
+  return {
+    movies: finalized,
+    primarySearchUrl,
+    secondarySearchUrl,
+    primaryCount: primary.length,
+    secondaryCount: secondary.length,
+  };
 }
 
 async function scrapeMovies() {
@@ -1039,14 +1086,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const movies = await searchSourceMovies(query);
+      const searchResult = await searchSourceMovies(query);
       sendJson(res, 200, {
         query: String(query).trim(),
-        searchUrl: buildSearchUrl(mainUrl, String(query).trim()),
-        movies,
-        count: movies.length,
+        searchUrl: searchResult.primarySearchUrl || buildSearchUrl(mainUrl, String(query).trim()),
+        secondarySearchUrl: searchResult.secondarySearchUrl || null,
+        primaryCount: searchResult.primaryCount,
+        secondaryCount: searchResult.secondaryCount,
+        movies: searchResult.movies,
+        count: searchResult.movies.length,
         tmdbEnabled: Boolean(TMDB_API_KEY),
         source: mainUrl,
+        secondaryUrl: secondaryUrl || null,
       });
     } catch (err) {
       sendJson(res, 500, { error: err.message });

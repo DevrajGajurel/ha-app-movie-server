@@ -3614,13 +3614,13 @@
       if (sourceSearchQuery === query.trim() && !sourceSearchLoading) {
         searchResults.innerHTML = "";
         searchHint.hidden = false;
-        searchHint.textContent = `No matches for "${query.trim()}" on the source site.`;
+        searchHint.textContent = `No matches for "${query.trim()}" on the source sites.`;
         return;
       }
 
       searchResults.innerHTML = "";
       searchHint.hidden = false;
-      searchHint.textContent = `No local matches. Searching source site for "${query.trim()}"…`;
+      searchHint.textContent = `No local matches. Searching source sites for "${query.trim()}"…`;
       sourceSearchLoading = true;
 
       if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
@@ -3640,7 +3640,7 @@
           if (!remoteMatches.length) {
             searchResults.innerHTML = "";
             searchHint.hidden = false;
-            searchHint.textContent = `No matches for "${requestQuery}" on the source site.`;
+            searchHint.textContent = `No matches for "${requestQuery}" on the source sites.`;
             return;
           }
           searchHint.hidden = true;
