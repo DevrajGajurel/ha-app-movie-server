@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.12
+
+- Secondary pagination now uses `/page/1/` … `/page/N/` (4khdhub ignores `?page=` and always returned page 1).
+
 ## 1.6.11
 
 - Secondary source (4khdhub) now scrapes `a.movie-card` / `.movie-card-meta` instead of the primary site selectors, and resolves downloads via `downloads.shegu.st/movie/{tmdbId}` (direct file URLs in one step).

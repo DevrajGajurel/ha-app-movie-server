@@ -209,7 +209,14 @@ function setCinebyUrl(newUrl) {
   persistConfig();
 }
 
-function buildPageUrl(baseUrl, page) {
+function buildPageUrl(baseUrl, page, { secondary = false } = {}) {
+  if (secondary) {
+    // 4khdhub paginates as /page/1/, /page/2/, … — ?page=N is ignored and
+    // always returns the homepage listing.
+    const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+    return new URL(`page/${page}/`, base).href;
+  }
+
   const url = new URL(baseUrl);
   if (page > 1) {
     url.searchParams.set("page", String(page));
@@ -579,7 +586,7 @@ async function scrapeSourceRange(baseUrl, fromPage, toPage, { hdOnly = false, se
   const movies = [];
 
   for (let page = start; page <= end; page++) {
-    const pageUrl = buildPageUrl(baseUrl, page);
+    const pageUrl = buildPageUrl(baseUrl, page, { secondary });
     const pageMovies = secondary
       ? await scrapeSecondaryPage(pageUrl)
       : await scrapePage(pageUrl);
