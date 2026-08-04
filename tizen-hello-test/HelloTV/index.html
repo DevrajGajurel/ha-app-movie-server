@@ -2322,6 +2322,20 @@
     }
 
     function formatJobStatus(job) {
+      if (job.type === "season") {
+        const done = Number(job.completedEpisodes || 0) + Number(job.skippedEpisodes || 0);
+        const total = Number(job.episodeCount || 0);
+        if (job.status === "queued") return `Season queued… 0/${total}`;
+        if (job.status === "downloading") {
+          const current = job.currentEpisode ? ` (E${String(job.currentEpisode).padStart(2, "0")})` : "";
+          return `Season… ${done}/${total}${current}`;
+        }
+        if (job.status === "completed") {
+          const failed = Number(job.failedEpisodes || 0);
+          return failed ? `Season done (${failed} failed)` : "Season complete";
+        }
+        if (job.status === "failed") return `Season failed${job.error ? `: ${job.error}` : ""}`;
+      }
       if (job.status === "queued") return "Queued…";
       if (job.status === "downloading") {
         if (job.totalBytes > 0) {
@@ -3848,7 +3862,7 @@
 
     function renderSeasonPicker(seasons) {
       return `
-        <p class="download-save-hint">Choose a season</p>
+        <p class="download-save-hint">Choose a season — download the whole season, or pick episodes</p>
         <div class="episode-picker-grid">
           ${seasons
             .map(
@@ -3867,7 +3881,11 @@
       const season = seasonMeta.seasonNumber;
       return `
         <button type="button" class="btn-secondary download-back-seasons">← Seasons</button>
-        <p class="download-save-hint">${escapeHtml(seasonMeta.name || `Season ${season}`)} — choose an episode</p>
+        <p class="download-save-hint">${escapeHtml(seasonMeta.name || `Season ${season}`)}</p>
+        <button type="button" class="download-option shegu-download-season" data-season="${season}" data-episode-count="${count}">
+          ⬇ Download entire season (${count} episodes)
+        </button>
+        <p class="download-save-hint">Or choose a single episode</p>
         <div class="episode-picker-grid">
           ${Array.from({ length: count }, (_, i) => i + 1)
             .map(
@@ -3879,6 +3897,46 @@
             .join("")}
         </div>
       `;
+    }
+
+    async function startSeasonDownload(season, episodeCount, button) {
+      button.disabled = true;
+      button.textContent = `Starting S${pad2(season)}…`;
+
+      const res = await fetch(apiUrl("downloads/season"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tmdbId: downloadModalState.tmdbId,
+          season,
+          episodeCount,
+          movieTitle: downloadModalState.baseTitle || downloadModalState.movieTitle,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      await refreshDownloadJobs({ rerender: true });
+      // Poll season job status on the button itself.
+      const label = `Download entire season (S${pad2(season)})`;
+      const timer = setInterval(async () => {
+        try {
+          const jobsRes = await fetch(apiUrl("downloads/jobs"));
+          const jobsData = await jobsRes.json();
+          const job = jobsData.jobs?.find((item) => item.id === data.job.id);
+          if (!job) return;
+          button.textContent = `${label} — ${formatJobStatus(job)}`;
+          if (job.status === "completed" || job.status === "failed") {
+            clearInterval(timer);
+            button.disabled = job.status === "completed";
+            button.classList.toggle("saved", job.status === "completed");
+            button.classList.toggle("failed", job.status === "failed");
+            refreshDownloadLibrary().then(renderCurrentView);
+          }
+        } catch {
+          // keep polling
+        }
+      }, 1500);
     }
 
     async function loadSecondaryEpisodeDownloads(season, episode) {
@@ -4271,6 +4329,23 @@
         downloadModalState.selectedSeason = season;
         downloadModalContent.innerHTML = renderEpisodeButtons(meta);
         window.TVFocusManager?.focusFirst();
+        return;
+      }
+
+      const seasonDownload = e.target.closest(".shegu-download-season");
+      if (seasonDownload) {
+        e.preventDefault();
+        try {
+          await startSeasonDownload(
+            Number.parseInt(seasonDownload.dataset.season, 10),
+            Number.parseInt(seasonDownload.dataset.episodeCount, 10),
+            seasonDownload
+          );
+        } catch (err) {
+          seasonDownload.disabled = false;
+          seasonDownload.classList.add("failed");
+          seasonDownload.textContent = err.message;
+        }
         return;
       }
 

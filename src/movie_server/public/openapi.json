@@ -362,6 +362,32 @@
         }
       }
     },
+    "/api/downloads/season": {
+      "post": {
+        "tags": ["Downloads"],
+        "summary": "Download an entire TV season via shegu (highest quality + link fallback per episode)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tmdbId", "season", "episodeCount"],
+                "properties": {
+                  "tmdbId": { "type": "string" },
+                  "season": { "type": "integer", "minimum": 1 },
+                  "episodeCount": { "type": "integer", "minimum": 1 },
+                  "movieTitle": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Season job started" }
+        }
+      }
+    },
     "/api/downloads/jobs": {
       "get": {
         "tags": ["Downloads"],

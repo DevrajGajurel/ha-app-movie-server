@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.14
+
+- Secondary TV: "Download entire season" queues every episode in the background, picks the highest-quality shegu link first, and falls back to the next link if one fails.
+
 ## 1.6.13
 
 - Secondary TV downloads use `downloads.shegu.st/tv/{tmdbId}/{season}/{episode}` with a season/episode picker (movies still use `/movie/{tmdbId}`).

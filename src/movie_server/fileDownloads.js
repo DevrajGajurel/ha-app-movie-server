@@ -198,51 +198,152 @@ function isAria2Enabled() {
 async function runDownload(job) {
   job.status = "downloading";
 
-  try {
-    const dir = ensureDir(job.movieTitle, job.tmdbId);
-    const filePath = isAria2Enabled() ? await downloadFileWithAria2(job, dir) : await downloadFileWithFetch(job, dir);
+  const candidates =
+    Array.isArray(job.candidates) && job.candidates.length
+      ? job.candidates
+      : [{ url: job.url, label: job.label }];
 
-    job.filePath = filePath;
-    job.status = "completed";
-    job.finishedAt = new Date().toISOString();
+  let lastError = null;
 
-    writeMarker(dir, {
-      tmdbId: job.tmdbId || null,
-      movieTitle: job.movieTitle || null,
-      label: job.label || null,
-      file: path.basename(filePath),
-      savedAt: job.finishedAt,
-    });
-
-    console.log(`[download] saved job #${job.id} -> ${filePath}`);
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    job.url = candidate.url;
+    job.label = candidate.label || job.label;
+    job.attempt = i + 1;
+    job.attemptsTotal = candidates.length;
+    job.error = null;
 
     try {
-      const { refreshAfterDownload } = require("./emby");
-      await refreshAfterDownload(filePath);
-    } catch (err) {
-      console.warn(`[download] Emby refresh failed: ${err.message}`);
-    }
+      const dir = ensureDir(job.movieTitle, job.tmdbId);
+      const filePath = isAria2Enabled()
+        ? await downloadFileWithAria2(job, dir)
+        : await downloadFileWithFetch(job, dir);
 
-    // Convert this file's subtitle tracks now, not on first play — see
-    // prefetchAllSubtitles' comment for why.
-    prefetchSubtitlesForFile(filePath).catch((err) => {
-      console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
-    });
-  } catch (err) {
-    job.status = "failed";
-    job.error = err.message;
-    job.finishedAt = new Date().toISOString();
-    console.error(`[download] failed job #${job.id}: ${err.message}`);
+      job.filePath = filePath;
+      job.status = "completed";
+      job.finishedAt = new Date().toISOString();
+
+      writeMarker(dir, {
+        tmdbId: job.tmdbId || null,
+        movieTitle: job.movieTitle || null,
+        label: job.label || null,
+        file: path.basename(filePath),
+        savedAt: job.finishedAt,
+      });
+
+      console.log(
+        `[download] saved job #${job.id} (attempt ${job.attempt}/${job.attemptsTotal}) -> ${filePath}`
+      );
+
+      try {
+        const { refreshAfterDownload } = require("./emby");
+        await refreshAfterDownload(filePath);
+      } catch (err) {
+        console.warn(`[download] Emby refresh failed: ${err.message}`);
+      }
+
+      prefetchSubtitlesForFile(filePath).catch((err) => {
+        console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
+      });
+      return;
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `[download] job #${job.id} attempt ${i + 1}/${candidates.length} failed (${candidate.label || candidate.url}): ${err.message}`
+      );
+    }
   }
+
+  job.status = "failed";
+  job.error = lastError?.message || "All download links failed";
+  job.finishedAt = new Date().toISOString();
+  console.error(`[download] failed job #${job.id}: ${job.error}`);
 }
 
-function startDownload({ url, label, movieTitle, tmdbId }) {
+function startDownload({ url, label, movieTitle, tmdbId, candidates = null, parentId = null }) {
+  const normalizedCandidates =
+    Array.isArray(candidates) && candidates.length
+      ? candidates
+          .filter((c) => c?.url)
+          .map((c) => ({ url: String(c.url), label: String(c.label || label || "Download") }))
+      : null;
+
   const job = {
     id: ++jobId,
-    url,
-    label,
+    url: normalizedCandidates?.[0]?.url || url,
+    label: normalizedCandidates?.[0]?.label || label,
+    candidates: normalizedCandidates,
+    parentId: parentId || null,
     movieTitle: movieTitle || null,
     tmdbId: tmdbId ? String(tmdbId) : null,
+    status: "queued",
+    receivedBytes: 0,
+    totalBytes: 0,
+    filePath: null,
+    error: null,
+    attempt: 0,
+    attemptsTotal: normalizedCandidates?.length || 1,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+  };
+
+  jobs.unshift(job);
+  if (jobs.length > 200) jobs.length = 200;
+
+  console.log(`[download] queued job #${job.id} "${job.label}" -> ${getDownloadDir()}`);
+  job._promise = runDownload(job).finally(() => {
+    delete job._promise;
+  });
+  return job;
+}
+
+function waitForJob(job) {
+  if (!job) return Promise.resolve();
+  if (job._promise) return job._promise;
+  if (job.status === "completed" || job.status === "failed") return Promise.resolve(job);
+  return new Promise((resolve) => {
+    const timer = setInterval(() => {
+      if (job.status === "completed" || job.status === "failed") {
+        clearInterval(timer);
+        resolve(job);
+      }
+    }, 500);
+  });
+}
+
+function startSeasonJob({
+  tmdbId,
+  season,
+  episodeCount,
+  movieTitle,
+  downloadEpisode,
+}) {
+  const seasonNum = Number.parseInt(season, 10);
+  const episodes = Number.parseInt(episodeCount, 10);
+  if (!tmdbId || !Number.isFinite(seasonNum) || seasonNum < 1) {
+    throw new Error("tmdbId and season are required");
+  }
+  if (!Number.isFinite(episodes) || episodes < 1) {
+    throw new Error("episodeCount must be >= 1");
+  }
+  if (typeof downloadEpisode !== "function") {
+    throw new Error("downloadEpisode callback is required");
+  }
+
+  const job = {
+    id: ++jobId,
+    type: "season",
+    url: null,
+    label: `${movieTitle || "Series"} S${String(seasonNum).padStart(2, "0")} (full season)`,
+    movieTitle: movieTitle || null,
+    tmdbId: String(tmdbId),
+    season: seasonNum,
+    episodeCount: episodes,
+    completedEpisodes: 0,
+    failedEpisodes: 0,
+    skippedEpisodes: 0,
+    currentEpisode: null,
+    episodeJobIds: [],
     status: "queued",
     receivedBytes: 0,
     totalBytes: 0,
@@ -253,19 +354,72 @@ function startDownload({ url, label, movieTitle, tmdbId }) {
   };
 
   jobs.unshift(job);
-  if (jobs.length > 100) jobs.length = 100;
+  if (jobs.length > 200) jobs.length = 200;
 
-  console.log(`[download] queued job #${job.id} "${label}" -> ${getDownloadDir()}`);
-  runDownload(job);
+  console.log(
+    `[download] queued season job #${job.id} "${job.label}" (${episodes} episode(s))`
+  );
+
+  job._promise = (async () => {
+    job.status = "downloading";
+    for (let ep = 1; ep <= episodes; ep++) {
+      job.currentEpisode = ep;
+      try {
+        const episodeJob = await downloadEpisode({
+          seasonJob: job,
+          season: seasonNum,
+          episode: ep,
+        });
+        if (episodeJob?.id) job.episodeJobIds.push(episodeJob.id);
+        if (episodeJob?.status === "completed") {
+          job.completedEpisodes += 1;
+        } else if (episodeJob?.status === "skipped") {
+          job.skippedEpisodes += 1;
+        } else {
+          job.failedEpisodes += 1;
+        }
+      } catch (err) {
+        job.failedEpisodes += 1;
+        console.warn(
+          `[download] season job #${job.id} S${seasonNum}E${ep} failed: ${err.message}`
+        );
+      }
+      // Surface aggregate progress for UI polling.
+      job.receivedBytes = job.completedEpisodes + job.skippedEpisodes;
+      job.totalBytes = episodes;
+    }
+
+    job.currentEpisode = null;
+    job.finishedAt = new Date().toISOString();
+    if (job.completedEpisodes + job.skippedEpisodes === 0) {
+      job.status = "failed";
+      job.error = "No episodes downloaded";
+    } else if (job.failedEpisodes > 0) {
+      job.status = "completed";
+      job.error = `${job.failedEpisodes} episode(s) failed`;
+    } else {
+      job.status = "completed";
+      job.error = null;
+    }
+    console.log(
+      `[download] season job #${job.id} finished: ${job.completedEpisodes} ok, ${job.skippedEpisodes} skipped, ${job.failedEpisodes} failed`
+    );
+  })().finally(() => {
+    delete job._promise;
+  });
+
   return job;
 }
 
 function getJob(id) {
-  return jobs.find((job) => job.id === id);
+  const job = jobs.find((item) => item.id === id);
+  if (!job) return null;
+  const { _promise, ...rest } = job;
+  return rest;
 }
 
 function listJobs() {
-  return jobs;
+  return jobs.map(({ _promise, ...rest }) => rest);
 }
 
 function initDownloadDir() {
@@ -1035,6 +1189,8 @@ function listProgress() {
 module.exports = {
   getDownloadDir,
   startDownload,
+  startSeasonJob,
+  waitForJob,
   getJob,
   listJobs,
   initDownloadDir,

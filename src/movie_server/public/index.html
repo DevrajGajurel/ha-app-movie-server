@@ -2041,6 +2041,20 @@
     }
 
     function formatJobStatus(job) {
+      if (job.type === "season") {
+        const done = Number(job.completedEpisodes || 0) + Number(job.skippedEpisodes || 0);
+        const total = Number(job.episodeCount || 0);
+        if (job.status === "queued") return `Season queued… 0/${total}`;
+        if (job.status === "downloading") {
+          const current = job.currentEpisode ? ` (E${String(job.currentEpisode).padStart(2, "0")})` : "";
+          return `Season… ${done}/${total}${current}`;
+        }
+        if (job.status === "completed") {
+          const failed = Number(job.failedEpisodes || 0);
+          return failed ? `Season done (${failed} failed)` : "Season complete";
+        }
+        if (job.status === "failed") return `Season failed${job.error ? `: ${job.error}` : ""}`;
+      }
       if (job.status === "queued") return "Queued…";
       if (job.status === "downloading") {
         if (job.totalBytes > 0) {
@@ -2050,8 +2064,8 @@
         return "Downloading…";
       }
       if (job.status === "completed") return "Saved";
-      if (job.status === "failed") return `Failed: ${job.error}`;
-      return job.status;
+      if (job.status === "failed") return `Failed${job.error ? `: ${job.error}` : ""}`;
+      return job.status || "";
     }
 
     function jobProgress(job) {
@@ -2332,19 +2346,60 @@
 
       return `
         <div class="episode-picker">
-          <p class="download-save-hint">Choose a season and episode, then load download links.</p>
+          <p class="download-save-hint">Download a full season (highest quality, with link fallback), or pick one episode.</p>
           <div class="episode-picker-row">
             <label for="shegu-season">Season</label>
             <select id="shegu-season">${seasonOptions}</select>
           </div>
+          <button type="button" class="btn-secondary" id="shegu-download-season">Download entire season</button>
+          <div id="shegu-season-status" class="download-save-hint" hidden></div>
+          <hr style="border:0;border-top:1px solid var(--border);margin:0.25rem 0;">
           <div class="episode-picker-row">
             <label for="shegu-episode">Episode</label>
             <select id="shegu-episode">${episodeOptions}</select>
           </div>
-          <button type="button" class="btn-secondary" id="shegu-load-episode">Load downloads</button>
+          <button type="button" class="btn-secondary" id="shegu-load-episode">Load episode downloads</button>
         </div>
         <div id="shegu-episode-results"></div>
       `;
+    }
+
+    async function startSeasonDownloadFromPicker() {
+      const season = Number.parseInt(document.getElementById("shegu-season")?.value, 10);
+      const seasons = Array.isArray(downloadModalState.seasons) ? downloadModalState.seasons : [];
+      const seasonMeta = seasons.find((s) => s.seasonNumber === season) || seasons[0];
+      const episodeCount = Math.max(1, Number(seasonMeta?.episodeCount) || 24);
+      const statusEl = document.getElementById("shegu-season-status");
+      const btn = document.getElementById("shegu-download-season");
+      if (!downloadModalState.tmdbId || !btn) return;
+
+      btn.disabled = true;
+      btn.textContent = "Starting season download…";
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = `Queuing S${pad2(season)} (${episodeCount} episodes)…`;
+      }
+
+      const res = await fetch(apiUrl("downloads/season"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tmdbId: downloadModalState.tmdbId,
+          season,
+          episodeCount,
+          movieTitle: downloadModalState.baseTitle || downloadModalState.movieTitle,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      await refreshDownloadJobs();
+      startJobPolling(data.job.id, btn, `Download entire season (S${pad2(season)})`, () => {
+        refreshDownloadLibrary().then(() => applyFiltersAndRender());
+      });
+      if (statusEl) {
+        statusEl.textContent = `Season download running in the background — highest quality per episode, with fallback links.`;
+      }
     }
 
     async function loadSecondaryEpisodeDownloads() {
@@ -2389,9 +2444,11 @@
     }
 
     function wireEpisodePicker(seasons) {
+      downloadModalState.seasons = seasons;
       const seasonSelect = document.getElementById("shegu-season");
       const episodeSelect = document.getElementById("shegu-episode");
       const loadBtn = document.getElementById("shegu-load-episode");
+      const seasonBtn = document.getElementById("shegu-download-season");
 
       seasonSelect?.addEventListener("change", () => {
         const selected = Number.parseInt(seasonSelect.value, 10);
@@ -2408,6 +2465,20 @@
         } catch (err) {
           const resultsEl = document.getElementById("shegu-episode-results");
           if (resultsEl) resultsEl.textContent = err.message;
+        }
+      });
+
+      seasonBtn?.addEventListener("click", async () => {
+        try {
+          await startSeasonDownloadFromPicker();
+        } catch (err) {
+          seasonBtn.disabled = false;
+          seasonBtn.textContent = "Download entire season";
+          const statusEl = document.getElementById("shegu-season-status");
+          if (statusEl) {
+            statusEl.hidden = false;
+            statusEl.textContent = err.message;
+          }
         }
       });
     }

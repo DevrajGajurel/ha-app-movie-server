@@ -17,6 +17,8 @@ const { parseKeywordList, tagQuality } = require("./quality");
 const { streamYoutubeTrailer } = require("./trailer");
 const {
   startDownload,
+  startSeasonJob,
+  waitForJob,
   getJob,
   listJobs,
   initDownloadDir,
@@ -317,6 +319,35 @@ function parseScrapedSeasonRange(seasonsText) {
   return null;
 }
 
+function parseSizeToGb(size) {
+  const text = String(size || "").trim();
+  const match = text.match(/^([\d.]+)\s*(tb|gb|mb|kb|b)?$/i);
+  if (!match) return 0;
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value)) return 0;
+  const unit = (match[2] || "gb").toLowerCase();
+  if (unit === "tb") return value * 1024;
+  if (unit === "gb") return value;
+  if (unit === "mb") return value / 1024;
+  if (unit === "kb") return value / (1024 * 1024);
+  return value / (1024 ** 3);
+}
+
+function rankSheguOptionsByQuality(options) {
+  return [...(options || [])]
+    .filter((opt) => opt?.href)
+    .sort((a, b) => {
+      const qA = Number(a.quality) || 0;
+      const qB = Number(b.quality) || 0;
+      if (qA !== qB) return qB - qA;
+      return parseSizeToGb(b.size) - parseSizeToGb(a.size);
+    });
+}
+
+function padSeasonEpisode(n) {
+  return String(n).padStart(2, "0");
+}
+
 async function fetchSheguDownloadOptions({
   tmdbId,
   mediaType = "movie",
@@ -369,6 +400,43 @@ async function fetchSheguDownloadOptions({
     selectors: [{ selector, matches: options.length }],
     requestUrl: apiUrl,
   };
+}
+
+async function downloadSheguEpisodeWithFallback({
+  tmdbId,
+  season,
+  episode,
+  movieTitle,
+  parentId = null,
+}) {
+  const result = await fetchSheguDownloadOptions({
+    tmdbId,
+    mediaType: "tv",
+    season,
+    episode,
+  });
+  const ranked = rankSheguOptionsByQuality(result.options);
+  if (!ranked.length) {
+    return {
+      id: null,
+      status: "skipped",
+      error: "No download links found",
+      season,
+      episode,
+    };
+  }
+
+  const episodeTitle = `${movieTitle} S${padSeasonEpisode(season)}E${padSeasonEpisode(episode)}`;
+  const job = startDownload({
+    url: ranked[0].href,
+    label: ranked[0].label,
+    movieTitle: episodeTitle,
+    tmdbId,
+    parentId,
+    candidates: ranked.map((opt) => ({ url: opt.href, label: opt.label })),
+  });
+  await waitForJob(job);
+  return job;
 }
 
 function readBody(req) {
@@ -993,18 +1061,65 @@ const server = http.createServer(async (req, res) => {
       const label = String(body.label || "Download").trim();
       const movieTitle = body.movieTitle ? String(body.movieTitle).trim() : null;
       const tmdbId = body.tmdbId ? String(body.tmdbId).trim() : null;
+      const candidates = Array.isArray(body.candidates) ? body.candidates : null;
 
-      if (!downloadUrl) {
+      if (!downloadUrl && !(candidates && candidates.length)) {
         sendJson(res, 400, { error: "url is required" });
         return;
       }
 
-      new URL(downloadUrl);
-      const job = startDownload({ url: downloadUrl, label, movieTitle, tmdbId });
-      sendJson(res, 202, { message: "Download started", job });
+      if (downloadUrl) new URL(downloadUrl);
+      const job = startDownload({ url: downloadUrl, label, movieTitle, tmdbId, candidates });
+      sendJson(res, 202, { message: "Download started", job: getJob(job.id) });
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
       sendJson(res, 400, { error: message });
+    }
+    return;
+  }
+
+  if (url === "/api/downloads/season" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const tmdbId = body.tmdbId ? String(body.tmdbId).trim() : "";
+      const season = Number.parseInt(body.season, 10);
+      const episodeCount = Number.parseInt(body.episodeCount, 10);
+      const movieTitle = String(body.movieTitle || "Series").trim() || "Series";
+
+      if (!tmdbId) {
+        sendJson(res, 400, { error: "tmdbId is required" });
+        return;
+      }
+      if (!Number.isFinite(season) || season < 1) {
+        sendJson(res, 400, { error: "season must be >= 1" });
+        return;
+      }
+      if (!Number.isFinite(episodeCount) || episodeCount < 1) {
+        sendJson(res, 400, { error: "episodeCount must be >= 1" });
+        return;
+      }
+
+      const job = startSeasonJob({
+        tmdbId,
+        season,
+        episodeCount,
+        movieTitle,
+        downloadEpisode: async ({ seasonJob, season: s, episode: e }) =>
+          downloadSheguEpisodeWithFallback({
+            tmdbId,
+            season: s,
+            episode: e,
+            movieTitle,
+            parentId: seasonJob.id,
+          }),
+      });
+
+      sendJson(res, 202, {
+        message: "Season download started",
+        job: getJob(job.id),
+      });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
     }
     return;
   }
