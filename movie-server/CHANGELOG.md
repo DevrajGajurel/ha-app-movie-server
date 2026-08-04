@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.9
+
+- Added `GET /api/streams/by-tmdb` to resolve proxied HLS URLs for a TMDB movie or TV episode (`type`, `season`, `episode`).
+
 ## 1.6.8
 
 - Added standalone Swagger UI at `/swagger` (OpenAPI at `/openapi.json`); not linked from the dashboard.

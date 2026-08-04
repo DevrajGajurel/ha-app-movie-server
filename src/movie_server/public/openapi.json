@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Movie Server API",
-    "version": "1.6.8",
+    "version": "1.6.9",
     "description": "HTTP API for the Movie Server dashboard, downloads, and Streams catalog."
   },
   "servers": [
@@ -189,6 +189,82 @@
           "200": { "description": "Removed" },
           "400": { "description": "Missing id" },
           "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/streams/by-tmdb": {
+      "get": {
+        "tags": ["Streams"],
+        "summary": "Resolve proxied HLS URLs for a TMDB movie or TV episode",
+        "description": "Looks up the Redis catalog first for movies, otherwise live-scrapes vidsrc. Returns absolute proxyUrl values ready for playback. TV requires season and episode.",
+        "parameters": [
+          {
+            "name": "tmdbId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "TMDB numeric id (also accepts id=)"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["movie", "tv"], "default": "movie" }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 },
+            "description": "Required when type=tv"
+          },
+          {
+            "name": "episode",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 },
+            "description": "Required when type=tv"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved stream with proxied URLs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "tmdbId": { "type": "string" },
+                    "type": { "type": "string" },
+                    "season": { "type": "integer", "nullable": true },
+                    "episode": { "type": "integer", "nullable": true },
+                    "proxyUrl": {
+                      "type": "string",
+                      "description": "Absolute /api/hls-proxy URL for the master playlist"
+                    },
+                    "proxyPath": { "type": "string" },
+                    "streamUrl": { "type": "string" },
+                    "bestProxyUrl": { "type": "string" },
+                    "qualities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": { "type": "string" },
+                          "url": { "type": "string" },
+                          "proxyUrl": { "type": "string" },
+                          "proxyPath": { "type": "string" }
+                        }
+                      }
+                    },
+                    "source": { "type": "string", "enum": ["catalog", "live", "cache"] },
+                    "cached": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing/invalid params" },
+          "404": { "description": "No playable streams" },
+          "502": { "description": "Upstream scrape failed" }
         }
       }
     },

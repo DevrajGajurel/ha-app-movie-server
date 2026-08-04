@@ -56,6 +56,7 @@ COPY src/movie_server/main.js \
      src/movie_server/cinebyProxy.js \
      src/movie_server/hlsProxy.js \
      src/movie_server/streamCatalog.js \
+     src/movie_server/streamResolve.js \
      ./
 COPY src/movie_server/public ./public
 

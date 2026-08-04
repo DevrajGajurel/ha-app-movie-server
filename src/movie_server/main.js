@@ -54,6 +54,7 @@ const {
   addManualStream,
   removeManualStream,
 } = require("./streamCatalog");
+const { initResolveCache, resolveStreamByTmdb } = require("./streamResolve");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -618,6 +619,22 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       const status = /required/i.test(err.message) ? 400 : /not found/i.test(err.message) ? 404 : 500;
       sendJson(res, status, { error: err.message });
+    }
+    return;
+  }
+
+  if (url === "/api/streams/by-tmdb" && req.method === "GET") {
+    try {
+      const incoming = new URL(req.url || "/", "http://localhost");
+      const payload = await resolveStreamByTmdb(req, {
+        tmdbId: incoming.searchParams.get("tmdbId") || incoming.searchParams.get("id"),
+        type: incoming.searchParams.get("type") || "movie",
+        season: incoming.searchParams.get("season"),
+        episode: incoming.searchParams.get("episode"),
+      });
+      sendJson(res, 200, payload);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message });
     }
     return;
   }
@@ -1237,6 +1254,12 @@ async function startServer() {
     });
   } catch (err) {
     console.warn("Stream catalog Redis init failed, continuing without it:", err.message);
+  }
+
+  try {
+    await initResolveCache(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("Stream resolve cache init failed:", err.message);
   }
 
   server.listen(PORT, () => {
