@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.17
+
+- Install `aria2` in Docker images so server downloads work when "Use aria2" is enabled; if `aria2c` is still missing, fall back to the normal fetch download instead of failing with ENOENT.
+
 ## 1.6.16
 
 - Fixed TMDB matching for secondary TV titles (e.g. "The Summer I Turned Pretty"): prefer the TV search endpoint without appending "series" to the query, which was returning zero TMDB hits.

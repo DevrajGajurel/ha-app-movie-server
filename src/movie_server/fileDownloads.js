@@ -195,6 +195,23 @@ function isAria2Enabled() {
   return String(process.env.USE_ARIA2 || "").toLowerCase() === "true";
 }
 
+function isAria2MissingError(err) {
+  return Boolean(err && (err.code === "ENOENT" || /spawn aria2c ENOENT/i.test(String(err.message || ""))));
+}
+
+async function downloadFile(job, dir) {
+  if (!isAria2Enabled()) {
+    return downloadFileWithFetch(job, dir);
+  }
+  try {
+    return await downloadFileWithAria2(job, dir);
+  } catch (err) {
+    if (!isAria2MissingError(err)) throw err;
+    console.warn("[downloads] aria2c not found; falling back to single-connection fetch");
+    return downloadFileWithFetch(job, dir);
+  }
+}
+
 async function runDownload(job) {
   job.status = "downloading";
 
@@ -215,9 +232,7 @@ async function runDownload(job) {
 
     try {
       const dir = ensureDir(job.movieTitle, job.tmdbId);
-      const filePath = isAria2Enabled()
-        ? await downloadFileWithAria2(job, dir)
-        : await downloadFileWithFetch(job, dir);
+      const filePath = await downloadFile(job, dir);
 
       job.filePath = filePath;
       job.status = "completed";
