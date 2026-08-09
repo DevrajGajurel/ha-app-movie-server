@@ -13,6 +13,12 @@ The prorcp hop is protected by Cloudflare Turnstile; use --browser (SeleniumBase
 UC / headed Chrome) for that step when requests alone are blocked.
 """
 
+# `X | None` annotations below are PEP 604, which needs Python 3.10+ at runtime.
+# VIDSRC_PYTHON can resolve to an older interpreter (a bare `python` on Windows
+# is often 3.9), so defer annotation evaluation the way refresh_trending.py and
+# resolve_one.py already do.
+from __future__ import annotations
+
 import re
 import sys
 import time

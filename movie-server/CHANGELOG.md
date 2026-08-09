@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.18
+
+- Source-site scrapes now send a real browser identity (User-Agent, Accept, Accept-Language, Referer) instead of Node's default `User-Agent: node` with `Accept: */*`, which Cloudflare scores as a bot and can answer with 403 — surfacing as "Failed to fetch download page: 403". Listing, search, download-page and download-link fetches all share the same headers `resolveRedirectUrl` was already using successfully.
+- Fixed the vidsrc stream catalog failing to refresh on startup with `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`. `scraper.py` uses PEP 604 `X | None` annotations, which need Python 3.10+, but was missing the `from __future__ import annotations` that `refresh_trending.py` and `resolve_one.py` already had — so it crashed on import under Python 3.9.
+- Corrected `package-lock.json`, which had drifted to 1.6.1 while every other deploy target read 1.6.17.
+
 ## 1.6.17
 
 - Install `aria2` in Docker images so server downloads work when "Use aria2" is enabled; if `aria2c` is still missing, fall back to the normal fetch download instead of failing with ENOENT.
