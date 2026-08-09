@@ -111,4 +111,4 @@ async function resolveRedirectUrl(inputUrl) {
   return javascriptUrl || httpUrl || start;
 }
 
-module.exports = { resolveRedirectUrl, normalizeUrlForCompare, BROWSER_HEADERS };
+module.exports = { resolveRedirectUrl, normalizeUrlForCompare };

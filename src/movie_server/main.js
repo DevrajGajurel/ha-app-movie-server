@@ -43,7 +43,7 @@ const {
   streamM3u8Playlist,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
-const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
+const { resolveRedirectUrl } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
@@ -253,33 +253,8 @@ function parseSecondaryMeta(text) {
   return { year, seasons, meta: cleaned };
 }
 
-// Node's bare fetch() identifies itself as `User-Agent: node` with
-// `Accept: */*`, which Cloudflare (fronting the source sites) scores as a bot
-// and answers with 403 - while resolveRedirectUrl() against the same origin
-// succeeds because urlUtils sends a real browser identity. Every outbound
-// scrape goes through here so the two code paths look alike on the wire.
-function scrapeFetch(targetUrl, { referer } = {}) {
-  let refererValue = referer;
-  if (!refererValue) {
-    try {
-      refererValue = `${new URL(targetUrl).origin}/`;
-    } catch {
-      refererValue = null;
-    }
-  }
-
-  return fetch(targetUrl, {
-    redirect: "follow",
-    headers: {
-      ...BROWSER_HEADERS,
-      "Upgrade-Insecure-Requests": "1",
-      ...(refererValue ? { Referer: refererValue } : {}),
-    },
-  });
-}
-
 function scrapeSecondaryPage(pageUrl) {
-  return scrapeFetch(pageUrl)
+  return fetch(pageUrl)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
@@ -501,7 +476,7 @@ function documentOrderIndex(document) {
 }
 
 function scrapePage(pageUrl, { search = false } = {}) {
-  return scrapeFetch(pageUrl)
+  return fetch(pageUrl)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
@@ -551,8 +526,8 @@ const DOWNLOAD_SELECTORS = {
   resolvedListing: [".dlbtn a"],
 };
 
-async function fetchPageHtml(pageUrl, { referer } = {}) {
-  const response = await scrapeFetch(pageUrl, { referer });
+async function fetchPageHtml(pageUrl) {
+  const response = await fetch(pageUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch download page: ${response.status}`);
   }
@@ -656,7 +631,7 @@ async function fetchDirectDownloadOptions(pageUrl) {
 
 async function resolveDownloadLink(detailUrl) {
   try {
-    const response = await scrapeFetch(detailUrl);
+    const response = await fetch(detailUrl);
     if (!response.ok) return detailUrl;
 
     const html = await response.text();
@@ -916,8 +891,6 @@ function serveFile(res, filePath) {
     res.end(data);
   });
 }
-
-const REMOTE_INDEX_BASE = "https://a.111477.xyz";
 
 const server = http.createServer(async (req, res) => {
   const url = req.url?.split("?")[0] ?? "/";
@@ -1543,150 +1516,6 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
       sendJson(res, 500, { error: message });
-    }
-    return;
-  }
-
-  if (url === "/api/remote" && req.method === "GET") {
-    try {
-      const searchParams = new URL(req.url, "http://localhost").searchParams;
-      const path = searchParams.get("path") || "/";
-      const cleanPath = path.replace(/^\/+/, "").replace(/\/+$/, "") || "/";
-      const fullPath = cleanPath === "/" ? "/" : `/${cleanPath}/`;
-      
-      const targetUrl = `${REMOTE_INDEX_BASE}${fullPath}`;
-      console.log(`[remote] fetching index: ${targetUrl}`);
-      
-      const response = await fetch(targetUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch remote index: ${response.status} ${response.statusText}`);
-      }
-      
-      const html = await response.text();
-      const { document } = parseHTML(html);
-      
-      // Parse the remote index HTML - it uses simple anchor tags
-      // Example: asiandrama/ Directory-kdrama/ Directory-...
-      const items = [];
-      
-      // Try to find directory entries by looking for anchors ending with "/"
-      // or containing "Directory" text pattern
-      document.querySelectorAll("a").forEach((anchor) => {
-        const href = anchor.getAttribute("href") || "";
-        const text = (anchor.textContent || "").trim();
-        
-        // Skip navigation links
-        if (href === "../" || href === "./" || href === "/" || href.startsWith("?") || href.startsWith("http")) {
-          return;
-        }
-        
-        // Skip empty or navigation text
-        if (!text || text === "Index of /" || text.includes("Total Size") || text.includes("Total Files")) {
-          return;
-        }
-        
-        // Check if this is a directory (ends with "/" or contains "Directory")
-        const isDir = href.endsWith("/") || text.toLowerCase().includes("directory");
-        
-        // Extract the name - remove trailing slash if present
-        const name = text.replace(/\/$/, "").trim();
-        
-        if (!name || name === "..") return;
-        
-        // Build the full path
-        const itemPath = isDir ? `${fullPath}${name}/` : `${fullPath}${name}`;
-        
-        // Extract size from text if present (e.g., "movies/ [12.5 GB]")
-        const sizeMatch = text.match(/\[([\d.]+\s*(?:gb|tb|mb))\]/i);
-        const size = sizeMatch ? sizeMatch[1].toUpperCase() : isDir ? "" : "";
-        
-        items.push({
-          name,
-          type: isDir ? "directory" : "file",
-          path: itemPath,
-          modified: "",  // No modification date in this format
-          size: size,
-        });
-      });
-      
-      // Sort by year (newest first) - extract year from filename
-      function extractYear(filename) {
-        // Look for patterns like (2020), [2022], 2021, etc.
-        const match = filename.match(/\(?(\d{4})\)?/);
-        return match ? parseInt(match[1], 10) : 0;
-      }
-      
-      items.sort((a, b) => {
-        const yearA = extractYear(a.name);
-        const yearB = extractYear(b.name);
-        return yearB - yearA; // Newest first
-      });
-      
-      // If TMDB is configured, fetch posters in batches of 50 with background caching
-      if (TMDB_API_KEY && !path.includes(".")) {
-        const moviesToEnrich = items.filter(item => !item.type.includes("directory"));
-        console.log(`[remote] fetching TMDB posters for ${moviesToEnrich.length} items in batches of 50`);
-        
-        const batchSize = 50;
-        
-        // Process in batches - start background enrichment for remaining batches
-        for (let i = 0; i < moviesToEnrich.length; i += batchSize) {
-          const batch = moviesToEnrich.slice(i, i + batchSize);
-          
-          // Always wait for first batch, then run subsequent batches in background
-          const isBackground = i > 0;
-          const enrichPromise = enrichMovies(batch.map(item => ({
-            title: item.name.replace(/\(\d{4}\)/g, "").trim(),
-            link: item.path,
-          })), TMDB_API_KEY);
-          
-          if (!isBackground) {
-            // First batch - wait for it to complete
-            const enriched = await enrichPromise;
-            batch.forEach((item, idx) => {
-              const tmdb = enriched[idx]?.tmdb || null;
-              if (tmdb) {
-                item.tmdbId = tmdb.id;
-                item.year = tmdb.year;
-                item.poster = tmdb.poster;
-                item.backdrop = tmdb.backdrop;
-                item.overview = tmdb.overview;
-                item.rating = tmdb.rating;
-                item.director = tmdb.director;
-              }
-            });
-            console.log(`[remote] fetched TMDB data for first batch (${batch.length} items)`);
-          } else {
-            // Subsequent batches - run in background and update items when complete
-            enrichPromise.then(enriched => {
-              batch.forEach((item, idx) => {
-                const tmdb = enriched[idx]?.tmdb || null;
-                if (tmdb) {
-                  item.tmdbId = tmdb.id;
-                  item.year = tmdb.year;
-                  item.poster = tmdb.poster;
-                  item.backdrop = tmdb.backdrop;
-                  item.overview = tmdb.overview;
-                  item.rating = tmdb.rating;
-                  item.director = tmdb.director;
-                }
-              });
-              console.log(`[remote] fetched TMDB data for background batch ${Math.floor(i / batchSize) + 1}`);
-            }).catch(err => {
-              console.warn(`[remote] TMDB background batch ${Math.floor(i / batchSize) + 1} failed: ${err.message}`);
-            });
-          }
-        }
-      }
-      
-      sendJson(res, 200, {
-        base: REMOTE_INDEX_BASE,
-        path: fullPath,
-        items,
-      });
-    } catch (err) {
-      console.warn(`[remote] fetch failed: ${err.message}`);
-      sendJson(res, 500, { error: err.message });
     }
     return;
   }
