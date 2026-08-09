@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.18
+
+- Resolve download URLs through the same `resolveRedirectUrl` used by `/api/redirect` before scraping (e.g. `new1.filesdl.in` → `new6.filesdl.top`), so redirecting download hosts no longer return 403 on the first hop.
+- Send browser headers on outbound scrapes; if a host still serves a Cloudflare Turnstile challenge, fall back to `browser_fetch.py` (SeleniumBase UC) to clear it.
+- Fix vidsrc catalog refresh crash on Python 3.9 (`from __future__ import annotations` in `scraper.py`).
+
 ## 1.6.17
 
 - Install `aria2` in Docker images so server downloads work when "Use aria2" is enabled; if `aria2c` is still missing, fall back to the normal fetch download instead of failing with ENOENT.

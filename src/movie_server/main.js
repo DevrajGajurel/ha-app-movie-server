@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 
 const ENV_CANDIDATES = [
   path.join(__dirname, ".env"),
@@ -43,7 +44,7 @@ const {
   streamM3u8Playlist,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
-const { resolveRedirectUrl } = require("./urlUtils");
+const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
@@ -253,8 +254,138 @@ function parseSecondaryMeta(text) {
   return { year, seasons, meta: cleaned };
 }
 
+// Node's bare fetch() identifies itself as `User-Agent: node` with
+// `Accept: */*`, which Cloudflare (fronting the source sites) scores as a bot
+// and answers with 403 - while resolveRedirectUrl() against the same origin
+// succeeds because urlUtils sends a real browser identity. Every outbound
+// scrape goes through here so the two code paths look alike on the wire.
+async function scrapeFetch(targetUrl, { referer, label = "scrape" } = {}) {
+  let refererValue = referer;
+  if (!refererValue) {
+    try {
+      refererValue = `${new URL(targetUrl).origin}/`;
+    } catch {
+      refererValue = null;
+    }
+  }
+
+  const response = await fetch(targetUrl, {
+    redirect: "follow",
+    headers: {
+      ...BROWSER_HEADERS,
+      "Upgrade-Insecure-Requests": "1",
+      ...(refererValue ? { Referer: refererValue } : {}),
+    },
+  });
+
+  // Host hops are worth surfacing on their own: these sites rotate domains
+  // (filmyfly.luxe -> .fail) and hand download links off across hosts
+  // (new1.filesdl.in -> new6.filesdl.top), and the destination often has
+  // different protection than the URL we were given.
+  logHostHop(label, targetUrl, response);
+  return response;
+}
+
+function logHostHop(label, requestedUrl, response) {
+  const finalUrl = response.url;
+  if (!finalUrl || finalUrl === requestedUrl) return;
+
+  try {
+    const from = new URL(requestedUrl).host;
+    const to = new URL(finalUrl).host;
+    if (from === to) return;
+    console.log(`[${label}] redirected ${from} -> ${to} (${response.status}) ${finalUrl}`);
+  } catch {
+    // Unparseable URL - the status log below still carries the useful detail.
+  }
+}
+
+// A Cloudflare JS/Turnstile interstitial answers with 403 + `cf-mitigated:
+// challenge` and a "Just a moment..." body. No combination of request headers
+// passes it - it needs a real browser - so name it explicitly rather than
+// letting it surface as an unexplained 403, and report `challenge: true` so
+// callers know it's worth retrying via fetchPageViaBrowser() below instead of
+// just giving up.
+async function classifyFetchFailure(response) {
+  const mitigated = response.headers.get("cf-mitigated");
+  const ray = response.headers.get("cf-ray");
+  let challenge = mitigated === "challenge";
+
+  if (!challenge && response.headers.get("server") === "cloudflare") {
+    try {
+      const body = await response.text();
+      challenge = /Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(body);
+    } catch {
+      // Body unreadable - the header signals above still stand on their own.
+    }
+  }
+
+  const parts = [];
+  if (challenge) {
+    parts.push("Cloudflare browser challenge - headers alone cannot pass it");
+  } else if (mitigated) {
+    parts.push(`Cloudflare mitigation: ${mitigated}`);
+  }
+  if (ray) parts.push(`cf-ray ${ray}`);
+  return { challenge, detail: parts.join("; ") };
+}
+
+const VIDSRC_DIR = path.join(__dirname, "..", "vidsrc");
+const BROWSER_FETCH_SCRIPT = path.join(VIDSRC_DIR, "browser_fetch.py");
+const BROWSER_FETCH_TIMEOUT_S = Number(process.env.DOWNLOAD_BROWSER_TIMEOUT_S || 45);
+
+// Spawns browser_fetch.py (SeleniumBase UC + the Xvfb :99 display the Docker
+// image already runs for vidsrc) to clear a Cloudflare Turnstile challenge
+// that plain headers cannot pass. Slow (tens of seconds) by nature of
+// driving a real browser - only called after classifyFetchFailure() has
+// already confirmed a challenge is actually there, not on ordinary failures.
+function fetchPageViaBrowser(targetUrl, { referer } = {}) {
+  const python = process.env.VIDSRC_PYTHON || (process.platform === "win32" ? "python" : "python3");
+  const args = [BROWSER_FETCH_SCRIPT, targetUrl, "--timeout", String(BROWSER_FETCH_TIMEOUT_S)];
+  if (referer) args.push("--referer", referer);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(python, args, { cwd: VIDSRC_DIR, env: { ...process.env }, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      // browser_fetch.py's own progress lines - surface them live rather
+      // than only on failure, since this step can take up to
+      // BROWSER_FETCH_TIMEOUT_S seconds with nothing else to show for it.
+      String(chunk)
+        .split("\n")
+        .filter(Boolean)
+        .forEach((line) => console.log(`[browser-fetch] ${line}`));
+    });
+    child.on("error", (err) => reject(new Error(`Could not start ${python}: ${err.message}`)));
+    child.on("close", () => {
+      const lastLine = stdout.trim().split("\n").filter(Boolean).pop();
+      if (!lastLine) {
+        reject(new Error(`browser_fetch.py produced no output${stderr ? `: ${stderr.slice(-300)}` : ""}`));
+        return;
+      }
+      let result;
+      try {
+        result = JSON.parse(lastLine);
+      } catch {
+        reject(new Error(`browser_fetch.py returned non-JSON output: ${lastLine.slice(0, 300)}`));
+        return;
+      }
+      if (!result.ok) {
+        reject(new Error(result.error || "browser_fetch.py failed"));
+        return;
+      }
+      resolve({ html: result.html, url: result.url || targetUrl });
+    });
+  });
+}
+
 function scrapeSecondaryPage(pageUrl) {
-  return fetch(pageUrl)
+  return scrapeFetch(pageUrl)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
@@ -476,7 +607,7 @@ function documentOrderIndex(document) {
 }
 
 function scrapePage(pageUrl, { search = false } = {}) {
-  return fetch(pageUrl)
+  return scrapeFetch(pageUrl)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`Failed to fetch ${pageUrl}: ${response.status}`);
@@ -526,12 +657,58 @@ const DOWNLOAD_SELECTORS = {
   resolvedListing: [".dlbtn a"],
 };
 
-async function fetchPageHtml(pageUrl) {
-  const response = await fetch(pageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch download page: ${response.status}`);
+async function fetchPageHtml(pageUrl, { referer } = {}) {
+  // Same resolver as GET /api/redirect — download hosts (e.g. new1.filesdl.in)
+  // 302 across domains before the real page is available. Fetching the
+  // original URL as Node often gets 403 on the hop; resolving first lands us
+  // on the final host (new6.filesdl.top) the way a browser click would.
+  let targetUrl = pageUrl;
+  try {
+    const resolved = await resolveRedirectUrl(pageUrl);
+    if (resolved && resolved !== pageUrl) {
+      console.log(`[downloads] resolved redirect: ${pageUrl} -> ${resolved}`);
+      targetUrl = resolved;
+    }
+  } catch (err) {
+    console.warn(`[downloads] resolveRedirectUrl failed, using original: ${err.message}`);
   }
-  return response.text();
+
+  console.log(`[downloads] fetching page: ${targetUrl}`);
+  const response = await scrapeFetch(targetUrl, { referer, label: "downloads" });
+
+  if (!response.ok) {
+    const { challenge, detail } = await classifyFetchFailure(response);
+    console.warn(
+      `[downloads] page fetch failed: ${response.status} ${response.url || targetUrl}` +
+        (detail ? ` - ${detail}` : "")
+    );
+
+    if (challenge) {
+      const browserUrl = response.url || targetUrl;
+      console.log(
+        `[downloads] retrying via headed browser (up to ${BROWSER_FETCH_TIMEOUT_S}s): ${browserUrl}`
+      );
+      try {
+        const { html, url: finalUrl } = await fetchPageViaBrowser(browserUrl, { referer });
+        console.log(`[downloads] browser fetch ok: ${finalUrl} (${html.length} bytes)`);
+        return { html, url: finalUrl };
+      } catch (err) {
+        console.warn(`[downloads] browser fetch failed: ${err.message}`);
+        throw new Error(
+          `Failed to fetch download page: ${response.status} - ${detail} - browser fallback also failed: ${err.message}`
+        );
+      }
+    }
+
+    throw new Error(
+      `Failed to fetch download page: ${response.status}` + (detail ? ` - ${detail}` : "")
+    );
+  }
+
+  const html = await response.text();
+  const finalUrl = response.url || targetUrl;
+  console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${html.length} bytes)`);
+  return { html, url: finalUrl };
 }
 
 // The source site periodically rotates domains (filmyfly.luxe -> .faith ->
@@ -550,8 +727,8 @@ async function resolveRetryPageUrl(pageUrl) {
 }
 
 async function fetchDownloadPageDocument(pageUrl) {
-  const html = await fetchPageHtml(pageUrl);
-  return parseHTML(html).document;
+  const { html, url } = await fetchPageHtml(pageUrl);
+  return { document: parseHTML(html).document, url };
 }
 
 function selectorDiagnostics(document, selectors) {
@@ -578,15 +755,15 @@ function collectAnchors(document, selectors) {
 }
 
 async function fetchDownloadOptions(pageUrl) {
-  let document = await fetchDownloadPageDocument(pageUrl);
+  let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.quality;
   let anchors = collectAnchors(document, selectors);
 
   if (!anchors.length) {
     try {
       const retryUrl = await resolveRetryPageUrl(pageUrl);
-      if (retryUrl !== pageUrl) {
-        document = await fetchDownloadPageDocument(retryUrl);
+      if (retryUrl !== pageUrl && retryUrl !== resolvedUrl) {
+        ({ document, url: resolvedUrl } = await fetchDownloadPageDocument(retryUrl));
         anchors = collectAnchors(document, selectors);
       }
     } catch (err) {
@@ -594,25 +771,26 @@ async function fetchDownloadOptions(pageUrl) {
     }
   }
 
+  const baseUrl = resolvedUrl || pageUrl;
   return {
     options: sortDownloadOptions(anchors.map((anchor) => ({
       label: (anchor.querySelector(".dll")?.textContent || anchor.textContent || "Download").trim(),
-      href: new URL(anchor.getAttribute("href"), pageUrl).href,
+      href: new URL(anchor.getAttribute("href"), baseUrl).href,
     }))),
     selectors: selectorDiagnostics(document, selectors),
   };
 }
 
 async function fetchDirectDownloadOptions(pageUrl) {
-  let document = await fetchDownloadPageDocument(pageUrl);
+  let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.direct;
   let anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
 
   if (!anchors.length) {
     try {
       const retryUrl = await resolveRetryPageUrl(pageUrl);
-      if (retryUrl !== pageUrl) {
-        document = await fetchDownloadPageDocument(retryUrl);
+      if (retryUrl !== pageUrl && retryUrl !== resolvedUrl) {
+        ({ document, url: resolvedUrl } = await fetchDownloadPageDocument(retryUrl));
         anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
       }
     } catch (err) {
@@ -620,10 +798,11 @@ async function fetchDirectDownloadOptions(pageUrl) {
     }
   }
 
+  const baseUrl = resolvedUrl || pageUrl;
   return {
     options: sortDownloadOptions(anchors.map((anchor) => ({
       label: (anchor.textContent || "Download").trim(),
-      href: new URL(anchor.getAttribute("href"), pageUrl).href,
+      href: new URL(anchor.getAttribute("href"), baseUrl).href,
     }))),
     selectors: selectorDiagnostics(document, selectors),
   };
@@ -631,8 +810,16 @@ async function fetchDirectDownloadOptions(pageUrl) {
 
 async function resolveDownloadLink(detailUrl) {
   try {
-    const response = await fetch(detailUrl);
-    if (!response.ok) return detailUrl;
+    const response = await scrapeFetch(detailUrl, { label: "resolve" });
+    if (!response.ok) {
+      const { detail } = await classifyFetchFailure(response);
+      console.warn(
+        `[resolve] ${response.status} for ${response.url || detailUrl}` +
+          (detail ? ` - ${detail}` : "") +
+          " - falling back to the unresolved link"
+      );
+      return detailUrl;
+    }
 
     const html = await response.text();
     const { document } = parseHTML(html);
@@ -640,7 +827,7 @@ async function resolveDownloadLink(detailUrl) {
     const href = anchor?.getAttribute("href");
     if (!href) return detailUrl;
 
-    return new URL(href, detailUrl).href;
+    return new URL(href, response.url || detailUrl).href;
   } catch {
     return detailUrl;
   }
