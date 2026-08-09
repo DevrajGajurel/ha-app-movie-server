@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start a shared Xvfb display for Chrome (cf-clearance + SeleniumBase UC)
+# ==============================================================================
+set -euo pipefail
+
+exec Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR

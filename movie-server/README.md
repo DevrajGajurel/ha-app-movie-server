@@ -30,3 +30,4 @@ On the **Configuration** tab, open **Show unused optional configuration options*
 - Downloads are saved under the configured `download_dir` (default `/media`).
 - When Emby is configured, new downloads trigger a library update automatically.
 - Open the UI from the add-on page or the **Movie Server** sidebar entry.
+- Cloudflare Turnstile download hosts are cleared by a **bundled** [cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper) process inside this same add-on (listens on `127.0.0.1:3000`). No extra add-on is required. Local `docker compose` still runs it as a sibling container instead.

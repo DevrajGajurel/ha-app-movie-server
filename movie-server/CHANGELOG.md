@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.21
+
+- Bundle [cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper) inside the Home Assistant add-on image and start it via s6 alongside Xvfb + movie-server (`CF_CLEARANCE_URL=http://127.0.0.1:3000`). HA no longer needs a separate container for Turnstile-protected download pages.
+- Split Xvfb into its own s6 service so Chrome for cf-clearance and SeleniumBase share `:99`.
+
 ## 1.6.20
 
 - Add optional `cf-clearance` Docker Compose sidecar ([cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper)) and try its `mode: "source"` API first when download hosts return a Cloudflare Turnstile challenge; SeleniumBase browser fetch remains the fallback.

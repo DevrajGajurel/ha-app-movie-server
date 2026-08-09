@@ -2,14 +2,20 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.6.20
+ARG APP_BUILD_VERSION=1.6.21
+ARG CF_CLEARANCE_GIT_URL=https://github.com/ZFC-Digital/cf-clearance-scraper.git
+ARG CF_CLEARANCE_GIT_REF=main
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIDSRC_PYTHON=python3 \
-    HOME_ASSISTANT_ADDON=true
+    HOME_ASSISTANT_ADDON=true \
+    CF_CLEARANCE_URL=http://127.0.0.1:3000 \
+    PORT=3000 \
+    browserLimit=5 \
+    timeOut=60000
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -60,6 +66,15 @@ RUN echo "Installing movie-server ${APP_BUILD_VERSION}" \
  && pip3 install --break-system-packages --no-cache-dir -r /vidsrc/requirements.txt \
  && rm -rf /tmp/repo
 
+# Bundle cf-clearance-scraper in the same add-on container (listens on :3000).
+# puppeteer-real-browser uses the system Google Chrome + shared Xvfb :99.
+RUN git clone --depth 1 --branch "${CF_CLEARANCE_GIT_REF}" "${CF_CLEARANCE_GIT_URL}" /opt/cf-clearance \
+ && cd /opt/cf-clearance \
+ && npm install --omit=dev \
+ && rm -rf /root/.npm /tmp/*
+
 COPY rootfs /
-RUN chmod a+x /etc/services.d/movie-server/run \
+RUN chmod a+x /etc/services.d/xvfb/run \
+ && chmod a+x /etc/services.d/cf-clearance/run \
+ && chmod a+x /etc/services.d/movie-server/run \
  && chmod a+x /etc/cont-init.d/* 2>/dev/null || true

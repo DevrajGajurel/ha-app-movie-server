@@ -48,6 +48,9 @@ SECONDARY_URL="$(bashio::config 'secondary_url')"
 SECONDARY_URL="${SECONDARY_URL#"${SECONDARY_URL%%[![:space:]]*}"}"
 SECONDARY_URL="${SECONDARY_URL%"${SECONDARY_URL##*[![:space:]]}"}"
 
+# Bundled in-addon scraper (same container). Override via options only if needed later.
+CF_CLEARANCE_URL="${CF_CLEARANCE_URL:-http://127.0.0.1:3000}"
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -68,9 +71,19 @@ STREAM_REFRESH_HOURS=4
 USE_ARIA2=${USE_ARIA2}
 CINEBY_URL=${CINEBY_URL}
 VIDSRC_PYTHON=python3
+CF_CLEARANCE_URL=${CF_CLEARANCE_URL}
+DISPLAY=:99
 EOF
 
+# Wait for the in-addon cf-clearance listener (started by its own s6 service).
+bashio::log.info "Waiting for cf-clearance on ${CF_CLEARANCE_URL}..."
+for _ in $(seq 1 90); do
+  if (echo >/dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
+    bashio::log.info "cf-clearance is listening on :3000"
+    break
+  fi
+  sleep 1
+done
+
 cd /app || exit 1
-Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
-sleep 1
 exec node main.js
