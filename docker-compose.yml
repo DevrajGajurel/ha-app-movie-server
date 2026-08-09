@@ -1,14 +1,29 @@
 services:
+  cf-clearance:
+    image: zfcsoftware/cf-clearance-scraper:latest
+    ports:
+      - "${CF_CLEARANCE_HOST_PORT:-3010}:3000"
+    environment:
+      PORT: 3000
+      browserLimit: 5
+      timeOut: 60000
+    shm_size: "1gb"
+    restart: unless-stopped
+
   movie-server:
     build: .
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
     shm_size: "2gb"
+    depends_on:
+      - cf-clearance
     environment:
       MAIN_URL: ${MAIN_URL}
       PORT: ${PORT:-3001}
       DOWNLOAD_DIR: /downloads
       VIDSRC_PYTHON: python3
+      # In-compose service DNS — override in .env for host/HA setups.
+      CF_CLEARANCE_URL: ${CF_CLEARANCE_URL:-http://cf-clearance:3000}
     env_file:
       - .env
     volumes:

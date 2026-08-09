@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.20
+
+- Add optional `cf-clearance` Docker Compose sidecar ([cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper)) and try its `mode: "source"` API first when download hosts return a Cloudflare Turnstile challenge; SeleniumBase browser fetch remains the fallback.
+- Set `CF_CLEARANCE_URL` (default `http://cf-clearance:3000` in compose) to enable; host port defaults to `3010`.
+
 ## 1.6.19
 
 - Install `python3-tk` / `python3-dev` so SeleniumBase can click Cloudflare Turnstile (MouseInfo).

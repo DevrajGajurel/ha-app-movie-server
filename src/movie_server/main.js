@@ -333,6 +333,56 @@ async function classifyFetchFailure(response) {
 const VIDSRC_DIR = path.join(__dirname, "..", "vidsrc");
 const BROWSER_FETCH_SCRIPT = path.join(VIDSRC_DIR, "browser_fetch.py");
 const BROWSER_FETCH_TIMEOUT_S = Number(process.env.DOWNLOAD_BROWSER_TIMEOUT_S || 45);
+const CF_CLEARANCE_URL = String(process.env.CF_CLEARANCE_URL || "").trim().replace(/\/$/, "");
+const CF_CLEARANCE_TIMEOUT_MS = Number(process.env.CF_CLEARANCE_TIMEOUT_MS || 90000);
+
+// Optional sidecar: https://github.com/ZFC-Digital/cf-clearance-scraper
+// POST /cf-clearance-scraper { url, mode: "source" } -> { code: 200, source: "<html>" }
+async function fetchPageViaCfClearance(targetUrl) {
+  if (!CF_CLEARANCE_URL) {
+    throw new Error("CF_CLEARANCE_URL is not configured");
+  }
+
+  const endpoint = `${CF_CLEARANCE_URL}/cf-clearance-scraper`;
+  console.log(`[downloads] cf-clearance source: ${targetUrl} via ${endpoint}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CF_CLEARANCE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ url: targetUrl, mode: "source" }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`cf-clearance timed out after ${CF_CLEARANCE_TIMEOUT_MS}ms`);
+    }
+    throw new Error(`cf-clearance unreachable: ${err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`cf-clearance returned non-JSON (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || data?.code !== 200 || !data?.source) {
+    throw new Error(data?.message || `cf-clearance failed (HTTP ${response.status}, code ${data?.code})`);
+  }
+
+  const html = String(data.source);
+  if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
+    throw new Error("cf-clearance returned a Cloudflare challenge page");
+  }
+
+  return { html, url: targetUrl };
+}
 
 // Spawns browser_fetch.py (SeleniumBase UC + the Xvfb :99 display the Docker
 // image already runs for vidsrc) to clear a Cloudflare Turnstile challenge
@@ -701,6 +751,22 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
 
     if (challenge) {
       const browserUrl = response.url || targetUrl;
+      const errors = [];
+
+      // Prefer the dedicated Turnstile scraper sidecar when configured
+      // (docker compose service cf-clearance). Fall back to in-process
+      // SeleniumBase UC if it is missing or fails.
+      if (CF_CLEARANCE_URL) {
+        try {
+          const { html, url: finalUrl } = await fetchPageViaCfClearance(browserUrl);
+          console.log(`[downloads] cf-clearance ok: ${finalUrl} (${html.length} bytes)`);
+          return { html, url: finalUrl };
+        } catch (err) {
+          console.warn(`[downloads] cf-clearance failed: ${err.message}`);
+          errors.push(`cf-clearance: ${err.message}`);
+        }
+      }
+
       console.log(
         `[downloads] retrying via headed browser (up to ${BROWSER_FETCH_TIMEOUT_S}s): ${browserUrl}`
       );
@@ -710,8 +776,9 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
         return { html, url: finalUrl };
       } catch (err) {
         console.warn(`[downloads] browser fetch failed: ${err.message}`);
+        errors.push(`browser: ${err.message}`);
         throw new Error(
-          `Failed to fetch download page: ${response.status} - ${detail} - browser fallback also failed: ${err.message}`
+          `Failed to fetch download page: ${response.status} - ${detail} - fallbacks failed: ${errors.join(" | ")}`
         );
       }
     }
