@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.22
+
+- Slim the Home Assistant add-on image: purge build-only `git`/`gnupg`/`wget` after use, skip Puppeteer’s second Chrome download, and strip cf-clearance test deps (`jest`/`supertest`/Babel) that were shipped as production packages.
+
 ## 1.6.21
 
 - Bundle [cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper) inside the Home Assistant add-on image and start it via s6 alongside Xvfb + movie-server (`CF_CLEARANCE_URL=http://127.0.0.1:3000`). HA no longer needs a separate container for Turnstile-protected download pages.

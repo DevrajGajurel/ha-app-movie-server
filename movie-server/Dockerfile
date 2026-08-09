@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.6.21
+ARG APP_BUILD_VERSION=1.6.22
 ARG CF_CLEARANCE_GIT_URL=https://github.com/ZFC-Digital/cf-clearance-scraper.git
 ARG CF_CLEARANCE_GIT_REF=main
 
@@ -15,20 +15,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CF_CLEARANCE_URL=http://127.0.0.1:3000 \
     PORT=3000 \
     browserLimit=5 \
-    timeOut=60000
+    timeOut=60000 \
+    # Use the system Google Chrome; do not let Puppeteer download a second browser.
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    CHROME_PATH=/usr/bin/google-chrome-stable
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# Runtime packages only. git/gnupg/python3-dev are installed briefly below and purged.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
-        gnupg \
-        git \
         ffmpeg \
         python3 \
         python3-pip \
         xvfb \
-        wget \
         fonts-liberation \
         libasound2 \
         libatk-bridge2.0-0 \
@@ -49,29 +51,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xdg-utils \
         aria2 \
         python3-tk \
-        python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node + Chrome (build-only helpers purged at the end of this layer).
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg wget \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y /tmp/chrome.deb \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get purge -y --auto-remove gnupg wget \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 WORKDIR /app
-RUN echo "Installing movie-server ${APP_BUILD_VERSION}" \
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && echo "Installing movie-server ${APP_BUILD_VERSION}" \
  && git clone --depth 1 --branch "${APP_GIT_REF}" "${APP_GIT_URL}" /tmp/repo \
  && cp -r /tmp/repo/src/movie_server/. /app/ \
- && cp -r /tmp/repo/src/vidsrc /vidsrc \
+ && mkdir -p /vidsrc \
+ && cp -r /tmp/repo/src/vidsrc/. /vidsrc/ \
+ && rm -rf /vidsrc/downloaded_files /vidsrc/.git /tmp/repo \
  && npm install --omit=dev \
  && pip3 install --break-system-packages --no-cache-dir -r /vidsrc/requirements.txt \
- && rm -rf /tmp/repo
+ && apt-get purge -y --auto-remove git \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cache /root/.npm /tmp/*
 
-# Bundle cf-clearance-scraper in the same add-on container (listens on :3000).
-# puppeteer-real-browser uses the system Google Chrome + shared Xvfb :99.
-RUN git clone --depth 1 --branch "${CF_CLEARANCE_GIT_REF}" "${CF_CLEARANCE_GIT_URL}" /opt/cf-clearance \
+# Bundle cf-clearance-scraper. Strip test-only deps (jest/supertest are wrongly
+# listed as production dependencies upstream) and drop VCS/tests to save space.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && git clone --depth 1 --branch "${CF_CLEARANCE_GIT_REF}" "${CF_CLEARANCE_GIT_URL}" /opt/cf-clearance \
  && cd /opt/cf-clearance \
  && npm install --omit=dev \
- && rm -rf /root/.npm /tmp/*
+ && npm uninstall --no-save jest supertest \
+ && rm -rf tests .git .github .dockerignore Dockerfile README.md LICENSE.md \
+        node_modules/@babel node_modules/@jest node_modules/jest* \
+        node_modules/caniuse-lite node_modules/@types \
+ && npm cache clean --force \
+ && apt-get purge -y --auto-remove git \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cache /root/.npm /tmp/*
 
 COPY rootfs /
 RUN chmod a+x /etc/services.d/xvfb/run \
