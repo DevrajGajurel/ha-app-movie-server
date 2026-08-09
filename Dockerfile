@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxss1 \
         xdg-utils \
         aria2 \
+        python3-tk \
+        python3-dev \
     && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \

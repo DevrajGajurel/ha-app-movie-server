@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.19
+
+- Install `python3-tk` / `python3-dev` so SeleniumBase can click Cloudflare Turnstile (MouseInfo).
+- Harden `browser_fetch.py`: keep driver banners off stdout, always emit one JSON result, prefer CDP captcha click before OS click.
+
 ## 1.6.18
 
 - Resolve download URLs through the same `resolveRedirectUrl` used by `/api/redirect` before scraping (e.g. `new1.filesdl.in` → `new6.filesdl.top`), so redirecting download hosts no longer return 403 on the first hop.

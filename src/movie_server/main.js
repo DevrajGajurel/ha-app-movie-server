@@ -362,17 +362,33 @@ function fetchPageViaBrowser(targetUrl, { referer } = {}) {
         .forEach((line) => console.log(`[browser-fetch] ${line}`));
     });
     child.on("error", (err) => reject(new Error(`Could not start ${python}: ${err.message}`)));
-    child.on("close", () => {
-      const lastLine = stdout.trim().split("\n").filter(Boolean).pop();
-      if (!lastLine) {
-        reject(new Error(`browser_fetch.py produced no output${stderr ? `: ${stderr.slice(-300)}` : ""}`));
-        return;
+    child.on("close", (code) => {
+      // SeleniumBase sometimes still leaks banners onto stdout; pick the last
+      // line that parses as a result object with an `ok` field.
+      const lines = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      let result = null;
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        try {
+          const parsed = JSON.parse(lines[i]);
+          if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "ok")) {
+            result = parsed;
+            break;
+          }
+        } catch {
+          // keep scanning
+        }
       }
-      let result;
-      try {
-        result = JSON.parse(lastLine);
-      } catch {
-        reject(new Error(`browser_fetch.py returned non-JSON output: ${lastLine.slice(0, 300)}`));
+      if (!result) {
+        const hint = (stderr || stdout).trim().slice(-400);
+        reject(
+          new Error(
+            `browser_fetch.py produced no JSON result (exit ${code})` +
+              (hint ? `: ${hint}` : "")
+          )
+        );
         return;
       }
       if (!result.ok) {
