@@ -446,6 +446,45 @@ export async function getJobs(): Promise<DownloadJob[]> {
   return data.jobs || [];
 }
 
+export interface RemoteItem {
+  name: string;
+  type: "directory" | "file";
+  path: string;
+  modified?: string;
+  size?: string;
+  tmdbId?: string;
+  year?: string;
+  poster?: string;
+  backdrop?: string;
+  overview?: string;
+  rating?: number;
+}
+
+export interface RemoteDirectory {
+  base: string;
+  path: string;
+  items: RemoteItem[];
+}
+
+// Directory listing on a plain HTTP index (Apache/Nginx autoindex-style),
+// browsed through the backend's /api/remote scrape+TMDB-enrich proxy - same
+// apiUrl()/API_BASE as every other call here, unlike a bare fetch("/api/…"),
+// which would resolve against the packaged widget's own origin instead of
+// the movie-server instance and silently return nothing on a real TV.
+export async function listRemoteDirectory(path: string): Promise<RemoteDirectory> {
+  const params = new URLSearchParams({ path });
+  const res = await fetch(apiUrl(`remote?${params.toString()}`));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// RemoteItem.path is server-relative (e.g. "/movies/Foo.mkv"); the file
+// actually lives on RemoteDirectory.base, so the two must be joined here
+// rather than treating item.path as a fetchable URL on its own.
+export function buildRemoteFileUrl(base: string, item: RemoteItem): string {
+  return new URL(item.path, base).href;
+}
+
 export function reportClientError(source: string, message: string, context?: Record<string, unknown>): void {
   fetch(apiUrl("client-log"), {
     method: "POST",

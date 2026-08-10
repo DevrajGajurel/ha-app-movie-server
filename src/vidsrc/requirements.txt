@@ -1,2 +1,2 @@
 requests>=2.32.0
-seleniumbase>=4.33.0
+cloudscraper>=1.2.71

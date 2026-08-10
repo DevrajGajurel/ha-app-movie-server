@@ -21,6 +21,7 @@ import { Search } from "./Search";
 import { Downloads } from "./Downloads";
 import { Streams } from "./Streams";
 import { Cineby } from "./Cineby";
+import { Remote } from "./Remote";
 import { ExitConfirm } from "./ExitConfirm";
 
 type View = SidebarView;
@@ -28,6 +29,7 @@ type View = SidebarView;
 interface HomeProps {
   onPlay: (movie: Movie) => void;
   onPlayStream: (item: StreamMovie, quality: StreamQuality) => void;
+  onPlayRemoteFile: (url: string, title: string) => void;
 }
 
 interface RowDef {
@@ -39,7 +41,7 @@ interface RowDef {
 
 const HERO_ROTATE_MS = 8000;
 
-export function Home({ onPlay, onPlayStream }: HomeProps) {
+export function Home({ onPlay, onPlayStream, onPlayRemoteFile }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
   const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
@@ -316,6 +318,14 @@ export function Home({ onPlay, onPlayStream }: HomeProps) {
         />
       )}
       {view === "cineby" && <Cineby active={!sidebarFocused} onBack={() => setView("browse")} />}
+      {view === "remote" && (
+        <Remote
+          active={!sidebarFocused}
+          onBack={() => setView("browse")}
+          onRequestSidebar={() => setSidebarFocused(true)}
+          onPlayFile={onPlayRemoteFile}
+        />
+      )}
       {openDetail && (
         <Detail
           key={openDetail.link}

@@ -9,11 +9,12 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { icon: "⬇", label: "Downloads" },
   { icon: "▶", label: "Streams" },
   { icon: "🎬", label: "Cineby" },
+  { icon: "📡", label: "Remote" },
 ];
 
-export type SidebarView = "browse" | "search" | "downloads" | "streams" | "cineby";
+export type SidebarView = "browse" | "search" | "downloads" | "streams" | "cineby" | "remote";
 
-export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "downloads", "streams", "cineby"];
+export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "downloads", "streams", "cineby", "remote"];
 
 interface SidebarProps {
   activeIndex: number;

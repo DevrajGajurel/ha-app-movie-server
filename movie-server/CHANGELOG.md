@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.23
+
+- Remote Index: Added `/api/remote` proxy endpoint to browse external HTTP directories (e.g., `https://a.111477.xyz/`). Fetches and parses HTML index pages, extracts anchor tags for files/directories, sorts by year (newest first), and enriches files with TMDB posters in batches of 50. HelloTV sidebar now includes "Remote" option; MediaNest Remote view integrated.
+- Replaced SeleniumBase with cloudscraper for Cloudflare bypass in `scraper.py` (`cloudscraper>=1.2.71`). Lighter weight (~100MB savings) and simpler configuration.
+
 ## 1.6.22
 
 - Slim the Home Assistant add-on image: purge build-only `git`/`gnupg`/`wget` after use, skip Puppeteer’s second Chrome download, and strip cf-clearance test deps (`jest`/`supertest`/Babel) that were shipped as production packages.

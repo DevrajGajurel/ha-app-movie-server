@@ -5,7 +5,8 @@ import { buildHlsProxyUrl, type Movie, type StreamMovie, type StreamQuality } fr
 
 type Playing =
   | { kind: "movie"; movie: Movie }
-  | { kind: "stream"; item: StreamMovie; quality: StreamQuality };
+  | { kind: "stream"; item: StreamMovie; quality: StreamQuality }
+  | { kind: "remote"; url: string; title: string };
 
 export function App() {
   const [playing, setPlaying] = useState<Playing | null>(null);
@@ -36,11 +37,24 @@ export function App() {
     );
   }
 
+  if (playing?.kind === "remote") {
+    return (
+      <div className="app">
+        <Player
+          title={playing.title}
+          streamUrl={playing.url}
+          onClose={() => setPlaying(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Home
         onPlay={(movie) => setPlaying({ kind: "movie", movie })}
         onPlayStream={(item, quality) => setPlaying({ kind: "stream", item, quality })}
+        onPlayRemoteFile={(url, title) => setPlaying({ kind: "remote", url, title })}
       />
     </div>
   );

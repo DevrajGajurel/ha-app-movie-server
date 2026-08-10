@@ -9,8 +9,8 @@ Chain:
     -> {player_host}/prorcp/{hash}         (extracts m3u8 URLs)
 
 Player host is discovered live from vsembed (currently cloudorchestranova.com).
-The prorcp hop is protected by Cloudflare Turnstile; use --browser (SeleniumBase
-UC / headed Chrome) for that step when requests alone are blocked.
+The prorcp hop is protected by Cloudflare Turnstile; use --browser (cloudscraper)
+for that step when requests alone are blocked.
 """
 
 # `X | None` annotations below are PEP 604, which needs Python 3.10+ at runtime.
@@ -44,6 +44,18 @@ DEFAULT_PLAYER_HOST = "https://cloudorchestranova.com"
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 
+# Try to import cloudscraper for Cloudflare bypass (lighter than SeleniumBase)
+CLOUDSCRAPER = None
+try:
+    import cloudscraper
+    CLOUDSCRAPER = cloudscraper.create_scraper(
+        interpreter='js2py',
+        delay=5
+    )
+    print("[*] Cloudscraper enabled for Cloudflare bypass", file=sys.stderr)
+except ImportError:
+    print("[!] cloudscraper not installed, using requests only", file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,7 +65,13 @@ def _get(url: str, referer: str = None, **kwargs) -> requests.Response:
     if referer:
         headers["Referer"] = referer
     time.sleep(random.uniform(0.3, 0.8))  # polite delay
-    resp = SESSION.get(url, headers=headers, timeout=15, **kwargs)
+    
+    # Use cloudscraper if available for Cloudflare sites
+    if CLOUDSCRAPER:
+        resp = CLOUDSCRAPER.get(url, headers=headers, timeout=15, **kwargs)
+    else:
+        resp = SESSION.get(url, headers=headers, timeout=15, **kwargs)
+    
     resp.raise_for_status()
     return resp
 
@@ -279,14 +297,23 @@ def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -
     """
     Open the RCP page in headed undetected Chrome (SeleniumBase UC),
     trigger the player iframe, wait for Turnstile to clear, then collect m3u8 URLs.
+    
+    DEPRECATED: Now using cloudscraper instead. Kept for backward compatibility.
     """
     try:
-        from seleniumbase import Driver
-    except ImportError as e:
-        raise RuntimeError(
-            "SeleniumBase is required for --browser. Install with:\n"
-            "  py -3.13 -m pip install seleniumbase"
-        ) from e
+        from scraper_cloudscraper import get_m3u8_urls_cloudscraper
+        return get_m3u8_urls_cloudscraper(rcp_url, player_base, timeout_s)
+    except Exception as e:
+        print(f"[*] cloudscraper failed: {e}", file=sys.stderr)
+        print("[*] Falling back to headed Chrome (SeleniumBase)...", file=sys.stderr)
+        return _get_m3u8_urls_seleniumbase(rcp_url, player_base, timeout_s)
+
+
+def _get_m3u8_urls_seleniumbase(rcp_url: str, player_base: str, timeout_s: int = 60) -> list[dict]:
+    """
+    SeleniumBase UC implementation - kept for backward compatibility.
+    """
+    from seleniumbase import Driver
 
     player_html = ""
 
@@ -294,7 +321,6 @@ def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -
         nonlocal player_html
         if not text:
             return False
-        # Wait for the real player payload (not just any m3u8 mention)
         if "master_urls" in text or ("generate.php" in text and ".m3u8" in text):
             player_html = text
             return True
@@ -304,7 +330,6 @@ def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -
         return False
 
     print(f"[*] Opening headed Chrome (UC) for Turnstile: {rcp_url[:80]}...")
-    # --no-sandbox / disable-dev-shm-usage needed inside Docker
     driver = Driver(
         uc=True,
         headless=False,
@@ -359,7 +384,6 @@ def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -
                 "(Turnstile did not clear — try again, or click the checkbox if shown)"
             )
 
-        # Prefer waiting until generate.php / master_urls is present
         if "generate.php" not in player_html and "__TOKEN__" not in player_html:
             time.sleep(2)
             try:
@@ -391,11 +415,9 @@ def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -
 
         token = None
         if "__TOKEN__" in file_match or "__TOKEN__" in player_html:
-            # Give the page a moment to call generate.php itself, then fetch JWT in-browser
             time.sleep(2)
             token = _fetch_stream_token_in_browser(driver, player_html, player_base)
             if not token:
-                # Last resort: any resolved m3u8 already requested by the player
                 try:
                     net_urls = driver.execute_script(
                         """

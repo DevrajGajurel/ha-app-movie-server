@@ -1377,6 +1377,454 @@
         transform: translateY(-2px);
       }
     }
+
+    /* ── Downloads view ───────────────────────────────────────────── */
+    .downloads-panel {
+      max-width: 860px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      flex: 1;
+    }
+
+    .downloads-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .downloads-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .downloads-tabs {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+    }
+
+    .downloads-tab {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 0.35rem 0.85rem;
+    }
+
+    .downloads-tab:hover:not(:disabled) {
+      background: rgba(108,140,255,0.08);
+      color: var(--text);
+    }
+
+    .downloads-tab.active {
+      background: rgba(108,140,255,0.14);
+      border-color: rgba(108,140,255,0.35);
+      color: var(--text);
+    }
+
+    .downloads-empty {
+      color: var(--muted);
+      font-size: 0.875rem;
+      padding: 2.5rem 0;
+      text-align: center;
+    }
+
+    .job-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .job-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.35rem 0.75rem;
+      align-items: start;
+    }
+
+    .job-card.active { border-color: rgba(108,140,255,0.4); }
+    .job-card.failed { border-color: rgba(255,107,107,0.4); }
+    .job-card.completed { border-color: rgba(74,222,128,0.35); }
+
+    .job-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      word-break: break-word;
+      grid-column: 1;
+    }
+
+    .job-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      grid-column: 1;
+      word-break: break-all;
+    }
+
+    .job-status-badge {
+      grid-column: 2;
+      grid-row: 1;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      white-space: nowrap;
+      align-self: start;
+    }
+
+    .job-status-badge.queued  { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .job-status-badge.downloading { background: rgba(108,140,255,0.15); color: var(--accent); border: 1px solid rgba(108,140,255,0.3); }
+    .job-status-badge.completed   { background: rgba(74,222,128,0.12); color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
+    .job-status-badge.failed      { background: rgba(255,107,107,0.12); color: var(--danger); border: 1px solid rgba(255,107,107,0.3); }
+
+    .job-progress-row {
+      grid-column: 1 / -1;
+    }
+
+    .job-progress-bar {
+      height: 5px;
+      background: var(--bg);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 0.45rem;
+    }
+
+    .job-progress-bar span {
+      display: block;
+      height: 100%;
+      width: var(--progress, 0%);
+      background: var(--accent);
+      transition: width 0.3s;
+    }
+
+    .job-error {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      color: var(--danger);
+      margin-top: 0.25rem;
+      word-break: break-word;
+    }
+
+    .job-season-row {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    /* nav badge (active download count) */
+    .nav-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.15rem;
+      height: 1.15rem;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 0 0.25rem;
+      margin-left: auto;
+    }
+
+    .nav-badge[hidden] { display: none; }
+
+    /* ── Remote Index view ───────────────────────────────────────── */
+    .remote-panel {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      flex: 1;
+    }
+
+    .remote-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+
+    .remote-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .remote-breadcrumb {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.2rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .remote-breadcrumb a,
+    .remote-breadcrumb button.crumb-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.8rem;
+      padding: 0;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .remote-breadcrumb a:hover,
+    .remote-breadcrumb button.crumb-btn:hover { text-decoration: underline; }
+
+    .remote-breadcrumb .sep { color: var(--border); margin: 0 0.1rem; }
+
+    .remote-search-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .remote-search-row input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      font-size: 0.85rem;
+    }
+
+    .remote-search-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .remote-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .remote-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.15s, transform 0.15s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .remote-card:hover { border-color: var(--accent); }
+
+    @media (hover: hover) and (pointer: fine) {
+      .remote-card:hover { transform: translateY(-2px); }
+    }
+
+    .remote-card-thumb {
+      aspect-ratio: 2/3;
+      background: #12151d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      color: var(--muted);
+      position: relative;
+    }
+
+    .remote-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .remote-card-type {
+      position: absolute;
+      top: 0.4rem;
+      left: 0.4rem;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .remote-card-type.video { background: rgba(108,140,255,0.2); color: var(--accent); }
+    .remote-card-type.folder { background: rgba(251,191,36,0.2); color: #fbbf24; }
+
+    .remote-card-body {
+      padding: 0.75rem 0.85rem 0.9rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .remote-card-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      word-break: break-word;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 0.35rem;
+    }
+
+    .remote-card-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .remote-card-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-top: auto;
+    }
+
+    .remote-card-actions button,
+    .remote-card-actions a {
+      flex: 1;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 7px;
+      text-align: center;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: rgba(108,140,255,0.08);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+      min-width: calc(50% - 0.25rem);
+    }
+
+    .remote-card-actions button:hover:not(:disabled),
+    .remote-card-actions a:hover { background: rgba(108,140,255,0.16); border-color: var(--accent); }
+
+    .remote-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .remote-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      transition: border-color 0.15s;
+    }
+
+    .remote-row:hover { border-color: var(--accent); }
+
+    .remote-row-icon { font-size: 1.15rem; flex-shrink: 0; }
+
+    .remote-row-info { flex: 1; min-width: 0; }
+
+    .remote-row-name {
+      font-size: 0.875rem;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .remote-row-meta { font-size: 0.7rem; color: var(--muted); margin-top: 0.1rem; }
+
+    .remote-row-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+
+    .remote-row-actions button,
+    .remote-row-actions a {
+      font-size: 0.72rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(108,140,255,0.08);
+      color: var(--text);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .remote-row-actions button:hover:not(:disabled),
+    .remote-row-actions a:hover { background: rgba(108,140,255,0.18); border-color: var(--accent); }
+
+    .remote-view-toggle {
+      display: flex;
+      gap: 0.3rem;
+    }
+
+    .remote-view-toggle button {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      padding: 0.3rem 0.55rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .remote-view-toggle button.active {
+      background: rgba(108,140,255,0.14);
+      border-color: rgba(108,140,255,0.35);
+      color: var(--text);
+    }
+
+    .remote-stats {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    @media (max-width: 768px) {
+      .downloads-panel, .remote-panel {
+        padding: 0.75rem;
+      }
+
+      .remote-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .remote-card {
+        flex-direction: row;
+        align-items: stretch;
+      }
+
+      .remote-card-thumb {
+        width: 7rem;
+        min-width: 7rem;
+        aspect-ratio: auto;
+        min-height: 8rem;
+        font-size: 2rem;
+      }
+
+      .remote-card-body {
+        padding: 0.6rem 0.75rem;
+      }
+
+      .remote-card-actions button,
+      .remote-card-actions a {
+        min-width: 0;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1397,6 +1845,21 @@
             <path d="m10 9.5 5 2.5-5 2.5v-5Z" fill="currentColor" stroke="none" />
           </svg>
           Streams
+        </button>
+        <button type="button" class="nav-item" data-view="downloads">
+          <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 3v13M7 11l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 20h16" stroke-linecap="round"/>
+          </svg>
+          Downloads
+          <span class="nav-badge" id="downloads-nav-badge" hidden></span>
+        </button>
+        <button type="button" class="nav-item" data-view="remote">
+          <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 3c-2.5 2.5-4 5.5-4 9s1.5 6.5 4 9M12 3c2.5 2.5 4 5.5 4 9s-1.5 6.5-4 9M3 12h18" stroke-linecap="round"/>
+          </svg>
+          Remote
         </button>
       </nav>
     </aside>
@@ -1502,6 +1965,44 @@
             </div>
             <div id="streams-content" class="streams-empty">Loading…</div>
           </div>
+        </section>
+      </div>
+
+      <!-- ── Downloads view ─────────────────────────────────────── -->
+      <div class="view" id="view-downloads" hidden>
+        <section class="downloads-panel">
+          <div class="downloads-header">
+            <h2>Downloads</h2>
+            <button type="button" id="downloads-refresh-btn">Refresh</button>
+          </div>
+          <div class="downloads-tabs">
+            <button type="button" class="downloads-tab active" data-tab="active">Active</button>
+            <button type="button" class="downloads-tab" data-tab="all">All jobs</button>
+            <button type="button" class="downloads-tab" data-tab="failed">Failed</button>
+            <button type="button" class="downloads-tab" data-tab="completed">Completed</button>
+          </div>
+          <div id="downloads-content" class="downloads-empty">Loading…</div>
+        </section>
+      </div>
+
+      <!-- ── Remote Index view ──────────────────────────────────── -->
+      <div class="view" id="view-remote" hidden>
+        <section class="remote-panel">
+          <div class="remote-header">
+            <h2>Remote Index</h2>
+            <nav class="remote-breadcrumb" id="remote-breadcrumb" aria-label="Path">
+              <button type="button" class="crumb-btn" data-path="/">Root</button>
+            </nav>
+            <div class="remote-view-toggle">
+              <button type="button" id="remote-view-grid" class="active" title="Grid view" aria-label="Grid view">⊞</button>
+              <button type="button" id="remote-view-list" title="List view" aria-label="List view">☰</button>
+            </div>
+          </div>
+          <div class="remote-search-row">
+            <input type="search" id="remote-search" placeholder="Filter files…" autocomplete="off" />
+          </div>
+          <p class="remote-stats" id="remote-stats"></p>
+          <div id="remote-content" class="state">Loading…</div>
         </section>
       </div>
     </div>
@@ -2584,11 +3085,18 @@
       cinebyUrlInput.value = config.cinebyUrl || "";
     }
 
+    const viewDownloadsEl = document.getElementById("view-downloads");
+    const viewRemoteEl    = document.getElementById("view-remote");
+
+    const VALID_VIEWS = ["library", "streams", "downloads", "remote"];
+
     function setView(view, { updateHash = true } = {}) {
-      const next = view === "streams" ? "streams" : "library";
+      const next = VALID_VIEWS.includes(view) ? view : "library";
       activeView = next;
-      viewLibraryEl.hidden = next !== "library";
-      viewStreamsEl.hidden = next !== "streams";
+      viewLibraryEl.hidden   = next !== "library";
+      viewStreamsEl.hidden   = next !== "streams";
+      viewDownloadsEl.hidden = next !== "downloads";
+      viewRemoteEl.hidden    = next !== "remote";
       navItems.forEach((item) => {
         const on = item.dataset.view === next;
         item.classList.toggle("active", on);
@@ -2596,20 +3104,374 @@
         else item.removeAttribute("aria-current");
       });
       if (updateHash) {
-        const hash = next === "streams" ? "#streams" : "#library";
-        if (location.hash !== hash) {
-          history.replaceState(null, "", hash);
-        }
+        const hash = next === "library" ? "#library" : `#${next}`;
+        if (location.hash !== hash) history.replaceState(null, "", hash);
       }
-      if (next === "streams") {
-        loadStreamsCatalog().catch(() => {});
-      }
+      if (next === "streams")   loadStreamsCatalog().catch(() => {});
+      if (next === "downloads") loadDownloadsView();
+      if (next === "remote" && remoteCurrentPath === null) navigateRemote("/");
     }
 
     function viewFromHash() {
       const hash = (location.hash || "").replace(/^#/, "").toLowerCase();
-      return hash === "streams" ? "streams" : "library";
+      return VALID_VIEWS.includes(hash) ? hash : "library";
     }
+
+    // ── Downloads view ───────────────────────────────────────────────────
+
+    const downloadsContentEl  = document.getElementById("downloads-content");
+    const downloadsNavBadge   = document.getElementById("downloads-nav-badge");
+    const downloadsRefreshBtn = document.getElementById("downloads-refresh-btn");
+    let downloadsActiveTab    = "active";
+    let downloadsViewPoller   = null;
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return "";
+      if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
+      if (bytes >= 1048576)    return `${(bytes / 1048576).toFixed(1)} MB`;
+      if (bytes >= 1024)       return `${(bytes / 1024).toFixed(0)} KB`;
+      return `${bytes} B`;
+    }
+
+    function renderJobCard(job) {
+      const pct      = job.totalBytes > 0 ? Math.min(100, Math.round(job.receivedBytes / job.totalBytes * 100)) : 0;
+      const isActive = job.status === "queued" || job.status === "downloading";
+
+      let statusClass = job.status;
+      if (isActive) statusClass = "active";
+
+      let statusLabel = job.status;
+      if (job.type === "season") {
+        const done  = (job.completedEpisodes || 0) + (job.skippedEpisodes || 0);
+        const total = job.episodeCount || 0;
+        if (job.status === "downloading") {
+          const ep = job.currentEpisode ? ` · E${String(job.currentEpisode).padStart(2,"0")}` : "";
+          statusLabel = `${done}/${total} eps${ep}`;
+        } else if (job.status === "completed") {
+          statusLabel = job.failedEpisodes ? `Done (${job.failedEpisodes} failed)` : "Complete";
+        } else {
+          statusLabel = job.status;
+        }
+      } else if (job.status === "downloading") {
+        statusLabel = job.totalBytes > 0 ? `${pct}%` : "Downloading…";
+      } else if (job.status === "completed") {
+        statusLabel = "Saved";
+      } else if (job.status === "queued") {
+        statusLabel = "Queued";
+      } else if (job.status === "failed") {
+        statusLabel = "Failed";
+      }
+
+      const progressBar = (job.status === "downloading" && job.type !== "season" && job.totalBytes > 0)
+        ? `<div class="job-progress-row"><div class="job-progress-bar" style="--progress:${pct}%"><span></span></div></div>` : "";
+
+      const seasonRow = job.type === "season"
+        ? `<div class="job-season-row">Season ${job.season} · ${job.episodeCount} episode(s) · ${job.completedEpisodes || 0} done · ${job.failedEpisodes || 0} failed · ${job.skippedEpisodes || 0} skipped</div>` : "";
+
+      const errorRow = job.status === "failed" && job.error
+        ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
+
+      const sizeHint = (job.receivedBytes > 0 || job.totalBytes > 0)
+        ? `${formatBytes(job.receivedBytes)}${job.totalBytes > 0 ? ` / ${formatBytes(job.totalBytes)}` : ""}` : "";
+
+      const attempt = job.attemptsTotal > 1 ? ` · attempt ${job.attempt}/${job.attemptsTotal}` : "";
+      const meta = [
+        job.startedAt ? new Date(job.startedAt).toLocaleString() : null,
+        sizeHint,
+        attempt ? attempt.trim() : null,
+        job.filePath ? escapeHtml(job.filePath.split(/[\\/]/).pop()) : null,
+      ].filter(Boolean).join(" · ");
+
+      return `
+        <div class="job-card ${statusClass}" data-job-id="${job.id}">
+          <div class="job-title">${escapeHtml(job.movieTitle || job.label || `Job #${job.id}`)}</div>
+          <span class="job-status-badge ${job.status}">${escapeHtml(statusLabel)}</span>
+          ${meta ? `<div class="job-meta">${meta}</div>` : ""}
+          ${seasonRow}
+          ${progressBar}
+          ${errorRow}
+        </div>`;
+    }
+
+    function filterJobsByTab(jobs, tab) {
+      if (tab === "active")    return jobs.filter(j => j.status === "queued" || j.status === "downloading");
+      if (tab === "failed")    return jobs.filter(j => j.status === "failed");
+      if (tab === "completed") return jobs.filter(j => j.status === "completed");
+      return jobs; // "all"
+    }
+
+    function renderDownloadsView(jobs) {
+      const filtered = filterJobsByTab(jobs, downloadsActiveTab);
+
+      // Update nav badge with active job count
+      const activeCount = jobs.filter(j => j.status === "queued" || j.status === "downloading").length;
+      if (activeCount > 0) {
+        downloadsNavBadge.textContent = String(activeCount);
+        downloadsNavBadge.hidden = false;
+      } else {
+        downloadsNavBadge.hidden = true;
+      }
+
+      if (!filtered.length) {
+        const labels = { active: "No active downloads", all: "No jobs yet", failed: "No failed downloads", completed: "No completed downloads" };
+        downloadsContentEl.className = "downloads-empty";
+        downloadsContentEl.textContent = labels[downloadsActiveTab] || "Nothing here";
+        return;
+      }
+
+      downloadsContentEl.className = "job-list";
+      downloadsContentEl.innerHTML = filtered.map(renderJobCard).join("");
+    }
+
+    async function loadDownloadsView({ silent = false } = {}) {
+      if (!silent) {
+        downloadsContentEl.className = "downloads-empty";
+        downloadsContentEl.textContent = "Loading…";
+      }
+      try {
+        const res  = await fetch(apiUrl("downloads/jobs"));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        downloadJobs = data.jobs || [];
+        renderDownloadsView(downloadJobs);
+        updateDownloadsViewPoller();
+      } catch (err) {
+        if (!silent) {
+          downloadsContentEl.className = "downloads-empty";
+          downloadsContentEl.textContent = err.message;
+        }
+      }
+    }
+
+    function updateDownloadsViewPoller() {
+      const hasActive = downloadJobs.some(j => j.status === "queued" || j.status === "downloading");
+      if (activeView === "downloads" && hasActive && !downloadsViewPoller) {
+        downloadsViewPoller = setInterval(() => loadDownloadsView({ silent: true }), 2000);
+      } else if ((!hasActive || activeView !== "downloads") && downloadsViewPoller) {
+        clearInterval(downloadsViewPoller);
+        downloadsViewPoller = null;
+      }
+    }
+
+    // Tab switching
+    document.querySelectorAll(".downloads-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        downloadsActiveTab = btn.dataset.tab;
+        document.querySelectorAll(".downloads-tab").forEach(b => b.classList.toggle("active", b === btn));
+        renderDownloadsView(downloadJobs);
+      });
+    });
+
+    downloadsRefreshBtn.addEventListener("click", () => loadDownloadsView());
+
+    // ── Remote Index view ────────────────────────────────────────────────
+
+    const REMOTE_PROXY_PATH = "/api/remote";
+    const remoteContentEl   = document.getElementById("remote-content");
+    const remoteBreadcrumb  = document.getElementById("remote-breadcrumb");
+    const remoteStatsEl     = document.getElementById("remote-stats");
+    const remoteSearchInput = document.getElementById("remote-search");
+    let remoteCurrentPath   = null;   // null = not loaded yet
+    let remoteCurrentItems  = [];
+    let remoteViewMode      = "grid"; // "grid" | "list"
+
+    const VIDEO_EXTS  = new Set([".mkv",".mp4",".avi",".mov",".webm",".m4v",".ts",".flv"]);
+    const AUDIO_EXTS  = new Set([".mp3",".flac",".aac",".opus",".m4a",".wav"]);
+    const IMAGE_EXTS  = new Set([".jpg",".jpeg",".png",".webp",".gif"]);
+
+    function extOf(name) {
+      const i = name.lastIndexOf(".");
+      return i >= 0 ? name.slice(i).toLowerCase() : "";
+    }
+
+    function itemIcon(item) {
+      if (item.type === "directory") return "📁";
+      const ext = extOf(item.name);
+      if (VIDEO_EXTS.has(ext))  return "🎬";
+      if (AUDIO_EXTS.has(ext))  return "🎵";
+      if (IMAGE_EXTS.has(ext))  return "🖼";
+      if (ext === ".pdf")        return "📄";
+      if (ext === ".zip" || ext === ".rar" || ext === ".7z") return "🗜";
+      return "📄";
+    }
+
+    function itemTypeLabel(item) {
+      if (item.type === "directory") return "folder";
+      const ext = extOf(item.name);
+      if (VIDEO_EXTS.has(ext))  return "video";
+      if (AUDIO_EXTS.has(ext))  return "audio";
+      if (IMAGE_EXTS.has(ext))  return "image";
+      return "file";
+    }
+
+    function remoteFileUrl(item) {
+      // item.url is set by navigateRemote from the proxy response
+      return item.url || item.path;
+    }
+
+    function buildBreadcrumb(path) {
+      const parts   = path.replace(/^\//, "").replace(/\/$/, "").split("/").filter(Boolean);
+      let html      = `<button type="button" class="crumb-btn" data-path="/">Root</button>`;
+      let cumulative = "";
+      parts.forEach((part) => {
+        cumulative += "/" + part;
+        const p = cumulative + "/";
+        html += `<span class="sep">/</span><button type="button" class="crumb-btn" data-path="${escapeAttr(p)}">${escapeHtml(part)}</button>`;
+      });
+      remoteBreadcrumb.innerHTML = html;
+      remoteBreadcrumb.querySelectorAll(".crumb-btn").forEach((btn) => {
+        btn.addEventListener("click", () => navigateRemote(btn.dataset.path));
+      });
+    }
+
+    function applyRemoteFilter() {
+      const q = remoteSearchInput.value.trim().toLowerCase();
+      return q
+        ? remoteCurrentItems.filter(i => i.name.toLowerCase().includes(q))
+        : remoteCurrentItems;
+    }
+
+    function renderRemoteItems(items) {
+      remoteStatsEl.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
+
+      if (!items.length) {
+        remoteContentEl.className = "state";
+        remoteContentEl.textContent = remoteSearchInput.value.trim()
+          ? "No items match your filter."
+          : "This directory is empty.";
+        return;
+      }
+
+      if (remoteViewMode === "list") {
+        renderRemoteList(items);
+      } else {
+        renderRemoteGrid(items);
+      }
+    }
+
+    function remoteItemActions(item) {
+      if (item.type === "directory") {
+        return `<button type="button" class="remote-open-btn" data-path="${escapeAttr(item.path)}">Open</button>`;
+      }
+      const url  = remoteFileUrl(item);
+      const ext  = extOf(item.name);
+      const isVideo = VIDEO_EXTS.has(ext);
+      const isAudio = AUDIO_EXTS.has(ext);
+      let actions = `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" download>Download</a>`;
+      if (isVideo || isAudio) {
+        actions = `<button type="button" class="remote-play-btn" data-url="${escapeAttr(url)}" data-title="${escapeAttr(item.name)}">Play</button>` + actions;
+      }
+      return actions;
+    }
+
+    function renderRemoteGrid(items) {
+      remoteContentEl.className = "remote-grid";
+      remoteContentEl.innerHTML = items.map((item) => {
+        const typeLabel  = itemTypeLabel(item);
+        const icon       = itemIcon(item);
+        const isDir      = item.type === "directory";
+        const thumb      = isDir
+          ? `<div class="remote-card-thumb" style="font-size:3rem">${icon}</div>`
+          : `<div class="remote-card-thumb">${icon}<span class="remote-card-type ${typeLabel}">${typeLabel}</span></div>`;
+
+        const meta = [item.modified, item.size].filter(Boolean).join(" · ");
+
+        return `
+          <div class="remote-card">
+            ${thumb}
+            <div class="remote-card-body">
+              <div class="remote-card-name" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</div>
+              ${meta ? `<div class="remote-card-meta">${escapeHtml(meta)}</div>` : ""}
+              <div class="remote-card-actions">${remoteItemActions(item)}</div>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    function renderRemoteList(items) {
+      remoteContentEl.className = "remote-list";
+      remoteContentEl.innerHTML = items.map((item) => {
+        const icon  = itemIcon(item);
+        const meta  = [item.modified, item.size].filter(Boolean).join(" · ");
+        return `
+          <div class="remote-row">
+            <span class="remote-row-icon">${icon}</span>
+            <div class="remote-row-info">
+              <div class="remote-row-name" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</div>
+              ${meta ? `<div class="remote-row-meta">${escapeHtml(meta)}</div>` : ""}
+            </div>
+            <div class="remote-row-actions">${remoteItemActions(item)}</div>
+          </div>`;
+      }).join("");
+    }
+
+    async function navigateRemote(path) {
+      remoteCurrentPath = path;
+      remoteCurrentItems = [];
+      remoteSearchInput.value = "";
+      remoteContentEl.className = "state";
+      remoteContentEl.textContent = "Loading…";
+      remoteStatsEl.textContent = "";
+      buildBreadcrumb(path);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("path", path);
+        const res = await fetch(REMOTE_PROXY_PATH + "?" + params.toString());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        remoteCurrentItems = data.items.map((item) => ({
+          ...item,
+          url: data.base + item.path,
+        }));
+        renderRemoteItems(applyRemoteFilter());
+      } catch (err) {
+        remoteContentEl.className = "state error";
+        remoteContentEl.textContent = `Failed to load directory: ${err.message}`;
+      }
+    }
+
+    // Event delegation for remote content clicks
+    remoteContentEl.addEventListener("click", (e) => {
+      const openBtn = e.target.closest(".remote-open-btn");
+      if (openBtn) { navigateRemote(openBtn.dataset.path); return; }
+
+      const playBtn = e.target.closest(".remote-play-btn");
+      if (playBtn) {
+        // Reuse the existing stream player
+        const url   = playBtn.dataset.url;
+        const title = playBtn.dataset.title || "Remote file";
+        streamPlayerTitle.textContent = title;
+        streamPlayerEl.hidden = false;
+        stopStreamPlayback({ resetSelectors: true });
+        if (window.Hls && Hls.isSupported() && url.includes(".m3u8")) {
+          streamHls = new Hls({ enableWorker: true });
+          streamHls.loadSource(url);
+          streamHls.attachMedia(streamPlayerVideo);
+          streamHls.on(Hls.Events.MANIFEST_PARSED, () => { streamPlayerVideo.play().catch(() => {}); });
+        } else {
+          streamPlayerVideo.src = url;
+          streamPlayerVideo.play().catch(() => {});
+        }
+        return;
+      }
+    });
+
+    remoteSearchInput.addEventListener("input", () => renderRemoteItems(applyRemoteFilter()));
+
+    document.getElementById("remote-view-grid").addEventListener("click", (e) => {
+      remoteViewMode = "grid";
+      e.currentTarget.classList.add("active");
+      document.getElementById("remote-view-list").classList.remove("active");
+      renderRemoteItems(applyRemoteFilter());
+    });
+
+    document.getElementById("remote-view-list").addEventListener("click", (e) => {
+      remoteViewMode = "list";
+      e.currentTarget.classList.add("active");
+      document.getElementById("remote-view-grid").classList.remove("active");
+      renderRemoteItems(applyRemoteFilter());
+    });
 
     function formatStreamsTime(iso) {
       if (!iso) return "never";
@@ -3228,7 +4090,14 @@
       if (e.key === "Escape" && !streamPlayerEl.hidden) closeStreamPlayer();
     });
     navItems.forEach((item) => {
-      item.addEventListener("click", () => setView(item.dataset.view));
+      item.addEventListener("click", () => {
+        // Stop downloads poller when leaving that view
+        if (activeView === "downloads" && item.dataset.view !== "downloads" && downloadsViewPoller) {
+          clearInterval(downloadsViewPoller);
+          downloadsViewPoller = null;
+        }
+        setView(item.dataset.view);
+      });
     });
     window.addEventListener("hashchange", () => setView(viewFromHash(), { updateHash: false }));
     applyMainUrlBtn.addEventListener("click", applyMainUrl);
@@ -3312,6 +4181,25 @@
     if (activeView !== "streams") {
       loadStreamsCatalog().catch(() => {});
     }
+    // Keep the nav badge up-to-date by polling jobs lightly in the background.
+    setInterval(() => {
+      fetch(apiUrl("downloads/jobs"))
+        .then(r => r.json())
+        .then(data => {
+          downloadJobs = data.jobs || [];
+          const activeCount = downloadJobs.filter(j => j.status === "queued" || j.status === "downloading").length;
+          if (activeCount > 0) {
+            downloadsNavBadge.textContent = String(activeCount);
+            downloadsNavBadge.hidden = false;
+          } else {
+            downloadsNavBadge.hidden = true;
+          }
+          // If we're on the downloads view, refresh it silently too
+          if (activeView === "downloads") renderDownloadsView(downloadJobs);
+          updateDownloadJobsPoller();
+        })
+        .catch(() => {});
+    }, 5000);
   </script>
 </body>
 </html>

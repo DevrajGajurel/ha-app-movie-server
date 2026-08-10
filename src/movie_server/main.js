@@ -1869,6 +1869,137 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === "/api/remote" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const remoteUrl = searchParams.get("url") || "https://a.111477.xyz";
+      const path = searchParams.get("path") || "/";
+
+      // Ensure path starts with / and doesn't end with / (unless root)
+      let cleanPath = path;
+      if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
+      cleanPath = cleanPath === "/" ? "/" : cleanPath.replace(/\/$/, "");
+
+      const targetUrl = cleanPath === "/" ? `${remoteUrl}/` : `${remoteUrl}${cleanPath}/`;
+      console.log(`[remote] fetching index: ${targetUrl}`);
+
+      const response = await scrapeFetch(targetUrl, { label: "remote" });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch remote index: ${response.status}`);
+      }
+
+      const html = await response.text();
+      const { document } = parseHTML(html);
+
+      // Parse anchor tags from the HTML index page
+      const anchors = [...document.querySelectorAll("a")];
+      const items = [];
+
+      for (const anchor of anchors) {
+        const href = anchor.getAttribute("href");
+        if (!href) continue;
+
+        // Skip parent directory link
+        if (href === "../" || href === "..") continue;
+
+        const fullPath = new URL(href, targetUrl).pathname;
+        const name = anchor.textContent?.trim() || href.replace(/^\/+/, "");
+
+        // Determine if directory or file
+        const isDirectory = href.endsWith("/");
+
+        if (isDirectory) {
+          // Directory - extract year from name if present
+          const yearMatch = name.match(/[([]?(\d{4})[)\]]?/);
+          const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : null;
+
+          items.push({
+            name,
+            type: "directory",
+            path: fullPath === "/" ? "/" : fullPath,
+            year: year || undefined,
+          });
+        } else {
+          // File - extract year and size from text content
+          const fullText = anchor.textContent?.trim() || "";
+          const yearMatch = fullText.match(/[([]?(\d{4})[)\]]?/);
+          const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : null;
+
+          // Extract size if present (e.g., "Movie (2020) [1.5GB]")
+          const sizeMatch = fullText.match(/(\d+\.?\d*)\s*(GB|MB|TB)/i);
+          const size = sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2]}` : undefined;
+
+          items.push({
+            name,
+            type: "file",
+            path: fullPath,
+            year: year || undefined,
+            size: size || undefined,
+          });
+        }
+      }
+
+      // Sort: directories first, then by year (newest first)
+      items.sort((a, b) => {
+        if (a.type === "directory" && b.type !== "directory") return -1;
+        if (b.type === "directory" && a.type !== "directory") return 1;
+        return (b.year || 0) - (a.year || 0);
+      });
+
+      // Get TMDB info for items
+      const tmdbEnabled = Boolean(TMDB_API_KEY);
+      let enrichedItems = items;
+
+      if (tmdbEnabled && items.length > 0) {
+        // First batch of 50 (directories + first 50 files for TMDB lookup)
+        const firstBatch = items.slice(0, 50);
+        const moviesForTmdb = firstBatch
+          .filter((item) => item.type === "file")
+          .map((item) => ({
+            title: item.name.replace(/\.\w+$/, ""), // Remove extension
+            link: item.name,
+            year: item.year || undefined,
+          }));
+
+        if (moviesForTmdb.length > 0) {
+          try {
+            const enriched = await enrichMovies(moviesForTmdb, TMDB_API_KEY);
+
+            // Map enriched data back to items
+            enrichedItems = items.map((item, i) => {
+              if (item.type === "directory" || i >= enriched.length) return item;
+
+              const tmdb = enriched[i]?.tmdb || null;
+              if (!tmdb) return item;
+
+              return {
+                ...item,
+                tmdbId: String(tmdb.tmdbId),
+                year: tmdb.year || undefined,
+                poster: tmdb.poster || undefined,
+                backdrop: tmdb.backdrop || undefined,
+                overview: tmdb.overview || undefined,
+                rating: tmdb.rating || undefined,
+              };
+            });
+          } catch (err) {
+            console.warn(`[remote] TMDB enrichment failed: ${err.message}`);
+          }
+        }
+      }
+
+      sendJson(res, 200, {
+        base: remoteUrl,
+        path: cleanPath,
+        items: enrichedItems,
+      });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
   sendJson(res, 404, { error: "Not found" });
 });
 
