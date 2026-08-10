@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.24
+
+- Fix HA cf-clearance "scanner is not ready" / Chrome-not-found: launch system Chrome with an explicit path, reuse the add-on's Xvfb (`disableXvfb: true`), and retry download scrapes while the browser is still starting.
+
 ## 1.6.23
 
 - Remote Index: Added `/api/remote` proxy endpoint to browse external HTTP directories (e.g., `https://a.111477.xyz/`). Fetches and parses HTML index pages, extracts anchor tags for files/directories, sorts by year (newest first), and enriches files with TMDB posters in batches of 50. HelloTV sidebar now includes "Remote" option; MediaNest Remote view integrated.

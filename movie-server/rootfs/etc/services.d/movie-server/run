@@ -75,15 +75,18 @@ CF_CLEARANCE_URL=${CF_CLEARANCE_URL}
 DISPLAY=:99
 EOF
 
-# Wait for the in-addon cf-clearance listener (started by its own s6 service).
+# Wait for cf-clearance HTTP. Chrome may still be launching — movie-server
+# retries "scanner is not ready" on each download request.
 bashio::log.info "Waiting for cf-clearance on ${CF_CLEARANCE_URL}..."
-for _ in $(seq 1 90); do
+for _ in $(seq 1 60); do
   if (echo >/dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
-    bashio::log.info "cf-clearance is listening on :3000"
+    bashio::log.info "cf-clearance port is open"
     break
   fi
   sleep 1
 done
+# Give puppeteer-real-browser a moment to finish the first Chrome launch.
+sleep 5
 
 cd /app || exit 1
 exec node main.js

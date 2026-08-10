@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
 
 const ENV_CANDIDATES = [
   path.join(__dirname, ".env"),
@@ -58,6 +57,7 @@ const {
   removeManualStream,
 } = require("./streamCatalog");
 const { initResolveCache, resolveStreamByTmdb } = require("./streamResolve");
+const { initDownloadOptionsCache, resolveDirectOptionsCached, prefetchDirectOptionsInBackground } = require("./downloadOptionsCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -304,8 +304,8 @@ function logHostHop(label, requestedUrl, response) {
 // challenge` and a "Just a moment..." body. No combination of request headers
 // passes it - it needs a real browser - so name it explicitly rather than
 // letting it surface as an unexplained 403, and report `challenge: true` so
-// callers know it's worth retrying via fetchPageViaBrowser() below instead of
-// just giving up.
+// callers know it's worth retrying via fetchPageViaCfClearance() below
+// instead of just giving up.
 async function classifyFetchFailure(response) {
   const mitigated = response.headers.get("cf-mitigated");
   const ray = response.headers.get("cf-ray");
@@ -330,13 +330,10 @@ async function classifyFetchFailure(response) {
   return { challenge, detail: parts.join("; ") };
 }
 
-const VIDSRC_DIR = path.join(__dirname, "..", "vidsrc");
-const BROWSER_FETCH_SCRIPT = path.join(VIDSRC_DIR, "browser_fetch.py");
-const BROWSER_FETCH_TIMEOUT_S = Number(process.env.DOWNLOAD_BROWSER_TIMEOUT_S || 45);
 const CF_CLEARANCE_URL = String(process.env.CF_CLEARANCE_URL || "").trim().replace(/\/$/, "");
 const CF_CLEARANCE_TIMEOUT_MS = Number(process.env.CF_CLEARANCE_TIMEOUT_MS || 90000);
 
-// Optional sidecar: https://github.com/ZFC-Digital/cf-clearance-scraper
+// Optional sidecar / in-addon: https://github.com/ZFC-Digital/cf-clearance-scraper
 // POST /cf-clearance-scraper { url, mode: "source" } -> { code: 200, source: "<html>" }
 async function fetchPageViaCfClearance(targetUrl) {
   if (!CF_CLEARANCE_URL) {
@@ -346,108 +343,79 @@ async function fetchPageViaCfClearance(targetUrl) {
   const endpoint = `${CF_CLEARANCE_URL}/cf-clearance-scraper`;
   console.log(`[downloads] cf-clearance source: ${targetUrl} via ${endpoint}`);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CF_CLEARANCE_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ url: targetUrl, mode: "source" }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err.name === "AbortError") {
-      throw new Error(`cf-clearance timed out after ${CF_CLEARANCE_TIMEOUT_MS}ms`);
+  const maxAttempts = Math.max(1, Number(process.env.CF_CLEARANCE_RETRIES || 8));
+  const retryDelayMs = Math.max(250, Number(process.env.CF_CLEARANCE_RETRY_MS || 2000));
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CF_CLEARANCE_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ url: targetUrl, mode: "source" }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === "AbortError") {
+        lastError = new Error(`cf-clearance timed out after ${CF_CLEARANCE_TIMEOUT_MS}ms`);
+      } else {
+        lastError = new Error(`cf-clearance unreachable: ${err.message}`);
+      }
+      if (attempt < maxAttempts) {
+        console.warn(`[downloads] cf-clearance attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`);
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
+      }
+      throw lastError;
+    } finally {
+      clearTimeout(timer);
     }
-    throw new Error(`cf-clearance unreachable: ${err.message}`);
-  } finally {
-    clearTimeout(timer);
-  }
 
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error(`cf-clearance returned non-JSON (HTTP ${response.status})`);
-  }
-
-  if (!response.ok || data?.code !== 200 || !data?.source) {
-    throw new Error(data?.message || `cf-clearance failed (HTTP ${response.status}, code ${data?.code})`);
-  }
-
-  const html = String(data.source);
-  if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
-    throw new Error("cf-clearance returned a Cloudflare challenge page");
-  }
-
-  return { html, url: targetUrl };
-}
-
-// Spawns browser_fetch.py (SeleniumBase UC + the Xvfb :99 display the Docker
-// image already runs for vidsrc) to clear a Cloudflare Turnstile challenge
-// that plain headers cannot pass. Slow (tens of seconds) by nature of
-// driving a real browser - only called after classifyFetchFailure() has
-// already confirmed a challenge is actually there, not on ordinary failures.
-function fetchPageViaBrowser(targetUrl, { referer } = {}) {
-  const python = process.env.VIDSRC_PYTHON || (process.platform === "win32" ? "python" : "python3");
-  const args = [BROWSER_FETCH_SCRIPT, targetUrl, "--timeout", String(BROWSER_FETCH_TIMEOUT_S)];
-  if (referer) args.push("--referer", referer);
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(python, args, { cwd: VIDSRC_DIR, env: { ...process.env }, windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-      // browser_fetch.py's own progress lines - surface them live rather
-      // than only on failure, since this step can take up to
-      // BROWSER_FETCH_TIMEOUT_S seconds with nothing else to show for it.
-      String(chunk)
-        .split("\n")
-        .filter(Boolean)
-        .forEach((line) => console.log(`[browser-fetch] ${line}`));
-    });
-    child.on("error", (err) => reject(new Error(`Could not start ${python}: ${err.message}`)));
-    child.on("close", (code) => {
-      // SeleniumBase sometimes still leaks banners onto stdout; pick the last
-      // line that parses as a result object with an `ok` field.
-      const lines = stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      let result = null;
-      for (let i = lines.length - 1; i >= 0; i -= 1) {
-        try {
-          const parsed = JSON.parse(lines[i]);
-          if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "ok")) {
-            result = parsed;
-            break;
-          }
-        } catch {
-          // keep scanning
-        }
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      lastError = new Error(`cf-clearance returned non-JSON (HTTP ${response.status})`);
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
       }
-      if (!result) {
-        const hint = (stderr || stdout).trim().slice(-400);
-        reject(
-          new Error(
-            `browser_fetch.py produced no JSON result (exit ${code})` +
-              (hint ? `: ${hint}` : "")
-          )
+      throw lastError;
+    }
+
+    const message = String(data?.message || "");
+    const notReady =
+      response.status === 500 && /scanner is not ready/i.test(message);
+
+    if (notReady) {
+      lastError = new Error(message || "The scanner is not ready yet");
+      if (attempt < maxAttempts) {
+        console.warn(
+          `[downloads] cf-clearance not ready (attempt ${attempt}/${maxAttempts}) — waiting ${retryDelayMs}ms`
         );
-        return;
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
       }
-      if (!result.ok) {
-        reject(new Error(result.error || "browser_fetch.py failed"));
-        return;
-      }
-      resolve({ html: result.html, url: result.url || targetUrl });
-    });
-  });
+      throw lastError;
+    }
+
+    if (!response.ok || data?.code !== 200 || !data?.source) {
+      throw new Error(message || `cf-clearance failed (HTTP ${response.status}, code ${data?.code})`);
+    }
+
+    const html = String(data.source);
+    if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
+      throw new Error("cf-clearance returned a Cloudflare challenge page");
+    }
+
+    return { html, url: targetUrl };
+  }
+
+  throw lastError || new Error("cf-clearance failed");
 }
 
 function scrapeSecondaryPage(pageUrl) {
@@ -749,36 +717,16 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
         (detail ? ` - ${detail}` : "")
     );
 
-    if (challenge) {
+    if (challenge && CF_CLEARANCE_URL) {
       const browserUrl = response.url || targetUrl;
-      const errors = [];
-
-      // Prefer the dedicated Turnstile scraper sidecar when configured
-      // (docker compose service cf-clearance). Fall back to in-process
-      // SeleniumBase UC if it is missing or fails.
-      if (CF_CLEARANCE_URL) {
-        try {
-          const { html, url: finalUrl } = await fetchPageViaCfClearance(browserUrl);
-          console.log(`[downloads] cf-clearance ok: ${finalUrl} (${html.length} bytes)`);
-          return { html, url: finalUrl };
-        } catch (err) {
-          console.warn(`[downloads] cf-clearance failed: ${err.message}`);
-          errors.push(`cf-clearance: ${err.message}`);
-        }
-      }
-
-      console.log(
-        `[downloads] retrying via headed browser (up to ${BROWSER_FETCH_TIMEOUT_S}s): ${browserUrl}`
-      );
       try {
-        const { html, url: finalUrl } = await fetchPageViaBrowser(browserUrl, { referer });
-        console.log(`[downloads] browser fetch ok: ${finalUrl} (${html.length} bytes)`);
+        const { html, url: finalUrl } = await fetchPageViaCfClearance(browserUrl);
+        console.log(`[downloads] cf-clearance ok: ${finalUrl} (${html.length} bytes)`);
         return { html, url: finalUrl };
       } catch (err) {
-        console.warn(`[downloads] browser fetch failed: ${err.message}`);
-        errors.push(`browser: ${err.message}`);
+        console.warn(`[downloads] cf-clearance failed: ${err.message}`);
         throw new Error(
-          `Failed to fetch download page: ${response.status} - ${detail} - fallbacks failed: ${errors.join(" | ")}`
+          `Failed to fetch download page: ${response.status} - ${detail} - cf-clearance also failed: ${err.message}`
         );
       }
     }
@@ -855,16 +803,27 @@ async function fetchDownloadOptions(pageUrl) {
   }
 
   const baseUrl = resolvedUrl || pageUrl;
+  const options = sortDownloadOptions(anchors.map((anchor) => ({
+    label: (anchor.querySelector(".dll")?.textContent || anchor.textContent || "Download").trim(),
+    href: new URL(anchor.getAttribute("href"), baseUrl).href,
+  })));
+
+  // Each option.href is itself a page (e.g. linkmake.in) that has to be
+  // resolved one level deeper to find the actual file-host buttons - and
+  // that inner resolution is the one likely to hit a Cloudflare Turnstile
+  // challenge (new1.filesdl.in -> new6.filesdl.top). Warm the cache for all
+  // of them now, in the background, so that by the time the user actually
+  // clicks a quality the "direct" list is already resolved instead of
+  // paying the Cloudflare cost inside that click's own request.
+  prefetchDirectOptionsInBackground(options.map((o) => o.href), fetchDirectDownloadOptionsLive);
+
   return {
-    options: sortDownloadOptions(anchors.map((anchor) => ({
-      label: (anchor.querySelector(".dll")?.textContent || anchor.textContent || "Download").trim(),
-      href: new URL(anchor.getAttribute("href"), baseUrl).href,
-    }))),
+    options,
     selectors: selectorDiagnostics(document, selectors),
   };
 }
 
-async function fetchDirectDownloadOptions(pageUrl) {
+async function fetchDirectDownloadOptionsLive(pageUrl) {
   let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.direct;
   let anchors = selectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
@@ -889,6 +848,16 @@ async function fetchDirectDownloadOptions(pageUrl) {
     }))),
     selectors: selectorDiagnostics(document, selectors),
   };
+}
+
+// Cache-checked wrapper around fetchDirectDownloadOptionsLive - see
+// downloadOptionsCache.js. Both the real /api/downloads?type=direct request
+// and the background prefetch above go through this, so a click that lands
+// after the prefetch already finished gets the cached result instantly, and
+// one that lands while it's still running joins the same in-flight
+// resolution instead of starting a second one.
+async function fetchDirectDownloadOptions(pageUrl) {
+  return resolveDirectOptionsCached(pageUrl, () => fetchDirectDownloadOptionsLive(pageUrl));
 }
 
 async function resolveDownloadLink(detailUrl) {
@@ -1846,6 +1815,7 @@ const server = http.createServer(async (req, res) => {
         count: result.options.length,
         options: result.options,
         selectors: result.selectors,
+        cached: Boolean(result.cached),
       });
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;

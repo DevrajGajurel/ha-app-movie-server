@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.6.23
+ARG APP_BUILD_VERSION=1.6.24
 ARG CF_CLEARANCE_GIT_URL=https://github.com/ZFC-Digital/cf-clearance-scraper.git
 ARG CF_CLEARANCE_GIT_REF=main
 
@@ -50,7 +50,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxss1 \
         xdg-utils \
         aria2 \
-        python3-tk \
     && rm -rf /var/lib/apt/lists/*
 
 # Node + Chrome (build-only helpers purged at the end of this layer).
@@ -90,8 +89,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
  && apt-get purge -y --auto-remove git \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cache /root/.npm /tmp/*
 
+# Overlay our Chrome/Xvfb-aware createBrowser.js (rootfs) after the upstream clone.
 COPY rootfs /
 RUN chmod a+x /etc/services.d/xvfb/run \
  && chmod a+x /etc/services.d/cf-clearance/run \
  && chmod a+x /etc/services.d/movie-server/run \
- && chmod a+x /etc/cont-init.d/* 2>/dev/null || true
+ && chmod a+x /etc/cont-init.d/* 2>/dev/null || true \
+ && test -f /opt/cf-clearance/src/module/createBrowser.js
