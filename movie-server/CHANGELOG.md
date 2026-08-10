@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.26
+
+- Fixed the real cause of `[cf-clearance] Chrome binary not found` on every build: `google-chrome-stable`'s own `.deb` declares a hard `Depends: ... wget ...`, and the Dockerfile purged `wget` right after installing Chrome to save space — apt cascaded that into silently removing Chrome too, every single build, regardless of image freshness. `gnupg` is still purged (genuinely build-only); `wget` now stays installed. The build also fails loudly (`command -v google-chrome-stable`) if this ever regresses, instead of deferring to a confusing runtime retry loop. Verified by reproducing the exact Dockerfile layer against the real `ghcr.io/home-assistant/amd64-base-debian:bookworm` base image.
+
 ## 1.6.25
 
 - The "direct" download hop (e.g. linkmake.in → new1.filesdl.in → new6.filesdl.top, the one likely to hit a Cloudflare Turnstile challenge) is now resolved and cached in Redis as soon as the quality list loads, in the background — not only when the user actually clicks a quality. A click that lands after the prefetch finishes gets the cached result instantly instead of paying the Cloudflare cost inline; one that lands while it's still resolving joins that same in-flight resolution instead of starting a second one.

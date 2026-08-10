@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 ARG APP_GIT_URL=https://github.com/DevrajGajurel/ha-app-movie-server.git
 ARG APP_GIT_REF=main
-ARG APP_BUILD_VERSION=1.6.25
+ARG APP_BUILD_VERSION=1.6.26
 ARG CF_CLEARANCE_GIT_URL=https://github.com/ZFC-Digital/cf-clearance-scraper.git
 ARG CF_CLEARANCE_GIT_REF=main
 
@@ -52,15 +52,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         aria2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Node + Chrome (build-only helpers purged at the end of this layer).
+# Node + Chrome (gnupg is build-only and purged; wget is NOT - Chrome's own
+# .deb declares a hard `Depends: ... wget ...`, so purging it after install
+# cascades apt into removing google-chrome-stable right along with it. This
+# was silently deleting Chrome on every build - `command -v` + explicit exit
+# below fails the build loudly instead of deferring it to a confusing
+# "Chrome binary not found" retry loop at container runtime.).
 RUN apt-get update && apt-get install -y --no-install-recommends gnupg wget \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && apt-get purge -y --auto-remove gnupg wget \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+    && apt-get purge -y --auto-remove gnupg \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
+    && command -v google-chrome-stable
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git \
