@@ -19,6 +19,7 @@ for that step when requests alone are blocked.
 # resolve_one.py already do.
 from __future__ import annotations
 
+import os
 import re
 import sys
 import time
@@ -55,6 +56,32 @@ try:
     print("[*] Cloudscraper enabled for Cloudflare bypass", file=sys.stderr)
 except ImportError:
     print("[!] cloudscraper not installed, using requests only", file=sys.stderr)
+
+# Same sidecar main.js's fetchPageViaCfClearance() calls for the downloads
+# flow (https://github.com/ZFC-Digital/cf-clearance-scraper) - shared last
+# resort when cloudscraper alone can't clear the prorcp hop's Turnstile.
+# Reusing it here (instead of the old SeleniumBase-driven local Chrome) means
+# one browser automation stack for the whole app, not two.
+CF_CLEARANCE_URL = os.environ.get("CF_CLEARANCE_URL", "").rstrip("/")
+
+
+def _fetch_via_cf_clearance(url: str, timeout_s: int = 60) -> str:
+    if not CF_CLEARANCE_URL:
+        raise RuntimeError("CF_CLEARANCE_URL is not configured")
+    endpoint = f"{CF_CLEARANCE_URL}/cf-clearance-scraper"
+    print(f"[*] cf-clearance source: {url[:80]}... via {endpoint}", file=sys.stderr)
+    resp = requests.post(
+        endpoint,
+        json={"url": url, "mode": "source"},
+        timeout=timeout_s,
+    )
+    data = resp.json()
+    if not resp.ok or data.get("code") != 200 or not data.get("source"):
+        raise RuntimeError(data.get("message") or f"cf-clearance failed (HTTP {resp.status_code})")
+    html = str(data["source"])
+    if "Just a moment" in html or "challenges.cloudflare.com" in html or "cf-turnstile" in html:
+        raise RuntimeError("cf-clearance returned a Cloudflare challenge page")
+    return html
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -240,37 +267,6 @@ def _fetch_stream_token(html: str, player_base: str, retries: int = 4) -> str | 
     return None
 
 
-def _fetch_stream_token_in_browser(driver, html: str, player_base: str) -> str | None:
-    """Fetch JWT via the live browser context (avoids datacenter 429s on bare requests)."""
-    gen_url = _extract(r"""\$\.get\(\s*["'](https?://[^"']+/generate\.php[^"']*)["']""", html)
-    if not gen_url:
-        host = _extract(r'https?://([a-zA-Z0-9.-]+)/pl/', html)
-        if host:
-            gen_url = f"https://{host}/generate.php"
-    if not gen_url:
-        return None
-    try:
-        token = driver.execute_async_script(
-            """
-            const url = arguments[0];
-            const done = arguments[arguments.length - 1];
-            fetch(url, { credentials: 'include', headers: { 'Accept': '*/*' } })
-              .then(r => r.text())
-              .then(t => done(t))
-              .catch(() => done(null));
-            """,
-            gen_url,
-        )
-        if token:
-            token = str(token).strip()
-        if token and token != "__TOKEN__" and len(token) > 20:
-            print(f"[+] Stream token via browser from {gen_url}")
-            return token
-    except Exception as e:
-        print(f"[-] browser token fetch failed: {e}")
-    return _fetch_stream_token(html, player_base)
-
-
 def get_m3u8_urls(prorcp_hash: str, rcp_url: str, player_base: str) -> list[dict]:
     url = f"{player_base}/prorcp/{prorcp_hash}"
     resp = _get(url, referer=rcp_url)
@@ -279,7 +275,7 @@ def get_m3u8_urls(prorcp_hash: str, rcp_url: str, player_base: str) -> list[dict
     if "cf-turnstile" in html or "challenges.cloudflare.com" in html:
         raise ValueError(
             f"Cloudflare Turnstile is blocking {player_base}/prorcp — "
-            "use --browser to open headed Chrome and pass the challenge"
+            "use --browser to fall through to cloudscraper / the cf-clearance sidecar"
         )
 
     file_match = (
@@ -295,156 +291,24 @@ def get_m3u8_urls(prorcp_hash: str, rcp_url: str, player_base: str) -> list[dict
 
 def get_m3u8_urls_browser(rcp_url: str, player_base: str, timeout_s: int = 60) -> list[dict]:
     """
-    Open the RCP page in headed undetected Chrome (SeleniumBase UC),
-    trigger the player iframe, wait for Turnstile to clear, then collect m3u8 URLs.
-    
-    DEPRECATED: Now using cloudscraper instead. Kept for backward compatibility.
+    Fallback chain for the Turnstile-protected prorcp hop: cloudscraper first
+    (cheap, in-process), then the cf-clearance-scraper sidecar (a real
+    browser, but shared with the downloads flow's own Turnstile fallback -
+    see main.js's fetchPageViaCfClearance) if cloudscraper alone can't clear
+    it. No local SeleniumBase/Chrome anymore: that was a second, independent
+    browser-automation stack next to the one cf-clearance already runs, and
+    it had silently stopped working once `seleniumbase` was dropped from
+    requirements.txt (this function's old fallback imported it unguarded).
     """
     try:
         from scraper_cloudscraper import get_m3u8_urls_cloudscraper
         return get_m3u8_urls_cloudscraper(rcp_url, player_base, timeout_s)
     except Exception as e:
         print(f"[*] cloudscraper failed: {e}", file=sys.stderr)
-        print("[*] Falling back to headed Chrome (SeleniumBase)...", file=sys.stderr)
-        return _get_m3u8_urls_seleniumbase(rcp_url, player_base, timeout_s)
-
-
-def _get_m3u8_urls_seleniumbase(rcp_url: str, player_base: str, timeout_s: int = 60) -> list[dict]:
-    """
-    SeleniumBase UC implementation - kept for backward compatibility.
-    """
-    from seleniumbase import Driver
-
-    player_html = ""
-
-    def consider_from_text(text: str) -> bool:
-        nonlocal player_html
-        if not text:
-            return False
-        if "master_urls" in text or ("generate.php" in text and ".m3u8" in text):
-            player_html = text
-            return True
-        if "Playerjs" in text and ".m3u8" in text:
-            player_html = text
-            return True
-        return False
-
-    print(f"[*] Opening headed Chrome (UC) for Turnstile: {rcp_url[:80]}...")
-    driver = Driver(
-        uc=True,
-        headless=False,
-        chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu",
-    )
-    try:
-        driver.set_script_timeout(30)
-    except Exception:
-        pass
-    try:
-        driver.get(rcp_url)
-        time.sleep(1.5)
-        try:
-            driver.execute_script("typeof loadIframe === 'function' && loadIframe()")
-        except Exception:
-            pass
-        try:
-            driver.execute_script(
-                "var el=document.querySelector('#pl_but,#pl_but_background');"
-                "if(el) el.click();"
-            )
-        except Exception:
-            pass
-
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            time.sleep(1)
-            try:
-                if consider_from_text(driver.page_source):
-                    break
-            except Exception:
-                pass
-            try:
-                frames_html = driver.execute_script(
-                    """
-                    const out = [];
-                    for (const f of document.querySelectorAll('iframe')) {
-                      try { out.push(f.contentDocument.documentElement.outerHTML); }
-                      catch (e) { out.push(''); }
-                    }
-                    return out;
-                    """
-                ) or []
-                if any(consider_from_text(html) for html in frames_html):
-                    break
-            except Exception:
-                pass
-
-        if not player_html:
-            raise ValueError(
-                f"Browser timed out after {timeout_s}s waiting for player HTML "
-                "(Turnstile did not clear — try again, or click the checkbox if shown)"
-            )
-
-        if "generate.php" not in player_html and "__TOKEN__" not in player_html:
-            time.sleep(2)
-            try:
-                frames_html = driver.execute_script(
-                    """
-                    const out = [];
-                    for (const f of document.querySelectorAll('iframe')) {
-                      try { out.push(f.contentDocument.documentElement.outerHTML); }
-                      catch (e) { out.push(''); }
-                    }
-                    return out;
-                    """
-                ) or []
-                for html in frames_html:
-                    consider_from_text(html)
-            except Exception:
-                pass
-
-        file_match = (
-            _extract(r'master_urls\s*=\s*"([^"]+\.m3u8[^"]*)"', player_html)
-            or _extract(r'file:\s*["\']([^"\']+\.m3u8[^"\']*)["\']', player_html)
-            or _extract(r'"file"\s*:\s*"([^"]+\.m3u8[^"]*)"', player_html)
-        )
-        if not file_match:
-            urls = re.findall(r'https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*', player_html)
-            if not urls:
-                raise ValueError("Player loaded but no m3u8 URLs found in HTML")
-            file_match = " or ".join(dict.fromkeys(urls))
-
-        token = None
-        if "__TOKEN__" in file_match or "__TOKEN__" in player_html:
-            time.sleep(2)
-            token = _fetch_stream_token_in_browser(driver, player_html, player_base)
-            if not token:
-                try:
-                    net_urls = driver.execute_script(
-                        """
-                        return performance.getEntriesByType('resource')
-                          .map(e => e.name)
-                          .filter(n => n.includes('.m3u8') && !n.includes('__TOKEN__'));
-                        """
-                    ) or []
-                    if net_urls:
-                        results = [{"url": u, "raw": u} for u in dict.fromkeys(net_urls)]
-                        for entry in results:
-                            print(f"    [browser] m3u8: {entry['url']}")
-                        return results
-                except Exception:
-                    pass
-
-        results = _parse_file_field(file_match, player_html, player_base, token=token)
-        for entry in results:
-            print(f"    [browser] m3u8: {entry['url']}")
-        if not results:
-            raise ValueError("Parsed player HTML but could not resolve stream URLs (token?)")
-        return results
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
+        print("[*] Falling back to the cf-clearance sidecar...", file=sys.stderr)
+        from scraper_cloudscraper import extract_m3u8_urls
+        player_html = _fetch_via_cf_clearance(rcp_url, timeout_s)
+        return extract_m3u8_urls(player_html, player_base)
 
 
 def _resolve_cdn_vars(html: str, player_base: str) -> dict:

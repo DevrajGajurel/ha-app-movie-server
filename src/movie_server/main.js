@@ -2094,6 +2094,12 @@ async function startServer() {
     console.warn("Stream resolve cache init failed:", err.message);
   }
 
+  try {
+    await initDownloadOptionsCache(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("Download options cache init failed:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.25
+
+- The "direct" download hop (e.g. linkmake.in → new1.filesdl.in → new6.filesdl.top, the one likely to hit a Cloudflare Turnstile challenge) is now resolved and cached in Redis as soon as the quality list loads, in the background — not only when the user actually clicks a quality. A click that lands after the prefetch finishes gets the cached result instantly instead of paying the Cloudflare cost inline; one that lands while it's still resolving joins that same in-flight resolution instead of starting a second one.
+- Removed the local SeleniumBase fallback entirely (downloads' `browser_fetch.py` and vidsrc's `_get_m3u8_urls_seleniumbase`) — both had quietly stopped working once `seleniumbase` was dropped from `requirements.txt` in 1.6.23 (an unguarded `from seleniumbase import Driver` would ImportError if ever reached). vidsrc's own prorcp Turnstile fallback now goes through the same cf-clearance-scraper sidecar the downloads flow already uses, instead of a second, independent browser-automation stack.
+
 ## 1.6.24
 
 - Fix HA cf-clearance "scanner is not ready" / Chrome-not-found: launch system Chrome with an explicit path, reuse the add-on's Xvfb (`disableXvfb: true`), and retry download scrapes while the browser is still starting.
