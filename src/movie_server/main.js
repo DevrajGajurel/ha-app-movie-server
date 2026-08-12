@@ -38,25 +38,12 @@ const {
   saveProgress,
   getProgress,
   listProgress,
-  listM3u8Playlists,
-  resolveM3u8Token,
-  streamM3u8Playlist,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
 const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
-const { PROXY_PREFIX: HLS_PROXY_PREFIX, handleHlsProxy, REFERER_DEFAULT } = require("./hlsProxy");
-const {
-  initStreamCatalog,
-  getCatalog,
-  refreshCatalog,
-  getRefreshStatus,
-  addManualStream,
-  removeManualStream,
-} = require("./streamCatalog");
-const { initResolveCache, resolveStreamByTmdb } = require("./streamResolve");
 const { initDownloadOptionsCache, resolveDirectOptionsCached, prefetchDirectOptionsInBackground } = require("./downloadOptionsCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
@@ -302,10 +289,9 @@ function logHostHop(label, requestedUrl, response) {
 
 // A Cloudflare JS/Turnstile interstitial answers with 403 + `cf-mitigated:
 // challenge` and a "Just a moment..." body. No combination of request headers
-// passes it - it needs a real browser - so name it explicitly rather than
-// letting it surface as an unexplained 403, and report `challenge: true` so
-// callers know it's worth retrying via fetchPageViaCfClearance() below
-// instead of just giving up.
+// passes it - it needs a real browser, which this server no longer bundles -
+// so name it explicitly in the failure message rather than letting it
+// surface as an unexplained 403.
 async function classifyFetchFailure(response) {
   const mitigated = response.headers.get("cf-mitigated");
   const ray = response.headers.get("cf-ray");
@@ -328,94 +314,6 @@ async function classifyFetchFailure(response) {
   }
   if (ray) parts.push(`cf-ray ${ray}`);
   return { challenge, detail: parts.join("; ") };
-}
-
-const CF_CLEARANCE_URL = String(process.env.CF_CLEARANCE_URL || "").trim().replace(/\/$/, "");
-const CF_CLEARANCE_TIMEOUT_MS = Number(process.env.CF_CLEARANCE_TIMEOUT_MS || 90000);
-
-// Optional sidecar / in-addon: https://github.com/ZFC-Digital/cf-clearance-scraper
-// POST /cf-clearance-scraper { url, mode: "source" } -> { code: 200, source: "<html>" }
-async function fetchPageViaCfClearance(targetUrl) {
-  if (!CF_CLEARANCE_URL) {
-    throw new Error("CF_CLEARANCE_URL is not configured");
-  }
-
-  const endpoint = `${CF_CLEARANCE_URL}/cf-clearance-scraper`;
-  console.log(`[downloads] cf-clearance source: ${targetUrl} via ${endpoint}`);
-
-  const maxAttempts = Math.max(1, Number(process.env.CF_CLEARANCE_RETRIES || 8));
-  const retryDelayMs = Math.max(250, Number(process.env.CF_CLEARANCE_RETRY_MS || 2000));
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), CF_CLEARANCE_TIMEOUT_MS);
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ url: targetUrl, mode: "source" }),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      clearTimeout(timer);
-      if (err.name === "AbortError") {
-        lastError = new Error(`cf-clearance timed out after ${CF_CLEARANCE_TIMEOUT_MS}ms`);
-      } else {
-        lastError = new Error(`cf-clearance unreachable: ${err.message}`);
-      }
-      if (attempt < maxAttempts) {
-        console.warn(`[downloads] cf-clearance attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`);
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-        continue;
-      }
-      throw lastError;
-    } finally {
-      clearTimeout(timer);
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      lastError = new Error(`cf-clearance returned non-JSON (HTTP ${response.status})`);
-      if (attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-        continue;
-      }
-      throw lastError;
-    }
-
-    const message = String(data?.message || "");
-    const notReady =
-      response.status === 500 && /scanner is not ready/i.test(message);
-
-    if (notReady) {
-      lastError = new Error(message || "The scanner is not ready yet");
-      if (attempt < maxAttempts) {
-        console.warn(
-          `[downloads] cf-clearance not ready (attempt ${attempt}/${maxAttempts}) — waiting ${retryDelayMs}ms`
-        );
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-        continue;
-      }
-      throw lastError;
-    }
-
-    if (!response.ok || data?.code !== 200 || !data?.source) {
-      throw new Error(message || `cf-clearance failed (HTTP ${response.status}, code ${data?.code})`);
-    }
-
-    const html = String(data.source);
-    if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
-      throw new Error("cf-clearance returned a Cloudflare challenge page");
-    }
-
-    return { html, url: targetUrl };
-  }
-
-  throw lastError || new Error("cf-clearance failed");
 }
 
 function scrapeSecondaryPage(pageUrl) {
@@ -711,26 +609,11 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
   const response = await scrapeFetch(targetUrl, { referer, label: "downloads" });
 
   if (!response.ok) {
-    const { challenge, detail } = await classifyFetchFailure(response);
+    const { detail } = await classifyFetchFailure(response);
     console.warn(
       `[downloads] page fetch failed: ${response.status} ${response.url || targetUrl}` +
         (detail ? ` - ${detail}` : "")
     );
-
-    if (challenge && CF_CLEARANCE_URL) {
-      const browserUrl = response.url || targetUrl;
-      try {
-        const { html, url: finalUrl } = await fetchPageViaCfClearance(browserUrl);
-        console.log(`[downloads] cf-clearance ok: ${finalUrl} (${html.length} bytes)`);
-        return { html, url: finalUrl };
-      } catch (err) {
-        console.warn(`[downloads] cf-clearance failed: ${err.message}`);
-        throw new Error(
-          `Failed to fetch download page: ${response.status} - ${detail} - cf-clearance also failed: ${err.message}`
-        );
-      }
-    }
-
     throw new Error(
       `Failed to fetch download page: ${response.status}` + (detail ? ` - ${detail}` : "")
     );
@@ -1155,96 +1038,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.startsWith(HLS_PROXY_PREFIX)) {
-    try {
-      await handleHlsProxy(req, res);
-    } catch (err) {
-      if (!res.headersSent) sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/streams" && req.method === "GET") {
-    try {
-      const catalog = await getCatalog();
-      const movies = (catalog.movies || [])
-        .filter((m) => Array.isArray(m.streams) && m.streams.length > 0)
-        .map((m) => normalizeStreamMovie(m));
-      sendJson(res, 200, {
-        refreshedAt: catalog.refreshedAt || null,
-        window: catalog.window || null,
-        count: movies.length,
-        playable: movies.length,
-        refreshing: Boolean(catalog.refreshing),
-        lastError: catalog.lastError || catalog.error || null,
-        refererHint: catalog.refererHint || REFERER_DEFAULT,
-        movies,
-      });
-    } catch (err) {
-      sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/streams/refresh" && req.method === "POST") {
-    try {
-      const status = getRefreshStatus();
-      if (status.refreshing) {
-        sendJson(res, 202, { ok: false, refreshing: true, message: "Refresh already in progress" });
-        return;
-      }
-      // Kick off in background so the HTTP call returns quickly; clients poll GET /api/streams.
-      refreshCatalog("manual").catch((err) => {
-        console.warn("[streams] manual refresh failed:", err.message);
-      });
-      sendJson(res, 202, { ok: true, refreshing: true, message: "Refresh started" });
-    } catch (err) {
-      sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/streams/manual" && req.method === "POST") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      const entry = await addManualStream(body);
-      sendJson(res, 201, { ok: true, movie: normalizeStreamMovie(entry) });
-    } catch (err) {
-      const status = /required|must be/i.test(err.message) ? 400 : 500;
-      sendJson(res, status, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/streams/manual" && req.method === "DELETE") {
-    try {
-      const incoming = new URL(req.url || "/", "http://localhost");
-      const id = incoming.searchParams.get("id");
-      const result = await removeManualStream(id);
-      sendJson(res, 200, result);
-    } catch (err) {
-      const status = /required/i.test(err.message) ? 400 : /not found/i.test(err.message) ? 404 : 500;
-      sendJson(res, status, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/streams/by-tmdb" && req.method === "GET") {
-    try {
-      const incoming = new URL(req.url || "/", "http://localhost");
-      const payload = await resolveStreamByTmdb(req, {
-        tmdbId: incoming.searchParams.get("tmdbId") || incoming.searchParams.get("id"),
-        type: incoming.searchParams.get("type") || "movie",
-        season: incoming.searchParams.get("season"),
-        episode: incoming.searchParams.get("episode"),
-      });
-      sendJson(res, 200, payload);
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { error: err.message });
-    }
-    return;
-  }
-
   if (url === "/api/config" && req.method === "GET") {
     sendJson(res, 200, await getConfigPayloadAsync());
     return;
@@ -1422,47 +1215,6 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
-    } catch (err) {
-      sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/m3u8" && req.method === "GET") {
-    try {
-      const listed = listM3u8Playlists();
-      let items = listed.items || [];
-      if (TMDB_API_KEY && items.length) {
-        const enriched = await enrichMovies(
-          items.map((item) => ({ title: item.name, link: item.token })),
-          TMDB_API_KEY
-        );
-        items = items.map((item, i) => ({
-          ...item,
-          tmdb: enriched[i]?.tmdb || null,
-        }));
-      }
-      sendJson(res, 200, {
-        dir: listed.dir,
-        items,
-        tmdbEnabled: Boolean(TMDB_API_KEY),
-      });
-    } catch (err) {
-      sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
-  if (url === "/api/m3u8/play" && req.method === "GET") {
-    try {
-      const searchParams = new URL(req.url, "http://localhost").searchParams;
-      const token = searchParams.get("file");
-      const filePath = resolveM3u8Token(token);
-      if (!filePath) {
-        sendJson(res, 404, { error: "Playlist not found" });
-        return;
-      }
-      streamM3u8Playlist(req, res, filePath);
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
@@ -1839,198 +1591,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url === "/api/remote" && req.method === "GET") {
-    try {
-      const searchParams = new URL(req.url, "http://localhost").searchParams;
-      const remoteUrl = searchParams.get("url") || "https://a.111477.xyz";
-      const path = searchParams.get("path") || "/";
-
-      // Ensure path starts with / and doesn't end with / (unless root)
-      let cleanPath = path;
-      if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
-      cleanPath = cleanPath === "/" ? "/" : cleanPath.replace(/\/$/, "");
-
-      const targetUrl = cleanPath === "/" ? `${remoteUrl}/` : `${remoteUrl}${cleanPath}/`;
-      console.log(`[remote] fetching index: ${targetUrl}`);
-
-      const response = await scrapeFetch(targetUrl, { label: "remote" });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch remote index: ${response.status}`);
-      }
-
-      const html = await response.text();
-      const { document } = parseHTML(html);
-
-      // Parse anchor tags from the HTML index page
-      const anchors = [...document.querySelectorAll("a")];
-      const items = [];
-
-      for (const anchor of anchors) {
-        const href = anchor.getAttribute("href");
-        if (!href) continue;
-
-        // Skip parent directory link
-        if (href === "../" || href === "..") continue;
-
-        const fullPath = new URL(href, targetUrl).pathname;
-        const name = anchor.textContent?.trim() || href.replace(/^\/+/, "");
-
-        // Determine if directory or file
-        const isDirectory = href.endsWith("/");
-
-        if (isDirectory) {
-          // Directory - extract year from name if present
-          const yearMatch = name.match(/[([]?(\d{4})[)\]]?/);
-          const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : null;
-
-          items.push({
-            name,
-            type: "directory",
-            path: fullPath === "/" ? "/" : fullPath,
-            year: year || undefined,
-          });
-        } else {
-          // File - extract year and size from text content
-          const fullText = anchor.textContent?.trim() || "";
-          const yearMatch = fullText.match(/[([]?(\d{4})[)\]]?/);
-          const year = yearMatch ? Number.parseInt(yearMatch[1], 10) : null;
-
-          // Extract size if present (e.g., "Movie (2020) [1.5GB]")
-          const sizeMatch = fullText.match(/(\d+\.?\d*)\s*(GB|MB|TB)/i);
-          const size = sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2]}` : undefined;
-
-          items.push({
-            name,
-            type: "file",
-            path: fullPath,
-            year: year || undefined,
-            size: size || undefined,
-          });
-        }
-      }
-
-      // Sort: directories first, then by year (newest first)
-      items.sort((a, b) => {
-        if (a.type === "directory" && b.type !== "directory") return -1;
-        if (b.type === "directory" && a.type !== "directory") return 1;
-        return (b.year || 0) - (a.year || 0);
-      });
-
-      // Get TMDB info for items
-      const tmdbEnabled = Boolean(TMDB_API_KEY);
-      let enrichedItems = items;
-
-      if (tmdbEnabled && items.length > 0) {
-        // First batch of 50 (directories + first 50 files for TMDB lookup)
-        const firstBatch = items.slice(0, 50);
-        const moviesForTmdb = firstBatch
-          .filter((item) => item.type === "file")
-          .map((item) => ({
-            title: item.name.replace(/\.\w+$/, ""), // Remove extension
-            link: item.name,
-            year: item.year || undefined,
-          }));
-
-        if (moviesForTmdb.length > 0) {
-          try {
-            const enriched = await enrichMovies(moviesForTmdb, TMDB_API_KEY);
-
-            // Map enriched data back to items
-            enrichedItems = items.map((item, i) => {
-              if (item.type === "directory" || i >= enriched.length) return item;
-
-              const tmdb = enriched[i]?.tmdb || null;
-              if (!tmdb) return item;
-
-              return {
-                ...item,
-                tmdbId: String(tmdb.tmdbId),
-                year: tmdb.year || undefined,
-                poster: tmdb.poster || undefined,
-                backdrop: tmdb.backdrop || undefined,
-                overview: tmdb.overview || undefined,
-                rating: tmdb.rating || undefined,
-              };
-            });
-          } catch (err) {
-            console.warn(`[remote] TMDB enrichment failed: ${err.message}`);
-          }
-        }
-      }
-
-      sendJson(res, 200, {
-        base: remoteUrl,
-        path: cleanPath,
-        items: enrichedItems,
-      });
-    } catch (err) {
-      sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
 
   sendJson(res, 404, { error: "Not found" });
 });
 
 const CACHE_REFRESH_MS =
   (Number.parseFloat(process.env.CACHE_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
-const STREAM_REFRESH_MS =
-  (Number.parseFloat(process.env.STREAM_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
-
-function normalizeStreamMovie(movie) {
-  const referer = movie.referer || movie.streams?.[0]?.referer || REFERER_DEFAULT;
-  const streams = (movie.streams || []).map((stream) => {
-    const qualities = Array.isArray(stream.qualities) ? stream.qualities.filter((q) => q?.url) : [];
-    const normalizedQualities =
-      qualities.length > 0
-        ? qualities.map((q) => ({
-            label: q.label || q.resolution || "Auto",
-            resolution: q.resolution || null,
-            width: q.width || null,
-            height: q.height || null,
-            bandwidth: q.bandwidth || null,
-            frameRate: q.frameRate || q.frame_rate || null,
-            codecs: q.codecs || null,
-            url: q.url,
-          }))
-        : [
-            {
-              label: stream.bestQuality || stream.best_quality || "Auto",
-              resolution: null,
-              width: null,
-              height: null,
-              bandwidth: null,
-              frameRate: null,
-              codecs: null,
-              url: stream.url,
-            },
-          ];
-    return {
-      url: stream.url,
-      type: stream.type || "hls",
-      referer: stream.referer || referer,
-      bestQuality: stream.bestQuality || stream.best_quality || normalizedQualities[0]?.label || null,
-      qualities: normalizedQualities,
-    };
-  });
-
-  return {
-    id: movie.id || null,
-    manual: Boolean(movie.manual),
-    tmdbId: movie.tmdbId != null ? String(movie.tmdbId) : null,
-    title: movie.title || "Untitled",
-    overview: movie.overview || null,
-    year: movie.year || null,
-    rating: movie.rating != null ? Number(movie.rating) : null,
-    poster: movie.poster || null,
-    backdrop: movie.backdrop || null,
-    referer,
-    playerHost: movie.playerHost || movie.player_host || null,
-    streams,
-  };
-}
-
 // Background subtitle prefetch (see fileDownloads.js's prefetchAllSubtitles
 // for why): each new download already triggers this for just its own file,
 // but a startup + periodic sweep also catches movies downloaded before this
@@ -2076,24 +1642,6 @@ async function startServer() {
     console.warn("TMDB cache Redis init failed, continuing without it:", err.message);
   }
 
-  let streamCatalogEnabled = false;
-  try {
-    streamCatalogEnabled = await initStreamCatalog({
-      redisUrl: process.env.REDIS_URL,
-      refreshMs: STREAM_REFRESH_MS,
-      // Don't block listen on a long scrape; kick after listen below.
-      refreshOnStartup: false,
-    });
-  } catch (err) {
-    console.warn("Stream catalog Redis init failed, continuing without it:", err.message);
-  }
-
-  try {
-    await initResolveCache(process.env.REDIS_URL);
-  } catch (err) {
-    console.warn("Stream resolve cache init failed:", err.message);
-  }
-
   try {
     await initDownloadOptionsCache(process.env.REDIS_URL);
   } catch (err) {
@@ -2117,15 +1665,6 @@ async function startServer() {
     console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
-    console.log(
-      `Streams:     ${streamCatalogEnabled ? `enabled (refresh every ${Math.round(STREAM_REFRESH_MS / 3600000)}h)` : "disabled (no REDIS_URL)"}`
-    );
-
-    if (streamCatalogEnabled) {
-      refreshCatalog("startup").catch((err) => {
-        console.warn("[streams] startup refresh failed:", err.message);
-      });
-    }
   });
 
   runSubtitlePrefetchSweep();

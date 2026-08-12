@@ -1,7 +1,0 @@
-#!/usr/bin/with-contenv bashio
-# ==============================================================================
-# Start a shared Xvfb display for cf-clearance-scraper's headed Chrome
-# ==============================================================================
-set -euo pipefail
-
-exec Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR

@@ -48,9 +48,6 @@ SECONDARY_URL="$(bashio::config 'secondary_url')"
 SECONDARY_URL="${SECONDARY_URL#"${SECONDARY_URL%%[![:space:]]*}"}"
 SECONDARY_URL="${SECONDARY_URL%"${SECONDARY_URL##*[![:space:]]}"}"
 
-# Bundled in-addon scraper (same container). Override via options only if needed later.
-CF_CLEARANCE_URL="${CF_CLEARANCE_URL:-http://127.0.0.1:3000}"
-
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -67,26 +64,9 @@ EMBY_API_KEY=${EMBY_API_KEY}
 EMBY_PATH_PREFIX=${EMBY_PATH_PREFIX}
 REDIS_URL=${REDIS_URL}
 CACHE_REFRESH_HOURS=4
-STREAM_REFRESH_HOURS=4
 USE_ARIA2=${USE_ARIA2}
 CINEBY_URL=${CINEBY_URL}
-VIDSRC_PYTHON=python3
-CF_CLEARANCE_URL=${CF_CLEARANCE_URL}
-DISPLAY=:99
 EOF
-
-# Wait for cf-clearance HTTP. Chrome may still be launching — movie-server
-# retries "scanner is not ready" on each download request.
-bashio::log.info "Waiting for cf-clearance on ${CF_CLEARANCE_URL}..."
-for _ in $(seq 1 60); do
-  if (echo >/dev/tcp/127.0.0.1/3000) >/dev/null 2>&1; then
-    bashio::log.info "cf-clearance port is open"
-    break
-  fi
-  sleep 1
-done
-# Give puppeteer-real-browser a moment to finish the first Chrome launch.
-sleep 5
 
 cd /app || exit 1
 exec node main.js

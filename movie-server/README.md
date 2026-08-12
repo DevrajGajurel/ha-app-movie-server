@@ -30,5 +30,4 @@ On the **Configuration** tab, open **Show unused optional configuration options*
 - Downloads are saved under the configured `download_dir` (default `/media`).
 - When Emby is configured, new downloads trigger a library update automatically.
 - Open the UI from the add-on page or the **Movie Server** sidebar entry.
-- Cloudflare Turnstile download hosts are cleared by a **bundled** [cf-clearance-scraper](https://github.com/ZFC-Digital/cf-clearance-scraper) process inside this same add-on (listens on `127.0.0.1:3000`). No extra add-on is required. Local `docker compose` still runs it as a sibling container instead.
-- Image size is dominated by **Google Chrome (~430MB)** and **SeleniumBase (~130MB)** for Streams Turnstile. Those stay unless Streams browser scraping is redesigned to reuse cf-clearance only.
+- No bundled browser: Chrome, the cf-clearance sidecar, and the Streams/Remote Index features that needed them have been removed to keep the image light. A download host that serves a genuine Cloudflare Turnstile challenge will fail outright for now rather than falling back to a browser-based solver.

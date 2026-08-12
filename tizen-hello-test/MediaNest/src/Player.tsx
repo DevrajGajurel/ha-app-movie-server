@@ -6,8 +6,6 @@ interface PlayerProps {
   tmdbId?: string | null;
   title: string;
   fileToken?: string | null;
-  /** When set, opens this URL directly (HLS/m3u8) and skips download progress/tracks. */
-  streamUrl?: string | null;
   onClose: () => void;
 }
 
@@ -35,13 +33,12 @@ function trackLabel(t: { language: string | null; title: string | null; index: n
   return t.title || (t.language ? t.language.toUpperCase() : `Track ${t.index + 1}`);
 }
 
-export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onClose }: PlayerProps) {
+export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps) {
   const player = usePlayer();
   const lastSaveAtRef = useRef(0);
   const rememberedAppliedRef = useRef(false);
   const seekRepeatDirectionRef = useRef<"left" | "right" | null>(null);
   const seekRepeatCountRef = useRef(0);
-  const isStream = Boolean(streamUrl);
 
   const [version, setVersion] = useState<MediaVersion | null>(null);
   const [selectedAudioTrack, setSelectedAudioTrack] = useState(0);
@@ -67,14 +64,13 @@ export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onCl
   }
 
   // Opens the stream once on mount. raw=1 (baked into buildPlayUrl) is
-  // load-bearing for downloaded files: it bypasses the server's eac3->AAC
-  // transcode built for the old <video>-element app, which AVPlay doesn't
-  // need and which would otherwise collapse the file down to a single
-  // audio track. HLS playlists use streamUrl instead.
+  // load-bearing: it bypasses the server's eac3->AAC transcode built for
+  // the old <video>-element app, which AVPlay doesn't need and which would
+  // otherwise collapse the file down to a single audio track.
   useEffect(() => {
-    player.open(streamUrl || buildPlayUrl(tmdbId, title, fileToken));
+    player.open(buildPlayUrl(tmdbId, title, fileToken));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tmdbId, title, fileToken, streamUrl]);
+  }, [tmdbId, title, fileToken]);
 
   // This exact file's track list, for the tracks panel's labels - the
   // combined getTotalTrackInfo() index AVPlay actually needs for
@@ -82,7 +78,6 @@ export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onCl
   // same per-type position (0-based within just audio/just text), so the
   // two stay in sync without either side needing to know about the other.
   useEffect(() => {
-    if (isStream) return;
     getVersions(tmdbId, title)
       .then((versions) => {
         const match = (fileToken && versions.find((v) => v.token === fileToken)) || versions[0];
@@ -91,13 +86,13 @@ export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onCl
       .catch(() => {
         // No track info available - panel just won't offer anything.
       });
-  }, [tmdbId, title, fileToken, isStream]);
+  }, [tmdbId, title, fileToken]);
 
   // Resume position + remembered audio/subtitle track - applied once the
   // player is actually ready, since seekTo()/selectAudioTrack() both throw
   // before that.
   useEffect(() => {
-    if (isStream || !player.isReady || rememberedAppliedRef.current) return;
+    if (!player.isReady || rememberedAppliedRef.current) return;
     rememberedAppliedRef.current = true;
     getProgress(tmdbId, title, fileToken).then((progress) => {
       if (progress && progress.positionSeconds >= RESUME_MIN_SECONDS) {
@@ -119,11 +114,11 @@ export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onCl
       player.selectSubtitleTrack(subtitleTrack);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [player.isReady, isStream]);
+  }, [player.isReady]);
 
   // Periodic + on-close progress save.
   useEffect(() => {
-    if (isStream || !player.isReady || player.durationMs <= 0) return;
+    if (!player.isReady || player.durationMs <= 0) return;
     const now = Date.now();
     if (now - lastSaveAtRef.current < PROGRESS_SAVE_INTERVAL_MS) return;
     lastSaveAtRef.current = now;
@@ -136,18 +131,18 @@ export function Player({ tmdbId = null, title, fileToken, streamUrl = null, onCl
       audioTrack: selectedAudioTrack,
       subtitleTrack: selectedSubtitleTrack,
     });
-  }, [player.currentMs, player.isReady, player.durationMs, tmdbId, title, fileToken, selectedAudioTrack, selectedSubtitleTrack, isStream]);
+  }, [player.currentMs, player.isReady, player.durationMs, tmdbId, title, fileToken, selectedAudioTrack, selectedSubtitleTrack]);
 
   useEffect(() => {
     if (player.error) {
-      reportClientError("avplay.error", player.error, { tmdbId, title, fileToken, streamUrl });
+      reportClientError("avplay.error", player.error, { tmdbId, title, fileToken });
       const timer = window.setTimeout(onClose, 4000);
       return () => window.clearTimeout(timer);
     }
-  }, [player.error, tmdbId, title, fileToken, streamUrl, onClose]);
+  }, [player.error, tmdbId, title, fileToken, onClose]);
 
   function closeAndSave() {
-    if (!isStream && player.durationMs > 0) {
+    if (player.durationMs > 0) {
       saveProgress({
         tmdbId,
         title,

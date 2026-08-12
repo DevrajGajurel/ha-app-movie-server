@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0
+
+- Removed the Streams (vidsrc catalog: `/api/streams*`, `streamCatalog.js`, `streamResolve.js`, `hlsProxy.js`, `src/vidsrc/*`) and Remote Index (`/api/remote`, browsing `a.111477.xyz`) features entirely, from the backend, both TV apps (MediaNest, HelloTV), and the dashboard - both pulled in externally-hosted content this project has no rights to distribute.
+- Removed Chrome, Xvfb, and the bundled cf-clearance-scraper sidecar from the Docker image and add-on services - they existed only to support Streams' Cloudflare/Turnstile bypass and a secondary download-host fallback. Download links that hit a genuine Cloudflare Turnstile challenge now fail outright (logged clearly) instead of falling back to a browser solver; this cuts the image down substantially (no bundled browser, no Python/pip, no Xvfb).
+- Removed the now-orphaned folder-based M3U8 player backend (`/api/m3u8`, `/api/m3u8/play`) that predated the vidsrc catalog and had no remaining caller.
+
 ## 1.6.26
 
 - Fixed the real cause of `[cf-clearance] Chrome binary not found` on every build: `google-chrome-stable`'s own `.deb` declares a hard `Depends: ... wget ...`, and the Dockerfile purged `wget` right after installing Chrome to save space — apt cascaded that into silently removing Chrome too, every single build, regardless of image freshness. `gnupg` is still purged (genuinely build-only); `wget` now stays installed. The build also fails loudly (`command -v google-chrome-stable`) if this ever regresses, instead of deferring to a confusing runtime retry loop. Verified by reproducing the exact Dockerfile layer against the real `ghcr.io/home-assistant/amd64-base-debian:bookworm` base image.

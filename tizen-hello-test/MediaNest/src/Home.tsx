@@ -9,8 +9,6 @@ import {
   isDownloaded,
   type Movie,
   type DownloadedMovie,
-  type StreamMovie,
-  type StreamQuality,
 } from "./api";
 import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
 import { Hero } from "./Hero";
@@ -19,17 +17,13 @@ import { Detail } from "./Detail";
 import { DownloadModal } from "./DownloadModal";
 import { Search } from "./Search";
 import { Downloads } from "./Downloads";
-import { Streams } from "./Streams";
 import { Cineby } from "./Cineby";
-import { Remote } from "./Remote";
 import { ExitConfirm } from "./ExitConfirm";
 
 type View = SidebarView;
 
 interface HomeProps {
   onPlay: (movie: Movie) => void;
-  onPlayStream: (item: StreamMovie, quality: StreamQuality) => void;
-  onPlayRemoteFile: (url: string, title: string) => void;
 }
 
 interface RowDef {
@@ -41,7 +35,7 @@ interface RowDef {
 
 const HERO_ROTATE_MS = 8000;
 
-export function Home({ onPlay, onPlayStream, onPlayRemoteFile }: HomeProps) {
+export function Home({ onPlay }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
   const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
@@ -219,9 +213,7 @@ export function Home({ onPlay, onPlayStream, onPlayRemoteFile }: HomeProps) {
       }
 
       // Cineby's own capture listener forwards D-pad/OK into the iframe.
-      // Streams owns Left/Right/Enter (and Left on the first poster opens the sidebar).
       if (view === "cineby") return;
-      if (view === "streams") return;
       if (view !== "browse") return;
 
       switch (e.keyCode) {
@@ -310,22 +302,7 @@ export function Home({ onPlay, onPlayStream, onPlayRemoteFile }: HomeProps) {
         />
       )}
       {view === "downloads" && <Downloads />}
-      {view === "streams" && (
-        <Streams
-          onPlay={onPlayStream}
-          active={!sidebarFocused}
-          onRequestSidebar={() => setSidebarFocused(true)}
-        />
-      )}
       {view === "cineby" && <Cineby active={!sidebarFocused} onBack={() => setView("browse")} />}
-      {view === "remote" && (
-        <Remote
-          active={!sidebarFocused}
-          onBack={() => setView("browse")}
-          onRequestSidebar={() => setSidebarFocused(true)}
-          onPlayFile={onPlayRemoteFile}
-        />
-      )}
       {openDetail && (
         <Detail
           key={openDetail.link}
