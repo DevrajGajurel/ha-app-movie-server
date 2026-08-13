@@ -521,13 +521,6 @@ function initDownloadDir() {
   console.log(`[download] folder ready: ${dir}`);
 }
 
-function hasMediaFiles(dir) {
-  return listFilesRecursive(dir).some((full) => {
-    const name = path.basename(full);
-    return name !== MARKER_FILE && name !== PROGRESS_FILE;
-  });
-}
-
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"]);
 const MIME_TYPES = {
   ".mp4": "video/mp4",
@@ -1045,7 +1038,17 @@ function scanLibrary() {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dir = path.join(base, entry.name);
-    if (!hasMediaFiles(dir)) continue;
+    // One recursive walk per folder (not two) - this used to call
+    // hasMediaFiles(dir) and then walk again for downloadedAt below, which
+    // doubled every folder's directory-tree traversal for no reason. On a
+    // large, especially network-mounted, /media library that duplication
+    // was the dominant cost of "Loading library from cache".
+    const files = listFilesRecursive(dir);
+    const hasMedia = files.some((full) => {
+      const name = path.basename(full);
+      return name !== MARKER_FILE && name !== PROGRESS_FILE;
+    });
+    if (!hasMedia) continue;
 
     let tmdbId = null;
     let title = entry.name;
@@ -1067,7 +1070,7 @@ function scanLibrary() {
     // birthtime on whichever video file is newest in this folder is the most
     // direct signal of when this download actually landed on disk.
     let downloadedAt = null;
-    for (const full of listFilesRecursive(dir)) {
+    for (const full of files) {
       if (!VIDEO_EXTENSIONS.has(path.extname(full).toLowerCase())) continue;
       try {
         const stat = fs.statSync(full);
