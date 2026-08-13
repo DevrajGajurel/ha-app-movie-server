@@ -37,11 +37,50 @@ function folderNameFor(movieTitle, tmdbId) {
   return tmdbId ? `${base} (tmdb-${tmdbId})` : base;
 }
 
-function ensureDir(movieTitle, tmdbId) {
+function seasonFolderName(season) {
+  return `S${String(season).padStart(2, "0")}`;
+}
+
+// TV downloads nest under a season subfolder (Series (tmdb-id)/S01/...) so a
+// whole show lives in one folder tree instead of one folder per episode.
+function ensureDir(movieTitle, tmdbId, season) {
   const base = path.resolve(getDownloadDir());
-  const dir = movieTitle || tmdbId ? path.join(base, folderNameFor(movieTitle, tmdbId)) : base;
+  let dir = movieTitle || tmdbId ? path.join(base, folderNameFor(movieTitle, tmdbId)) : base;
+  if (Number.isInteger(season) && season > 0) {
+    dir = path.join(dir, seasonFolderName(season));
+  }
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// Depth-capped recursive file listing - covers both flat movie folders and
+// Series (tmdb-id)/S01/ episode subfolders without treating arbitrary deep
+// nesting as media.
+function listFilesRecursive(dir, maxDepth = 6) {
+  let results = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return results;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (maxDepth > 0) results = results.concat(listFilesRecursive(full, maxDepth - 1));
+      continue;
+    }
+    if (entry.isFile()) results.push(full);
+  }
+  return results;
+}
+
+// Tags a picked filename with its episode so files sharing a season folder
+// never collide, even if the source gives two episodes the same generic name.
+function withEpisodeTag(filename, season, episode) {
+  if (!Number.isInteger(season) || !Number.isInteger(episode)) return filename;
+  const tag = `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+  return filename.toUpperCase().includes(tag) ? filename : `${tag} - ${filename}`;
 }
 
 function writeMarker(dir, data) {
@@ -84,7 +123,11 @@ async function downloadFileWithFetch(job, dir) {
     throw new Error(`Download failed: ${response.status}`);
   }
 
-  const filename = pickFilename(response.headers.get("content-disposition"), response.url, job.label);
+  const filename = withEpisodeTag(
+    pickFilename(response.headers.get("content-disposition"), response.url, job.label),
+    job.season,
+    job.episode
+  );
   const filePath = uniquePath(dir, filename);
 
   job.totalBytes = Number(response.headers.get("content-length")) || 0;
@@ -148,7 +191,7 @@ function parseAria2Progress(text) {
 // process dependency.
 function downloadFileWithAria2(job, dir) {
   return resolveAria2Filename(job).then((filename) => {
-    const filePath = uniquePath(dir, filename);
+    const filePath = uniquePath(dir, withEpisodeTag(filename, job.season, job.episode));
     job.totalBytes = 0;
     job.receivedBytes = 0;
 
@@ -231,7 +274,7 @@ async function runDownload(job) {
     job.error = null;
 
     try {
-      const dir = ensureDir(job.movieTitle, job.tmdbId);
+      const dir = ensureDir(job.movieTitle, job.tmdbId, job.season);
       const filePath = await downloadFile(job, dir);
 
       job.filePath = filePath;
@@ -275,7 +318,16 @@ async function runDownload(job) {
   console.error(`[download] failed job #${job.id}: ${job.error}`);
 }
 
-function startDownload({ url, label, movieTitle, tmdbId, candidates = null, parentId = null }) {
+function startDownload({
+  url,
+  label,
+  movieTitle,
+  tmdbId,
+  candidates = null,
+  parentId = null,
+  season = null,
+  episode = null,
+}) {
   const normalizedCandidates =
     Array.isArray(candidates) && candidates.length
       ? candidates
@@ -291,6 +343,8 @@ function startDownload({ url, label, movieTitle, tmdbId, candidates = null, pare
     parentId: parentId || null,
     movieTitle: movieTitle || null,
     tmdbId: tmdbId ? String(tmdbId) : null,
+    season: Number.isInteger(season) ? season : null,
+    episode: Number.isInteger(episode) ? episode : null,
     status: "queued",
     receivedBytes: 0,
     totalBytes: 0,
@@ -325,6 +379,8 @@ function waitForJob(job) {
     }, 500);
   });
 }
+
+const SEASON_DOWNLOAD_CONCURRENCY = 5;
 
 function startSeasonJob({
   tmdbId,
@@ -377,34 +433,56 @@ function startSeasonJob({
 
   job._promise = (async () => {
     job.status = "downloading";
-    for (let ep = 1; ep <= episodes; ep++) {
-      job.currentEpisode = ep;
-      try {
-        const episodeJob = await downloadEpisode({
-          seasonJob: job,
-          season: seasonNum,
-          episode: ep,
-        });
-        if (episodeJob?.id) job.episodeJobIds.push(episodeJob.id);
-        if (episodeJob?.status === "completed") {
-          job.completedEpisodes += 1;
-        } else if (episodeJob?.status === "skipped") {
-          job.skippedEpisodes += 1;
-        } else {
+    job.inFlightEpisodes = [];
+
+    // Bounded worker pool: up to SEASON_DOWNLOAD_CONCURRENCY episodes in
+    // flight at once, each worker picking up the next episode as soon as
+    // its previous one finishes, instead of downloading strictly one at a
+    // time. `nextEpisode` is only ever read+incremented synchronously
+    // (no await between), so concurrent workers never grab the same episode.
+    let nextEpisode = 1;
+
+    async function worker() {
+      while (true) {
+        const ep = nextEpisode;
+        if (ep > episodes) return;
+        nextEpisode += 1;
+
+        job.currentEpisode = ep;
+        job.inFlightEpisodes.push(ep);
+        try {
+          const episodeJob = await downloadEpisode({
+            seasonJob: job,
+            season: seasonNum,
+            episode: ep,
+          });
+          if (episodeJob?.id) job.episodeJobIds.push(episodeJob.id);
+          if (episodeJob?.status === "completed") {
+            job.completedEpisodes += 1;
+          } else if (episodeJob?.status === "skipped") {
+            job.skippedEpisodes += 1;
+          } else {
+            job.failedEpisodes += 1;
+          }
+        } catch (err) {
           job.failedEpisodes += 1;
+          console.warn(
+            `[download] season job #${job.id} S${seasonNum}E${ep} failed: ${err.message}`
+          );
+        } finally {
+          job.inFlightEpisodes = job.inFlightEpisodes.filter((n) => n !== ep);
         }
-      } catch (err) {
-        job.failedEpisodes += 1;
-        console.warn(
-          `[download] season job #${job.id} S${seasonNum}E${ep} failed: ${err.message}`
-        );
+        // Surface aggregate progress for UI polling.
+        job.receivedBytes = job.completedEpisodes + job.skippedEpisodes;
+        job.totalBytes = episodes;
       }
-      // Surface aggregate progress for UI polling.
-      job.receivedBytes = job.completedEpisodes + job.skippedEpisodes;
-      job.totalBytes = episodes;
     }
 
+    const workerCount = Math.min(SEASON_DOWNLOAD_CONCURRENCY, episodes);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
     job.currentEpisode = null;
+    job.inFlightEpisodes = [];
     job.finishedAt = new Date().toISOString();
     if (job.completedEpisodes + job.skippedEpisodes === 0) {
       job.status = "failed";
@@ -444,19 +522,10 @@ function initDownloadDir() {
 }
 
 function hasMediaFiles(dir) {
-  try {
-    return fs.readdirSync(dir).some((name) => {
-      if (name === MARKER_FILE || name === PROGRESS_FILE) return false;
-      const full = path.join(dir, name);
-      try {
-        return fs.statSync(full).isFile();
-      } catch {
-        return false;
-      }
-    });
-  } catch {
-    return false;
-  }
+  return listFilesRecursive(dir).some((full) => {
+    const name = path.basename(full);
+    return name !== MARKER_FILE && name !== PROGRESS_FILE;
+  });
 }
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"]);
@@ -521,23 +590,21 @@ function findMediaFiles({ tmdbId, title }) {
   const results = [];
 
   for (const dir of findMatchingDirs({ tmdbId, title })) {
-    let files;
-    try {
-      files = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const file of files) {
-      if (!file.isFile() || file.name === MARKER_FILE) continue;
-      if (!VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
-      const full = path.join(dir, file.name);
-      const size = fs.statSync(full).size;
+    for (const full of listFilesRecursive(dir)) {
+      const filename = path.basename(full);
+      if (filename === MARKER_FILE) continue;
+      if (!VIDEO_EXTENSIONS.has(path.extname(filename).toLowerCase())) continue;
+      let size;
+      try {
+        size = fs.statSync(full).size;
+      } catch {
+        continue;
+      }
       // Token is the path relative to the download root; it round-trips
       // through the client so a specific file can be requested later
       // (see resolveMediaToken) without exposing the absolute disk path.
       const token = path.relative(base, full).split(path.sep).join("/");
-      results.push({ path: full, token, filename: file.name, size });
+      results.push({ path: full, token, filename, size });
     }
   }
 
@@ -806,16 +873,9 @@ async function prefetchAllSubtitles() {
     if (!entry.isDirectory()) continue;
     const dir = path.join(base, entry.name);
 
-    let files;
-    try {
-      files = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const file of files) {
-      if (!file.isFile() || !VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase())) continue;
-      await prefetchSubtitlesForFile(path.join(dir, file.name));
+    for (const full of listFilesRecursive(dir)) {
+      if (!VIDEO_EXTENSIONS.has(path.extname(full).toLowerCase())) continue;
+      await prefetchSubtitlesForFile(full);
     }
   }
 }
@@ -1007,19 +1067,15 @@ function scanLibrary() {
     // birthtime on whichever video file is newest in this folder is the most
     // direct signal of when this download actually landed on disk.
     let downloadedAt = null;
-    try {
-      for (const name of fs.readdirSync(dir)) {
-        if (!VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
-        try {
-          const stat = fs.statSync(path.join(dir, name));
-          const created = stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.ctime;
-          if (!downloadedAt || created > downloadedAt) downloadedAt = created;
-        } catch {
-          // skip unreadable file
-        }
+    for (const full of listFilesRecursive(dir)) {
+      if (!VIDEO_EXTENSIONS.has(path.extname(full).toLowerCase())) continue;
+      try {
+        const stat = fs.statSync(full);
+        const created = stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.ctime;
+        if (!downloadedAt || created > downloadedAt) downloadedAt = created;
+      } catch {
+        // skip unreadable file
       }
-    } catch {
-      // skip unreadable dir
     }
     if (downloadedAt) {
       downloadedAt = downloadedAt.toISOString();
@@ -1063,23 +1119,25 @@ function listProgress() {
   if (!fs.existsSync(root)) return [];
 
   const items = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(root, entry.name);
+
+  // seriesFolderName drives the tmdbId/title fallback parsing below - always
+  // the top-level "Title (tmdb-id)" folder, even when the progress file
+  // itself lives one level deeper in a season subfolder.
+  function collect(seriesFolderName, dir) {
     const progressPath = path.join(dir, PROGRESS_FILE);
-    if (!fs.existsSync(progressPath)) continue;
+    if (!fs.existsSync(progressPath)) return;
 
     let data;
     try {
       data = JSON.parse(fs.readFileSync(progressPath, "utf8"));
     } catch {
-      continue;
+      return;
     }
 
     const position = Number(data.positionSeconds) || 0;
     const duration = Number(data.durationSeconds) || 0;
-    if (position < RESUME_MIN_SECONDS) continue;
-    if (duration > 0 && position / duration >= RESUME_DONE_RATIO) continue;
+    if (position < RESUME_MIN_SECONDS) return;
+    if (duration > 0 && position / duration >= RESUME_DONE_RATIO) return;
 
     let tmdbId = data.tmdbId != null ? String(data.tmdbId) : null;
     let title = data.title || "";
@@ -1094,11 +1152,11 @@ function listProgress() {
       }
     }
     if (!tmdbId) {
-      const match = /\(tmdb-(\d+)\)/i.exec(entry.name);
+      const match = /\(tmdb-(\d+)\)/i.exec(seriesFolderName);
       if (match) tmdbId = match[1];
     }
     if (!title) {
-      title = entry.name.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim() || entry.name;
+      title = seriesFolderName.replace(/\s*\(tmdb-\d+\)\s*/i, "").trim() || seriesFolderName;
     }
 
     const percent =
@@ -1107,7 +1165,7 @@ function listProgress() {
         : 0;
 
     items.push({
-      folder: entry.name,
+      folder: seriesFolderName,
       tmdbId,
       title,
       positionSeconds: position,
@@ -1115,6 +1173,23 @@ function listProgress() {
       percent,
       updatedAt: data.updatedAt || null,
     });
+  }
+
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    collect(entry.name, dir);
+
+    let subEntries;
+    try {
+      subEntries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      subEntries = [];
+    }
+    for (const sub of subEntries) {
+      if (!sub.isDirectory()) continue;
+      collect(entry.name, path.join(dir, sub.name));
+    }
   }
 
   items.sort((a, b) => {

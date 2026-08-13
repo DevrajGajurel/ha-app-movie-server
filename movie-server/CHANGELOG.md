@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.3
+
+- TV season downloads now run up to 5 episodes in parallel instead of one at a time, picking up the next episode as soon as a slot frees up.
+- Season downloads now land as one folder per series with a season subfolder per season (`Series (tmdb-id)/S01/S01E01 - ....mkv`, `S01E02 - ....mkv`, ...) instead of a separate top-level folder per episode. Filenames are tagged with their episode (`S01E01 - `) so concurrent downloads into the same season folder never collide, even when the source gives two episodes a generic name. Library scanning, playback, subtitle prefetch, delete, and resume-progress all now recurse into season subfolders so this doesn't break anything that reads back what's on disk. Movie downloads are unaffected (still one flat folder per movie).
+
 ## 1.7.2
 
 - Fixed `flaresolverr_url` (and every other optional URL/string add-on option - `cineby_url`, `secondary_url`, `redis_url`) being silently treated as configured when left unset. `bashio::config` prints the literal text `null` for an unset optional option, and the run script only trimmed whitespace, so `.env` ended up with e.g. `FLARESOLVERR_URL=null` - a truthy string in Node - which then caused `Failed to fetch download page: ... flaresolverr also failed: flaresolverr unreachable: Failed to parse URL from null` on every Cloudflare-challenged download instead of just skipping the fallback. The run script now normalizes bashio's `null` to an empty string for every optional option, and `main.js` normalizes the same env vars defensively at startup.

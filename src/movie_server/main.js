@@ -551,12 +551,13 @@ async function downloadSheguEpisodeWithFallback({
     };
   }
 
-  const episodeTitle = `${movieTitle} S${padSeasonEpisode(season)}E${padSeasonEpisode(episode)}`;
   const job = startDownload({
     url: ranked[0].href,
     label: ranked[0].label,
-    movieTitle: episodeTitle,
+    movieTitle,
     tmdbId,
+    season,
+    episode,
     parentId,
     candidates: ranked.map((opt) => ({ url: opt.href, label: opt.label })),
   });
