@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1
+
+- Added an optional `flaresolverr_url` add-on option (also `FLARESOLVERR_URL`/`FLARESOLVERR_TIMEOUT_MS` in `.env`): when a download-host redirect hits a genuine Cloudflare Turnstile challenge, the server now falls back to a user-run [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) instance instead of failing outright - the replacement for the Chrome-based cf-clearance sidecar removed in 1.7.0, but running entirely outside this image. Verified against a real FlareSolverr instance and a real Turnstile-protected download host.
+
 ## 1.7.0
 
 - Removed the Streams (vidsrc catalog: `/api/streams*`, `streamCatalog.js`, `streamResolve.js`, `hlsProxy.js`, `src/vidsrc/*`) and Remote Index (`/api/remote`, browsing `a.111477.xyz`) features entirely, from the backend, both TV apps (MediaNest, HelloTV), and the dashboard - both pulled in externally-hosted content this project has no rights to distribute.

@@ -316,6 +316,59 @@ async function classifyFetchFailure(response) {
   return { challenge, detail: parts.join("; ") };
 }
 
+const FLARESOLVERR_URL = String(process.env.FLARESOLVERR_URL || "").trim().replace(/\/$/, "");
+const FLARESOLVERR_TIMEOUT_MS = Number(process.env.FLARESOLVERR_TIMEOUT_MS || 60000);
+
+// Optional, self-hosted, external to this container: https://github.com/FlareSolverr/FlareSolverr
+// POST {FLARESOLVERR_URL} { cmd: "request.get", url, maxTimeout } -> { status: "ok"|"error", solution: { response: "<html>", url } }
+// Unlike the removed cf-clearance sidecar, this never bundles a browser
+// inside this image - it's just an HTTP client pointed at a FlareSolverr
+// instance the user runs themselves (their own machine/container).
+async function fetchPageViaFlareSolverr(targetUrl) {
+  if (!FLARESOLVERR_URL) {
+    throw new Error("FLARESOLVERR_URL is not configured");
+  }
+
+  console.log(`[downloads] flaresolverr: ${targetUrl} via ${FLARESOLVERR_URL}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FLARESOLVERR_TIMEOUT_MS + 5000);
+  let response;
+  try {
+    response = await fetch(FLARESOLVERR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ cmd: "request.get", url: targetUrl, maxTimeout: FLARESOLVERR_TIMEOUT_MS }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`flaresolverr timed out after ${FLARESOLVERR_TIMEOUT_MS}ms`);
+    }
+    throw new Error(`flaresolverr unreachable: ${err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`flaresolverr returned non-JSON (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || data?.status !== "ok" || !data?.solution?.response) {
+    throw new Error(data?.message || `flaresolverr failed (HTTP ${response.status}, status ${data?.status})`);
+  }
+
+  const html = String(data.solution.response);
+  if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
+    throw new Error("flaresolverr returned a Cloudflare challenge page");
+  }
+
+  return { html, url: data.solution.url || targetUrl };
+}
+
 function scrapeSecondaryPage(pageUrl) {
   return scrapeFetch(pageUrl)
     .then(async (response) => {
@@ -609,11 +662,26 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
   const response = await scrapeFetch(targetUrl, { referer, label: "downloads" });
 
   if (!response.ok) {
-    const { detail } = await classifyFetchFailure(response);
+    const { challenge, detail } = await classifyFetchFailure(response);
     console.warn(
       `[downloads] page fetch failed: ${response.status} ${response.url || targetUrl}` +
         (detail ? ` - ${detail}` : "")
     );
+
+    if (challenge && FLARESOLVERR_URL) {
+      const browserUrl = response.url || targetUrl;
+      try {
+        const { html, url: finalUrl } = await fetchPageViaFlareSolverr(browserUrl);
+        console.log(`[downloads] flaresolverr ok: ${finalUrl} (${html.length} bytes)`);
+        return { html, url: finalUrl };
+      } catch (err) {
+        console.warn(`[downloads] flaresolverr failed: ${err.message}`);
+        throw new Error(
+          `Failed to fetch download page: ${response.status} - ${detail} - flaresolverr also failed: ${err.message}`
+        );
+      }
+    }
+
     throw new Error(
       `Failed to fetch download page: ${response.status}` + (detail ? ` - ${detail}` : "")
     );
