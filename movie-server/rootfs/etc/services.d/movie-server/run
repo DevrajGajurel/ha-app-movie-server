@@ -1,54 +1,67 @@
 #!/usr/bin/with-contenv bashio
 set -euo pipefail
 
-MAIN_URL="$(bashio::config 'main_url')"
-MAX_PAGES="$(bashio::config 'max_pages')"
-TMDB_API_KEY="$(bashio::config 'tmdb_api_key')"
-DOWNLOAD_DIR="$(bashio::config 'download_dir')"
+# bashio::config prints the literal text "null" (not an empty string) for any
+# optional (`?`) schema option the user hasn't set - left unhandled, that
+# 4-character string is truthy in Node and gets passed around as if it were a
+# real, configured value (e.g. fetch("null") instead of "no URL set").
+bashio_config() {
+  local val
+  val="$(bashio::config "$1")"
+  if [ "${val}" = "null" ]; then
+    val=""
+  fi
+  printf '%s' "${val}"
+}
 
-INITIAL_PAGES="$(bashio::config 'initial_pages')"
+MAIN_URL="$(bashio_config 'main_url')"
+MAX_PAGES="$(bashio_config 'max_pages')"
+TMDB_API_KEY="$(bashio_config 'tmdb_api_key')"
+DOWNLOAD_DIR="$(bashio_config 'download_dir')"
+
+INITIAL_PAGES="$(bashio_config 'initial_pages')"
 if [ -z "${INITIAL_PAGES}" ]; then INITIAL_PAGES=2; fi
 
-HD_KEYWORDS="$(bashio::config 'hd_keywords')"
+HD_KEYWORDS="$(bashio_config 'hd_keywords')"
 HD_KEYWORDS="${HD_KEYWORDS#"${HD_KEYWORDS%%[![:space:]]*}"}"
 HD_KEYWORDS="${HD_KEYWORDS%"${HD_KEYWORDS##*[![:space:]]}"}"
 if [ -z "${HD_KEYWORDS}" ]; then
   HD_KEYWORDS="720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray"
 fi
 
-K4_KEYWORDS="$(bashio::config 'k4_keywords')"
+K4_KEYWORDS="$(bashio_config 'k4_keywords')"
 K4_KEYWORDS="${K4_KEYWORDS#"${K4_KEYWORDS%%[![:space:]]*}"}"
 K4_KEYWORDS="${K4_KEYWORDS%"${K4_KEYWORDS##*[![:space:]]}"}"
 if [ -z "${K4_KEYWORDS}" ]; then
   K4_KEYWORDS="2160p,4k,4K,UHD"
 fi
 
-EMBY_URL="$(bashio::config 'emby_url')"
+EMBY_URL="$(bashio_config 'emby_url')"
 EMBY_URL="${EMBY_URL#"${EMBY_URL%%[![:space:]]*}"}"
 EMBY_URL="${EMBY_URL%"${EMBY_URL##*[![:space:]]}"}"
 
-EMBY_API_KEY="$(bashio::config 'emby_api_key')"
+EMBY_API_KEY="$(bashio_config 'emby_api_key')"
 
-EMBY_PATH_PREFIX="$(bashio::config 'emby_path_prefix')"
+EMBY_PATH_PREFIX="$(bashio_config 'emby_path_prefix')"
 EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX#"${EMBY_PATH_PREFIX%%[![:space:]]*}"}"
 EMBY_PATH_PREFIX="${EMBY_PATH_PREFIX%"${EMBY_PATH_PREFIX##*[![:space:]]}"}"
 
-REDIS_URL="$(bashio::config 'redis_url')"
+REDIS_URL="$(bashio_config 'redis_url')"
 REDIS_URL="${REDIS_URL#"${REDIS_URL%%[![:space:]]*}"}"
 REDIS_URL="${REDIS_URL%"${REDIS_URL##*[![:space:]]}"}"
 
-USE_ARIA2="$(bashio::config 'use_aria2')"
+USE_ARIA2="$(bashio_config 'use_aria2')"
 if [ -z "${USE_ARIA2}" ]; then USE_ARIA2=false; fi
 
-CINEBY_URL="$(bashio::config 'cineby_url')"
+CINEBY_URL="$(bashio_config 'cineby_url')"
 CINEBY_URL="${CINEBY_URL#"${CINEBY_URL%%[![:space:]]*}"}"
 CINEBY_URL="${CINEBY_URL%"${CINEBY_URL##*[![:space:]]}"}"
 
-SECONDARY_URL="$(bashio::config 'secondary_url')"
+SECONDARY_URL="$(bashio_config 'secondary_url')"
 SECONDARY_URL="${SECONDARY_URL#"${SECONDARY_URL%%[![:space:]]*}"}"
 SECONDARY_URL="${SECONDARY_URL%"${SECONDARY_URL##*[![:space:]]}"}"
 
-FLARESOLVERR_URL="$(bashio::config 'flaresolverr_url')"
+FLARESOLVERR_URL="$(bashio_config 'flaresolverr_url')"
 FLARESOLVERR_URL="${FLARESOLVERR_URL#"${FLARESOLVERR_URL%%[![:space:]]*}"}"
 FLARESOLVERR_URL="${FLARESOLVERR_URL%"${FLARESOLVERR_URL##*[![:space:]]}"}"
 

@@ -9,6 +9,15 @@ const ENV_PATH = ENV_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ||
 
 require("dotenv").config({ path: ENV_PATH, override: true });
 
+// HA's bashio::config prints the literal text "null" for unset optional
+// options, which the add-on's run script writes straight into .env - guard
+// against that string reaching fetch()/redis clients as if it were a real value.
+function cleanEnvValue(raw) {
+  const value = String(raw || "").trim();
+  return value && value.toLowerCase() !== "null" ? value : "";
+}
+process.env.REDIS_URL = cleanEnvValue(process.env.REDIS_URL);
+
 const http = require("http");
 const { parseHTML } = require("linkedom");
 const { enrichMovies } = require("./tmdb");
@@ -63,8 +72,8 @@ const K4_KEYWORDS = resolveKeywords(process.env.K4_KEYWORDS, DEFAULT_K4_KEYWORDS
 let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
 let initialPages = parseInitialPages(process.env.INITIAL_PAGES);
-let cinebyUrl = String(process.env.CINEBY_URL || "").trim();
-let secondaryUrl = String(process.env.SECONDARY_URL || "").trim();
+let cinebyUrl = cleanEnvValue(process.env.CINEBY_URL);
+let secondaryUrl = cleanEnvValue(process.env.SECONDARY_URL);
 
 function isHomeAssistantAddon() {
   return process.env.HOME_ASSISTANT_ADDON === "true";
@@ -316,7 +325,7 @@ async function classifyFetchFailure(response) {
   return { challenge, detail: parts.join("; ") };
 }
 
-const FLARESOLVERR_URL = String(process.env.FLARESOLVERR_URL || "").trim().replace(/\/$/, "");
+const FLARESOLVERR_URL = cleanEnvValue(process.env.FLARESOLVERR_URL).replace(/\/$/, "");
 const FLARESOLVERR_TIMEOUT_MS = Number(process.env.FLARESOLVERR_TIMEOUT_MS || 60000);
 
 // Optional, self-hosted, external to this container: https://github.com/FlareSolverr/FlareSolverr

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.2
+
+- Fixed `flaresolverr_url` (and every other optional URL/string add-on option - `cineby_url`, `secondary_url`, `redis_url`) being silently treated as configured when left unset. `bashio::config` prints the literal text `null` for an unset optional option, and the run script only trimmed whitespace, so `.env` ended up with e.g. `FLARESOLVERR_URL=null` - a truthy string in Node - which then caused `Failed to fetch download page: ... flaresolverr also failed: flaresolverr unreachable: Failed to parse URL from null` on every Cloudflare-challenged download instead of just skipping the fallback. The run script now normalizes bashio's `null` to an empty string for every optional option, and `main.js` normalizes the same env vars defensively at startup.
+
 ## 1.7.1
 
 - Added an optional `flaresolverr_url` add-on option (also `FLARESOLVERR_URL`/`FLARESOLVERR_TIMEOUT_MS` in `.env`): when a download-host redirect hits a genuine Cloudflare Turnstile challenge, the server now falls back to a user-run [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) instance instead of failing outright - the replacement for the Chrome-based cf-clearance sidecar removed in 1.7.0, but running entirely outside this image. Verified against a real FlareSolverr instance and a real Turnstile-protected download host.
