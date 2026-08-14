@@ -2261,6 +2261,33 @@
       downloadModal.hidden = false;
 
       try {
+        // TV entries always get the season/episode picker, regardless of
+        // which listing site this particular card was scraped from - shegu
+        // resolves downloads by tmdbId/season/episode, not by this page's
+        // own URL, so a primary-source show (e.g. filmyfly's own "House of
+        // the Dragon" listing) needs this exactly as much as a secondary
+        // one. Previously this was nested inside the isSecondary branch, so
+        // any TV show scraped from the primary source silently fell through
+        // to the plain single-page quality-link scrape instead, with no
+        // season/episode picker at all.
+        const isTv = String(mediaType || "").toLowerCase() === "tv" || Boolean(seasonHint);
+        if (isTv && tmdbId) {
+          downloadModalState = {
+            title: title || "Download options",
+            options: [],
+            movieTitle: title || "",
+            baseTitle: title || "",
+            tmdbId,
+            source: "secondary",
+            mediaType: "tv",
+          };
+          const seasons = buildSeasonOptions(seasonsJson, seasonHint);
+          const firstSeason = seasons[0]?.seasonNumber || 1;
+          downloadModalContent.innerHTML = renderEpisodePicker(seasons, firstSeason, 1);
+          wireEpisodePicker(seasons);
+          return;
+        }
+
         const isSecondary = String(source || "").toLowerCase() === "secondary";
         if (isSecondary) {
           if (!tmdbId) {
@@ -2269,7 +2296,6 @@
             return;
           }
 
-          const isTv = String(mediaType || "").toLowerCase() === "tv" || Boolean(seasonHint);
           downloadModalState = {
             title: title || "Download options",
             options: [],
@@ -2277,16 +2303,8 @@
             baseTitle: title || "",
             tmdbId: tmdbId || null,
             source: "secondary",
-            mediaType: isTv ? "tv" : "movie",
+            mediaType: "movie",
           };
-
-          if (isTv) {
-            const seasons = buildSeasonOptions(seasonsJson, seasonHint);
-            const firstSeason = seasons[0]?.seasonNumber || 1;
-            downloadModalContent.innerHTML = renderEpisodePicker(seasons, firstSeason, 1);
-            wireEpisodePicker(seasons);
-            return;
-          }
 
           const res = await fetch(
             apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie`)

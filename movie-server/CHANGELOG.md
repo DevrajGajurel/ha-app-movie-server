@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.10
+
+- Fixed a real cause of missing posters: a trailing release-version tag like "V2" right before the year (e.g. "The Odyssey V2 (2026) ...") rode straight into the TMDB search query and zeroed out an otherwise exact match. Also, a "no TMDB match" result was cached for the same 7 days as a real match - both in Redis and forever in an in-memory Map for the life of the process - so a title that got added to TMDB a day later could still show posterless for up to a week. Negative matches now expire in 6 hours in Redis and are never pinned in-memory.
+- Fixed the dashboard's download popup showing no season/episode picker for a TV show scraped from the primary listing site (e.g. "House of the Dragon") - that picker was only wired up for secondary-source titles, even though shegu resolves TV downloads by tmdbId/season/episode regardless of which site the listing itself came from.
+- A failed download attempt (a bad candidate link, an aria2c failure) now deletes the incomplete file it left behind before falling back to the next link, instead of leaving orphaned partial files behind on every retry.
+
 ## 1.7.9
 
 - Download job history now survives a backend restart: job records (queued/completed/failed) are mirrored into a Redis hash (`movieserver:v1:jobhistory`, capped at 200) and reloaded on startup - any job still "downloading" when the process died is marked interrupted instead of showing stuck forever. Falls back to in-memory-only (today's behavior) when Redis isn't configured.

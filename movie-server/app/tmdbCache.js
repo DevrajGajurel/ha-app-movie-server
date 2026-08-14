@@ -14,6 +14,13 @@ const { createClient } = require("redis");
 // entries expire rather than being kept forever.
 const CACHE_PREFIX = "movieserver:v1:tmdb";
 const TTL_SECONDS = 7 * 24 * 60 * 60;
+// A "no match" result is far more likely to go stale than a real one - the
+// scraper regularly picks up very recently announced/upcoming titles before
+// TMDB has an entry for them yet. Caching that miss for the same 7 days as
+// a real match meant a title could sit posterless for up to a week after
+// TMDB actually added it. Retried much sooner instead, while still not
+// hammering TMDB every 4-hour listing refresh for genuinely unmatchable junk.
+const NO_MATCH_TTL_SECONDS = 6 * 60 * 60;
 
 let client = null;
 
@@ -49,7 +56,8 @@ async function getCachedTmdb(cacheKey) {
 async function setCachedTmdb(cacheKey, meta) {
   if (!isReady()) return;
   try {
-    await client.set(keyFor(cacheKey), JSON.stringify(meta), { EX: TTL_SECONDS });
+    const ttl = meta === null ? NO_MATCH_TTL_SECONDS : TTL_SECONDS;
+    await client.set(keyFor(cacheKey), JSON.stringify(meta), { EX: ttl });
   } catch {
     // Best-effort — a failed cache write shouldn't affect the response
     // that already has the freshly-fetched result.

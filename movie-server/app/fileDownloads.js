@@ -198,6 +198,22 @@ function uniquePath(dir, filename) {
   return target;
 }
 
+// A failed attempt (this candidate link, this retry) leaves whatever bytes
+// it managed to write behind on disk - without this, every fallback
+// candidate in the retry loop below piles up its own leftover partial file
+// (uniquePath renames around existing files rather than overwriting them).
+// Also removes aria2's `.aria2` resume-control sibling, if present.
+function cleanupPartialFile(filePath) {
+  if (!filePath) return;
+  for (const target of [filePath, `${filePath}.aria2`]) {
+    try {
+      fs.rmSync(target, { force: true });
+    } catch (err) {
+      console.warn(`[download] could not remove partial file ${target}: ${err.message}`);
+    }
+  }
+}
+
 // Plain single-connection fetch + stream-to-disk — the original (and
 // still default) download path.
 async function downloadFileWithFetch(job, dir) {
@@ -223,7 +239,12 @@ async function downloadFileWithFetch(job, dir) {
     job.receivedBytes += chunk.length;
   });
 
-  await pipeline(body, fileStream);
+  try {
+    await pipeline(body, fileStream);
+  } catch (err) {
+    cleanupPartialFile(filePath);
+    throw err;
+  }
   return filePath;
 }
 
@@ -308,10 +329,17 @@ function downloadFileWithAria2(job, dir) {
       aria2.stdout.on("data", handleOutput);
       aria2.stderr.on("data", handleOutput);
 
-      aria2.on("error", reject);
+      aria2.on("error", (err) => {
+        cleanupPartialFile(filePath);
+        reject(err);
+      });
       aria2.on("close", (code) => {
-        if (code === 0) resolve(filePath);
-        else reject(new Error(`aria2c exited ${code}: ${stderrTail}`));
+        if (code === 0) {
+          resolve(filePath);
+        } else {
+          cleanupPartialFile(filePath);
+          reject(new Error(`aria2c exited ${code}: ${stderrTail}`));
+        }
       });
     });
   });

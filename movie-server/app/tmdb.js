@@ -62,6 +62,17 @@ function splitAlternateTitle(title) {
   return { query, altQuery };
 }
 
+// Piracy uploaders tag re-releases/re-encodes with a trailing "V2"/"V3" right
+// before the year - e.g. "The Odyssey V2 (2026) ..." - which otherwise rides
+// straight into the TMDB query since the year-present branch below doesn't
+// go through stripReleaseTail. TMDB has no idea what "The Odyssey V2" is,
+// only "The Odyssey", so this alone was enough to zero out an otherwise
+// exact match (confirmed: dropping just the "V2" found the 2026 Nolan film
+// immediately).
+function stripVersionTag(text) {
+  return String(text || "").replace(/\s+v\d{1,2}\s*$/i, "").trim();
+}
+
 function parseSourceTitle(title) {
   const raw = String(title || "").trim();
   let work = stripTvMarkers(raw);
@@ -76,6 +87,7 @@ function parseSourceTitle(title) {
   } else {
     query = stripReleaseTail(work);
   }
+  query = stripVersionTag(query);
 
   const alternate = splitAlternateTitle(query);
   query = alternate.query;
@@ -503,10 +515,14 @@ async function searchMedia(apiKey, title, genres, opts = {}) {
   // lookups never leave memory, but a lookup that survives a restart (the
   // Map starts empty every time) is served from here instead of re-hitting
   // TMDB — see tmdbCache.js for why this expires instead of being kept
-  // forever like the ffprobe cache.
+  // forever like the ffprobe cache. Only a real match is pinned in-memory -
+  // a "no match" result is only pinned in Redis (which has a real TTL, see
+  // NO_MATCH_TTL_SECONDS); the in-memory Map has no expiry at all, so
+  // caching a null there would keep re-serving it as "no match" for the
+  // rest of this process's lifetime even after Redis's own miss expires.
   const cached = await getCachedTmdb(cacheKey);
   if (cached !== undefined) {
-    cache.set(cacheKey, cached);
+    if (cached !== null) cache.set(cacheKey, cached);
     return cached;
   }
 
@@ -525,7 +541,7 @@ async function searchMedia(apiKey, title, genres, opts = {}) {
   }
 
   const meta = match ? await mapResult(apiKey, match, genres) : null;
-  cache.set(cacheKey, meta);
+  if (meta !== null) cache.set(cacheKey, meta);
   await setCachedTmdb(cacheKey, meta);
   return meta;
 }
