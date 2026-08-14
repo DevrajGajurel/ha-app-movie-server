@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.14
+
+- Fixed single-episode downloads (MediaNest's episode grid, the dashboard's per-episode picker) creating their own separate "Title SxxEyy (tmdb-id)" folder instead of nesting into the season-batch layout ("Title (tmdb-id)/S0X/") - `/api/downloads/save` now accepts season/episode and threads them through like the season-batch downloader always has.
+- Fixed the season downloader (and a season-type redownload) re-downloading episodes that were already on disk - confirmed this had produced ~28GB of fully-duplicated episode files across repeated runs. Each episode is now skipped if a matching file already exists in its season folder.
+- Added a way to cancel a queued/downloading job: `POST /api/downloads/cancel {jobId}` aborts the fetch or kills aria2c (a season job also stops picking up further episodes and cancels whichever one is currently in flight), cleans up the partial file, and marks the job "failed: Cancelled" so it's still visible in history. Added to the dashboard's Downloads tab and MediaNest's Downloads screen.
+- Fixed a real mismatch bug: TMDB movie and TV ids aren't in the same namespace, so the same numeric id can point to two unrelated titles (confirmed: id 94997 is both an unrelated movie and House of the Dragon) - a by-id poster lookup with no type hint always tried movie first and could silently return the wrong title's data. `scanLibrary()` now infers movie vs TV from whether a folder has a season subfolder, and passes that as a type hint so the right entity is always resolved.
+- MediaNest: Detail page redesigned for TV shows - poster + genre tags next to the hero, and an episode grid below (season pills, real episode names/thumbnails/descriptions from TMDB) - picking an episode opens the download popup straight at that episode's quality options instead of starting from the season/episode picker.
+- MediaNest: Downloads screen is now D-pad navigable (up/down through jobs, Enter to redownload or cancel) - it previously had no keyboard handling at all.
+
 ## 1.7.13
 
 - Dashboard: the search box now shows live title suggestions from TMDB as you type (2+ characters, debounced), with poster thumbnails, year, and movie/TV badges - arrow keys + Enter or a click to pick one. Backed by a new `GET /api/tmdb/suggest?q=` route. Picking a suggestion just fills in TMDB's canonical title and re-runs the normal search - it's a typing aid, not a way to browse or download anything TMDB has that isn't actually on the scraped listing site.

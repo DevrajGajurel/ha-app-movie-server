@@ -136,6 +136,30 @@ function ensureDir(movieTitle, tmdbId, season) {
   return dir;
 }
 
+// Whether this episode's season folder already has a file for it - checked
+// before the season-batch downloader (and a season-type redownload) starts
+// a new job for that episode, so re-running a season doesn't re-download
+// every episode from scratch every time regardless of what's already on
+// disk (confirmed the hard way: ~28GB of duplicate House of the Dragon S02
+// episodes from repeated runs before this check existed). Matches on the
+// "SxxEyy" tag every episode file carries (see withEpisodeTag below) -
+// either our own prefix or one the source's own filename already had.
+function hasEpisodeFile(movieTitle, tmdbId, season, episode) {
+  const base = path.resolve(getDownloadDir());
+  const dir = path.join(base, folderNameFor(movieTitle, tmdbId), seasonFolderName(season));
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return false;
+  }
+  const tag = `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+  return names.some((name) => {
+    if (!VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase())) return false;
+    return name.toUpperCase().includes(tag);
+  });
+}
+
 // Depth-capped recursive file listing - covers both flat movie folders and
 // Series (tmdb-id)/S01/ episode subfolders without treating arbitrary deep
 // nesting as media.
@@ -217,7 +241,10 @@ function cleanupPartialFile(filePath) {
 // Plain single-connection fetch + stream-to-disk — the original (and
 // still default) download path.
 async function downloadFileWithFetch(job, dir) {
-  const response = await fetch(job.url, { redirect: "follow" });
+  const controller = new AbortController();
+  job._cancel = () => controller.abort();
+
+  const response = await fetch(job.url, { redirect: "follow", signal: controller.signal });
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status}`);
   }
@@ -315,6 +342,7 @@ function downloadFileWithAria2(job, dir) {
         "--allow-overwrite=true",
         job.url,
       ]);
+      job._cancel = () => aria2.kill("SIGTERM");
 
       let stderrTail = "";
       const handleOutput = (chunk) => {
@@ -422,15 +450,45 @@ async function runDownload(job) {
       console.warn(
         `[download] job #${job.id} attempt ${i + 1}/${candidates.length} failed (${candidate.label || candidate.url}): ${err.message}`
       );
+      // A cancelled job shouldn't fall through to the next fallback link -
+      // the user asked for this to stop, not to keep trying alternates.
+      if (job._cancelled) break;
     }
   }
 
   job.status = "failed";
-  job.error = lastError?.message || "All download links failed";
+  job.error = job._cancelled ? "Cancelled" : lastError?.message || "All download links failed";
   job.finishedAt = new Date().toISOString();
   console.error(`[download] failed job #${job.id}: ${job.error}`);
   persistJob(job);
   pruneJobHistory();
+}
+
+// Stops an in-flight job (regular or season) as cleanly as the download
+// backend in use allows: aborts the fetch/kills the aria2c process, which
+// throws/exits inside runDownload above and is treated as a normal (if
+// immediate) failure - cleanupPartialFile already runs on that path, so no
+// separate cleanup is needed here.
+function cancelJob(id) {
+  const job = jobs.find((item) => item.id === id);
+  if (!job) return false;
+
+  if (job.type === "season") {
+    if (job.status !== "queued" && job.status !== "downloading") return false;
+    job._cancelled = true;
+    // activeEpisodeJobIds (not episodeJobIds) - the latter is only
+    // populated once an episode's download finishes, too late to reach one
+    // that's still in flight.
+    for (const episodeId of job.activeEpisodeJobIds || []) {
+      cancelJob(episodeId);
+    }
+    return true;
+  }
+
+  if (job.status !== "queued" && job.status !== "downloading") return false;
+  job._cancelled = true;
+  if (typeof job._cancel === "function") job._cancel();
+  return true;
 }
 
 function startDownload({
@@ -531,6 +589,10 @@ function startSeasonJob({
     skippedEpisodes: 0,
     currentEpisode: null,
     episodeJobIds: [],
+    // Populated as soon as each episode's own job is created (not just once
+    // it finishes) so cancelJob() can actually reach an in-flight episode
+    // download, not just ones that already completed.
+    activeEpisodeJobIds: new Set(),
     status: "queued",
     receivedBytes: 0,
     totalBytes: 0,
@@ -561,6 +623,7 @@ function startSeasonJob({
 
     async function worker() {
       while (true) {
+        if (job._cancelled) return;
         const ep = nextEpisode;
         if (ep > episodes) return;
         nextEpisode += 1;
@@ -601,7 +664,10 @@ function startSeasonJob({
     job.currentEpisode = null;
     job.inFlightEpisodes = [];
     job.finishedAt = new Date().toISOString();
-    if (job.completedEpisodes + job.skippedEpisodes === 0) {
+    if (job._cancelled) {
+      job.status = "failed";
+      job.error = "Cancelled";
+    } else if (job.completedEpisodes + job.skippedEpisodes === 0) {
       job.status = "failed";
       job.error = "No episodes downloaded";
     } else if (job.failedEpisodes > 0) {
@@ -1222,7 +1288,20 @@ function scanLibrary() {
     const norm = normalizeTitle(cleanTitle || title);
     if (norm) titles.add(norm);
 
-    items.push({ folder: entry.name, tmdbId, title, downloadedAt });
+    // TMDB movie and TV ids aren't in the same namespace - the same numeric
+    // id can (and does, confirmed: 94997) refer to a completely unrelated
+    // movie and TV show. A season subfolder (S01, S02, ...) is the one
+    // reliable, already-on-disk signal for which one a given download
+    // actually is, since only the TV season downloader creates those.
+    let seasonEntries;
+    try {
+      seasonEntries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      seasonEntries = [];
+    }
+    const type = seasonEntries.some((e) => e.isDirectory() && /^S\d+$/i.test(e.name)) ? "tv" : "movie";
+
+    items.push({ folder: entry.name, tmdbId, title, downloadedAt, type });
   }
 
   return {
@@ -1325,8 +1404,10 @@ function listProgress() {
 
 module.exports = {
   getDownloadDir,
+  hasEpisodeFile,
   startDownload,
   startSeasonJob,
+  cancelJob,
   waitForJob,
   getJob,
   listJobs,

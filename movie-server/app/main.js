@@ -20,13 +20,15 @@ process.env.REDIS_URL = cleanEnvValue(process.env.REDIS_URL);
 
 const http = require("http");
 const { parseHTML } = require("linkedom");
-const { enrichMovies, getTmdbById, suggestTitles } = require("./tmdb");
+const { enrichMovies, getTmdbById, suggestTitles, getSeasonEpisodes } = require("./tmdb");
 const { initTmdbCache } = require("./tmdbCache");
 const { parseKeywordList, tagQuality } = require("./quality");
 const { streamYoutubeTrailer } = require("./trailer");
 const {
   startDownload,
+  hasEpisodeFile,
   startSeasonJob,
+  cancelJob,
   waitForJob,
   getJob,
   listJobs,
@@ -524,7 +526,22 @@ async function downloadSheguEpisodeWithFallback({
   episode,
   movieTitle,
   parentId = null,
+  seasonJob = null,
 }) {
+  if (seasonJob?._cancelled) {
+    return { id: null, status: "skipped", error: "Cancelled", season, episode };
+  }
+
+  if (hasEpisodeFile(movieTitle, tmdbId, season, episode)) {
+    return {
+      id: null,
+      status: "skipped",
+      error: "Already downloaded",
+      season,
+      episode,
+    };
+  }
+
   const result = await fetchSheguDownloadOptions({
     tmdbId,
     mediaType: "tv",
@@ -552,7 +569,14 @@ async function downloadSheguEpisodeWithFallback({
     parentId,
     candidates: ranked.map((opt) => ({ url: opt.href, label: opt.label })),
   });
-  await waitForJob(job);
+  // Registered before awaiting completion (not just after) so cancelling the
+  // season job can reach this episode's own job while it's still in flight.
+  seasonJob?.activeEpisodeJobIds?.add(job.id);
+  try {
+    await waitForJob(job);
+  } finally {
+    seasonJob?.activeEpisodeJobIds?.delete(job.id);
+  }
   return job;
 }
 
@@ -571,6 +595,7 @@ function runSeasonDownload({ tmdbId, season, episodeCount, movieTitle }) {
         episode: e,
         movieTitle,
         parentId: seasonJob.id,
+        seasonJob,
       }),
   });
 }
@@ -1218,6 +1243,13 @@ const server = http.createServer(async (req, res) => {
       const movieTitle = body.movieTitle ? String(body.movieTitle).trim() : null;
       const tmdbId = body.tmdbId ? String(body.tmdbId).trim() : null;
       const candidates = Array.isArray(body.candidates) ? body.candidates : null;
+      // Optional: a single-episode download (e.g. MediaNest's episode grid) -
+      // when present, the file nests under Series (tmdb-id)/S0X/ and gets an
+      // "SxxEyy - " filename tag, same as the season-batch downloader,
+      // instead of movieTitle alone creating a separate flat folder per
+      // episode (the pre-1.7.3 layout).
+      const season = Number.isInteger(body.season) ? body.season : Number.parseInt(body.season, 10);
+      const episode = Number.isInteger(body.episode) ? body.episode : Number.parseInt(body.episode, 10);
 
       if (!downloadUrl && !(candidates && candidates.length)) {
         sendJson(res, 400, { error: "url is required" });
@@ -1225,7 +1257,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (downloadUrl) new URL(downloadUrl);
-      const job = startDownload({ url: downloadUrl, label, movieTitle, tmdbId, candidates });
+      const job = startDownload({
+        url: downloadUrl,
+        label,
+        movieTitle,
+        tmdbId,
+        candidates,
+        season: Number.isFinite(season) ? season : null,
+        episode: Number.isFinite(episode) ? episode : null,
+      });
       sendJson(res, 202, { message: "Download started", job: getJob(job.id) });
     } catch (err) {
       const message = err instanceof TypeError ? "Invalid URL" : err.message;
@@ -1325,6 +1365,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Stops a queued/downloading job (regular or season) - aborts the
+  // fetch/kills aria2c, or for a season job also stops it from picking up
+  // any further episodes and cancels whichever episode is currently
+  // in-flight. The job ends up "failed" with error "Cancelled", same as any
+  // other failure, so it's still visible in history and redownloadable.
+  if (url === "/api/downloads/cancel" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const jobId = Number.parseInt(body.jobId, 10);
+      if (!Number.isFinite(jobId)) {
+        sendJson(res, 400, { error: "jobId is required" });
+        return;
+      }
+      const cancelled = cancelJob(jobId);
+      if (!cancelled) {
+        sendJson(res, 400, { error: "Job not found or not cancellable" });
+        return;
+      }
+      sendJson(res, 200, { message: "Cancelled", job: getJob(jobId) });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
@@ -1352,6 +1417,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Per-episode name/overview/still for a TV season's detail view - checked
+  // before the by-id route below since both share the "/api/tmdb" prefix.
+  if (url.startsWith("/api/tmdb/season") && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("id");
+      const season = searchParams.get("season");
+      if (!tmdbId || season == null) {
+        sendJson(res, 400, { error: "id and season query parameters are required" });
+        return;
+      }
+      if (!TMDB_API_KEY) {
+        sendJson(res, 400, { error: "TMDB is not configured" });
+        return;
+      }
+      const episodes = await getSeasonEpisodes(TMDB_API_KEY, tmdbId, season);
+      sendJson(res, 200, { episodes });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
   // Direct-by-id TMDB lookup for a downloaded library item whose tmdbId
   // falls outside the currently cached listing pages - enrichMovies() only
   // ever runs against scraped listing pages, so a title downloaded a while
@@ -1361,6 +1449,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const searchParams = new URL(req.url, "http://localhost").searchParams;
       const tmdbId = searchParams.get("id");
+      const type = searchParams.get("type") === "tv" ? "tv" : undefined;
       if (!tmdbId) {
         sendJson(res, 400, { error: "id query parameter is required" });
         return;
@@ -1369,7 +1458,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "TMDB is not configured" });
         return;
       }
-      const meta = await getTmdbById(TMDB_API_KEY, tmdbId);
+      const meta = await getTmdbById(TMDB_API_KEY, tmdbId, type);
       if (!meta) {
         sendJson(res, 404, { error: "Not found" });
         return;

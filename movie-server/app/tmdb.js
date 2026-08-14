@@ -3,6 +3,7 @@ const { getCachedTmdb, setCachedTmdb } = require("./tmdbCache");
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const POSTER_BASE = "https://image.tmdb.org/t/p/w342";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
+const STILL_BASE = "https://image.tmdb.org/t/p/w300";
 const MIN_MATCH_SCORE = 0.48;
 const cache = new Map();
 let genreMap = null;
@@ -616,11 +617,19 @@ async function fetchAndMapById(apiKey, tmdbId, mediaType) {
   };
 }
 
-async function getTmdbById(apiKey, tmdbId) {
+// TMDB movie and TV ids aren't namespaced together - the same numeric id can
+// refer to a completely different movie and TV show (confirmed: 94997 is
+// both a real movie and House of the Dragon). Without a type hint this
+// always tries movie first, which silently returns the wrong entity for any
+// TV show whose id collides with an unrelated movie - pass preferType when
+// the caller already knows which one it wants (e.g. a season subfolder on
+// disk only ever means TV).
+async function getTmdbById(apiKey, tmdbId, preferType) {
   const id = String(tmdbId || "").trim();
   if (!id || !/^\d+$/.test(id)) return null;
 
-  const cacheKey = `byid|${id}`;
+  const order = preferType === "tv" ? ["tv", "movie"] : ["movie", "tv"];
+  const cacheKey = `byid|${id}|${order[0]}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
   const cached = await getCachedTmdb(cacheKey);
@@ -629,12 +638,49 @@ async function getTmdbById(apiKey, tmdbId) {
     return cached;
   }
 
-  let meta = await fetchAndMapById(apiKey, id, "movie").catch(() => null);
-  if (!meta) meta = await fetchAndMapById(apiKey, id, "tv").catch(() => null);
+  let meta = await fetchAndMapById(apiKey, id, order[0]).catch(() => null);
+  if (!meta) meta = await fetchAndMapById(apiKey, id, order[1]).catch(() => null);
 
   cache.set(cacheKey, meta);
   await setCachedTmdb(cacheKey, meta);
   return meta;
+}
+
+// Per-episode name/overview/still for a TV season's detail view - separate
+// from the seasons[] summary already attached to a TV show's TmdbInfo
+// (seasonNumber/episodeCount/name only), since TMDB only returns
+// episode-level data via a dedicated /tv/{id}/season/{n} call.
+async function getSeasonEpisodes(apiKey, tmdbId, seasonNumber) {
+  const id = String(tmdbId || "").trim();
+  const season = Number.parseInt(seasonNumber, 10);
+  if (!id || !/^\d+$/.test(id) || !Number.isFinite(season) || season < 0) return [];
+
+  const cacheKey = `season|${id}|${season}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const cached = await getCachedTmdb(cacheKey);
+  if (cached !== undefined) {
+    cache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const url = new URL(`${TMDB_BASE}/tv/${id}/season/${season}`);
+  url.searchParams.set("api_key", apiKey);
+  const res = await fetch(url);
+  const episodes = res.ok
+    ? ((await res.json()).episodes || []).map((ep) => ({
+        episodeNumber: ep.episode_number,
+        name: ep.name || `Episode ${ep.episode_number}`,
+        overview: ep.overview || null,
+        still: ep.still_path ? `${STILL_BASE}${ep.still_path}` : null,
+        airDate: ep.air_date || null,
+        rating: ep.vote_average ? Number(ep.vote_average.toFixed(1)) : null,
+      }))
+    : [];
+
+  cache.set(cacheKey, episodes);
+  await setCachedTmdb(cacheKey, episodes);
+  return episodes;
 }
 
 async function enrichMovies(movies, apiKey, concurrency = 5) {
@@ -700,4 +746,5 @@ module.exports = {
   enrichMovies,
   getTmdbById,
   suggestTitles,
+  getSeasonEpisodes,
 };

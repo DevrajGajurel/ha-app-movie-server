@@ -2518,6 +2518,9 @@
       const redownloadRow = (job.status === "completed" || job.status === "failed")
         ? `<div class="job-actions"><button type="button" class="job-redownload-btn" data-redownload-job="${job.id}">Redownload</button></div>` : "";
 
+      const cancelRow = isActive
+        ? `<div class="job-actions"><button type="button" class="job-redownload-btn" data-cancel-job="${job.id}">Cancel</button></div>` : "";
+
       const sizeHint = (job.receivedBytes > 0 || job.totalBytes > 0)
         ? `${formatBytes(job.receivedBytes)}${job.totalBytes > 0 ? ` / ${formatBytes(job.totalBytes)}` : ""}` : "";
 
@@ -2538,6 +2541,7 @@
           ${progressBar}
           ${errorRow}
           ${redownloadRow}
+          ${cancelRow}
         </div>`;
     }
 
@@ -2633,6 +2637,28 @@
         btn.disabled = false;
         btn.textContent = "Redownload";
         alert(`Redownload failed: ${err.message}`);
+      }
+    });
+
+    downloadsContentEl.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-cancel-job]");
+      if (!btn) return;
+      const jobId = Number.parseInt(btn.dataset.cancelJob, 10);
+      btn.disabled = true;
+      btn.textContent = "Cancelling…";
+      try {
+        const res = await fetch(apiUrl("downloads/cancel"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        await loadDownloadsView();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Cancel";
+        alert(`Cancel failed: ${err.message}`);
       }
     });
 

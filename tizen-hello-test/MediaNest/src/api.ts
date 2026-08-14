@@ -12,6 +12,11 @@ export interface DownloadLibraryItem {
   tmdbId: string | null;
   title: string;
   downloadedAt: string | null;
+  // Backend infers this from a season subfolder (S01, S02, ...) on disk -
+  // TMDB movie and TV ids aren't in the same namespace, so a bare tmdbId
+  // alone can't tell a downloaded movie apart from an unrelated TV show
+  // that happens to share the same numeric id.
+  type: "movie" | "tv";
 }
 
 export interface DownloadLibrary {
@@ -25,6 +30,7 @@ export interface DownloadedMovie {
   tmdbId: string | null;
   title: string;
   downloadedAt: string | null;
+  type: "movie" | "tv";
 }
 
 // scanLibrary() on the backend reports one entry per downloaded folder,
@@ -35,7 +41,12 @@ export async function getDownloadedMovies(): Promise<DownloadedMovie[]> {
   const res = await fetch(apiUrl("downloads/library"));
   if (!res.ok) throw new Error(`Failed to load library: ${res.status}`);
   const data: DownloadLibrary = await res.json();
-  return (data.items || []).map((item) => ({ tmdbId: item.tmdbId, title: item.title, downloadedAt: item.downloadedAt }));
+  return (data.items || []).map((item) => ({
+    tmdbId: item.tmdbId,
+    title: item.title,
+    downloadedAt: item.downloadedAt,
+    type: item.type,
+  }));
 }
 
 // Matches a downloaded-library entry back to its full catalog Movie (same
@@ -68,7 +79,7 @@ export function libraryItemToMovie(item: DownloadedMovie, movies: Movie[]): Movi
       ? {
           tmdbId,
           tmdbTitle: title,
-          type: "movie",
+          type: item.type,
           poster: null,
           backdrop: null,
           rating: null,
@@ -137,9 +148,11 @@ export function matchMovieForProgress(item: ProgressItem, movies: Movie[]): Movi
 // pages, so it never got a poster/backdrop any other way. Returns null on
 // any failure (not configured, not found, offline) so callers can just fall
 // back to the posterless stub they already had.
-export async function getTmdbById(tmdbId: string): Promise<TmdbInfo | null> {
+export async function getTmdbById(tmdbId: string, type?: "movie" | "tv"): Promise<TmdbInfo | null> {
   try {
-    const res = await fetch(apiUrl(`tmdb?id=${encodeURIComponent(tmdbId)}`));
+    const params = new URLSearchParams({ id: tmdbId });
+    if (type) params.set("type", type);
+    const res = await fetch(apiUrl(`tmdb?${params.toString()}`));
     if (!res.ok) return null;
     return (await res.json()) as TmdbInfo;
   } catch {
@@ -388,7 +401,14 @@ export interface DownloadJob {
   error: string | null;
 }
 
-export async function startDownload(args: { url: string; label: string; movieTitle: string; tmdbId: string | null }): Promise<DownloadJob> {
+export async function startDownload(args: {
+  url: string;
+  label: string;
+  movieTitle: string;
+  tmdbId: string | null;
+  season?: number;
+  episode?: number;
+}): Promise<DownloadJob> {
   const res = await fetch(apiUrl("downloads/save"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -417,6 +437,26 @@ export async function getEpisodeDownloadOptions(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
+}
+
+export interface EpisodeDetail {
+  episodeNumber: number;
+  name: string;
+  overview: string | null;
+  still: string | null;
+  airDate: string | null;
+  rating: number | null;
+}
+
+// Per-episode name/overview/still for the Detail page's episode grid -
+// separate from TmdbInfo.seasons (which only has seasonNumber/episodeCount/
+// name), since TMDB only returns this via a dedicated per-season call.
+export async function getSeasonEpisodeDetails(tmdbId: string, season: number): Promise<EpisodeDetail[]> {
+  const params = new URLSearchParams({ id: tmdbId, season: String(season) });
+  const res = await fetch(apiUrl(`tmdb/season?${params.toString()}`));
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.episodes || [];
 }
 
 // Queues every episode of a season (server downloads up to 5 in parallel) -
@@ -456,6 +496,18 @@ export async function redownloadJob(jobId: number): Promise<DownloadJob> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data.job;
+}
+
+export async function cancelJob(jobId: number): Promise<void> {
+  const res = await fetch(apiUrl("downloads/cancel"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobId }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || res.statusText);
+  }
 }
 
 export function reportClientError(source: string, message: string, context?: Record<string, unknown>): void {

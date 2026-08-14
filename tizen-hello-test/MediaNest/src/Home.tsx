@@ -53,6 +53,9 @@ export function Home({ onPlay }: HomeProps) {
 
   const [openDetail, setOpenDetail] = useState<Movie | null>(null);
   const [openDownload, setOpenDownload] = useState<Movie | null>(null);
+  const [openDownloadEpisode, setOpenDownloadEpisode] = useState<{ seasonNumber: number; episodeNumber: number } | null>(
+    null
+  );
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   useEffect(() => {
@@ -121,7 +124,9 @@ export function Home({ onPlay }: HomeProps) {
         if (cancelled) return;
         const batch = missing.slice(i, i + CONCURRENCY);
         const results = await Promise.all(
-          batch.map((m) => getTmdbById(String(m.tmdb!.tmdbId)).then((info) => [String(m.tmdb!.tmdbId), info] as const))
+          batch.map((m) =>
+            getTmdbById(String(m.tmdb!.tmdbId), m.tmdb!.type).then((info) => [String(m.tmdb!.tmdbId), info] as const)
+          )
         );
         if (cancelled) return;
         setTmdbById((prev) => {
@@ -236,9 +241,10 @@ export function Home({ onPlay }: HomeProps) {
     onPlay(movie);
   }
 
-  function handleDownloadFromDetail(movie: Movie) {
+  function handleDownloadFromDetail(movie: Movie, episode?: { seasonNumber: number; episodeNumber: number }) {
     setOpenDetail(null);
     setOpenDownload(movie);
+    setOpenDownloadEpisode(episode || null);
   }
 
   useEffect(() => {
@@ -376,14 +382,19 @@ export function Home({ onPlay }: HomeProps) {
           progressFor={(movie) => continueWatchingPercent.get(movie.link)}
         />
       )}
-      {view === "downloads" && <Downloads />}
+      {view === "downloads" && (
+        <Downloads
+          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm}
+          onLeaveToSidebar={() => setSidebarFocused(true)}
+        />
+      )}
       {openDetail && (
         <Detail
           key={openDetail.link}
           movie={openDetail}
           downloaded={isDownloaded(openDetail, downloaded)}
           onPlay={() => handlePlayFromDetail(openDetail)}
-          onDownload={() => handleDownloadFromDetail(openDetail)}
+          onDownload={(episode) => handleDownloadFromDetail(openDetail, episode)}
           onDeleted={() => {
             setOpenDetail(null);
             getDownloadedMovies().then(setDownloaded);
@@ -398,7 +409,11 @@ export function Home({ onPlay }: HomeProps) {
           tmdbId={openDownload.tmdb?.tmdbId ? String(openDownload.tmdb.tmdbId) : null}
           mediaType={openDownload.tmdb?.type === "tv" ? "tv" : "movie"}
           seasons={openDownload.tmdb?.seasons}
-          onClose={() => setOpenDownload(null)}
+          initialEpisode={openDownloadEpisode}
+          onClose={() => {
+            setOpenDownload(null);
+            setOpenDownloadEpisode(null);
+          }}
           onDownloadStarted={() => getDownloadedMovies().then(setDownloaded)}
         />
       )}

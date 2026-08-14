@@ -16,6 +16,9 @@ interface DownloadModalProps {
   tmdbId: string | null;
   mediaType: "movie" | "tv";
   seasons?: SeasonInfo[];
+  // Opens straight to this episode's quality options (e.g. from the Detail
+  // page's episode grid) instead of starting at the season/episode picker.
+  initialEpisode?: { seasonNumber: number; episodeNumber: number } | null;
   onClose: () => void;
   onDownloadStarted: () => void;
 }
@@ -32,7 +35,16 @@ const TV_ROW_DOWNLOAD_SEASON = 1;
 const TV_ROW_EPISODE = 2;
 const TV_ROW_LOAD_EPISODE = 3;
 
-export function DownloadModal({ pageUrl, movieTitle, tmdbId, mediaType, seasons, onClose, onDownloadStarted }: DownloadModalProps) {
+export function DownloadModal({
+  pageUrl,
+  movieTitle,
+  tmdbId,
+  mediaType,
+  seasons,
+  initialEpisode = null,
+  onClose,
+  onDownloadStarted,
+}: DownloadModalProps) {
   const isTv = mediaType === "tv" && Boolean(seasons && seasons.length);
 
   // ---- Movie flow state (unused when isTv) ----
@@ -42,9 +54,20 @@ export function DownloadModal({ pageUrl, movieTitle, tmdbId, mediaType, seasons,
   const pollTimer = useRef<number | null>(null);
 
   // ---- TV flow state (unused when !isTv) ----
-  const [seasonIdx, setSeasonIdx] = useState(0);
-  const [episodeNum, setEpisodeNum] = useState(1);
+  const [seasonIdx, setSeasonIdx] = useState(() => {
+    if (!initialEpisode) return 0;
+    const idx = (seasons || []).findIndex((s) => s.seasonNumber === initialEpisode.seasonNumber);
+    return idx >= 0 ? idx : 0;
+  });
+  const [episodeNum, setEpisodeNum] = useState(initialEpisode?.episodeNumber || 1);
   const [tvRow, setTvRow] = useState(TV_ROW_SEASON);
+  // Tracks the seasonIdx this effect has already reacted to - starting it
+  // at the initial seasonIdx (not a boolean "have we run yet" flag) makes
+  // the skip-on-first-run check idempotent under React StrictMode's
+  // dev-only double effect invocation, which would otherwise flip a plain
+  // boolean guard on the first (discarded) pass and let the second pass
+  // wipe out an initialEpisode's episode number before render.
+  const lastSeasonIdxRef = useRef(seasonIdx);
   const [episodeOptions, setEpisodeOptions] = useState<DownloadOption[] | null>(null);
   const [episodeOptionsLoading, setEpisodeOptionsLoading] = useState(false);
   const [episodeOptionsError, setEpisodeOptionsError] = useState<string | null>(null);
@@ -69,13 +92,22 @@ export function DownloadModal({ pageUrl, movieTitle, tmdbId, mediaType, seasons,
   }, []);
 
   // Changing season resets any loaded episode options and clamps the
-  // episode number to the new season's episode count.
+  // episode number to the new season's episode count - but not on the very
+  // first render, which would otherwise immediately wipe out an
+  // initialEpisode's episode number before the user ever touched anything.
   useEffect(() => {
-    if (!isTv) return;
+    if (!isTv || lastSeasonIdxRef.current === seasonIdx) return;
+    lastSeasonIdxRef.current = seasonIdx;
     setEpisodeNum(1);
     setEpisodeOptions(null);
+  }, [isTv, seasonIdx]);
+
+  // Jump straight to this episode's quality options when opened from the
+  // Detail page's episode grid, instead of starting at the picker.
+  useEffect(() => {
+    if (isTv && initialEpisode) loadEpisodeOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonIdx]);
+  }, []);
 
   function pickQuality(option: DownloadOption) {
     setStage({ kind: "loading" });
@@ -159,9 +191,18 @@ export function DownloadModal({ pageUrl, movieTitle, tmdbId, mediaType, seasons,
 
   function pickEpisodeDirect(option: DownloadOption) {
     if (!currentSeason) return;
-    const episodeTitle = `${movieTitle} S${pad2(currentSeason.seasonNumber)}E${pad2(episodeNum)}`;
     setEpisodeJobStatus((prev) => ({ ...prev, [option.href]: "Starting…" }));
-    startDownload({ url: option.href, label: option.label, movieTitle: episodeTitle, tmdbId })
+    // movieTitle stays the plain series title (not "+SxxEyy") so this nests
+    // under Series (tmdb-id)/S0X/ like the season-batch downloader, instead
+    // of creating its own separate flat folder per episode.
+    startDownload({
+      url: option.href,
+      label: option.label,
+      movieTitle,
+      tmdbId,
+      season: currentSeason.seasonNumber,
+      episode: episodeNum,
+    })
       .then((job) => {
         setEpisodeJobStatus((prev) => ({ ...prev, [option.href]: "Queued…" }));
         pollJob(job.id, (status) => setEpisodeJobStatus((prev) => ({ ...prev, [option.href]: status })));
@@ -321,8 +362,4 @@ export function DownloadModal({ pageUrl, movieTitle, tmdbId, mediaType, seasons,
       </div>
     </div>
   );
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
 }
