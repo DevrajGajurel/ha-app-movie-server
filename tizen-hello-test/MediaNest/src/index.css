@@ -490,6 +490,27 @@ img {
   transition: width 150ms linear;
 }
 
+.redownload-btn {
+  margin-top: 8px;
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.redownload-btn:focus,
+.redownload-btn:hover:not(:disabled) {
+  border-color: var(--focus-ring);
+}
+
+.redownload-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .player-time {
   display: flex;
   justify-content: space-between;
@@ -627,4 +648,106 @@ img {
 .modal-actions button.focused {
   border-color: var(--focus-ring);
   background: rgba(255, 255, 255, 0.16);
+}
+
+/* ---- Download popup (movie quality picker + TV season/episode picker) ---- */
+.download-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.download-popup {
+  background: #17171d;
+  border-radius: 12px;
+  padding: 32px 40px;
+  width: 680px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.download-popup-title {
+  margin: 0 0 20px;
+  font-size: 24px;
+}
+
+.download-popup-hint {
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.download-popup-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.download-popup-option {
+  padding: 14px 20px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.download-popup-option.focused {
+  border-color: var(--focus-ring);
+  background: var(--bg-elevated);
+}
+
+.download-popup-status {
+  color: var(--muted);
+}
+
+.tv-picker-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tv-picker-row.focused {
+  border-color: var(--focus-ring);
+  background: var(--bg-elevated);
+}
+
+.tv-picker-label {
+  color: var(--muted);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tv-picker-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tv-picker-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.tv-picker-btn.focused {
+  border-color: var(--focus-ring);
+  background: var(--bg-elevated);
 }

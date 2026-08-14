@@ -3,6 +3,7 @@ const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 const { execFile, spawn } = require("child_process");
+const { createClient } = require("redis");
 const { getCachedProbe, setCachedProbe } = require("./mediaProbeCache");
 
 const MARKER_FILE = ".movieserver.json";
@@ -11,6 +12,88 @@ const RESUME_MIN_SECONDS = 10;
 const RESUME_DONE_RATIO = 0.95;
 const jobs = [];
 let jobId = 0;
+
+// Job history is otherwise pure in-memory (jobs[] above) - a backend
+// restart (every deploy, every HA add-on update) used to wipe the whole
+// downloads history. This mirrors it into a Redis hash (jobId -> JSON job)
+// so /api/downloads/jobs still has something to show right after a restart.
+// Only queued/final-state snapshots are written, not every progress tick -
+// an in-flight download's byte-by-byte progress isn't worth surviving a
+// restart (the download itself doesn't survive one either).
+const JOB_HISTORY_KEY = "movieserver:v1:jobhistory";
+const JOB_HISTORY_MAX = 200;
+let historyClient = null;
+
+async function initJobHistory(redisUrl) {
+  if (!redisUrl) return false;
+  try {
+    historyClient = createClient({ url: redisUrl });
+    historyClient.on("error", (err) => console.warn("[job-history]", err.message));
+    await historyClient.connect();
+
+    const all = await historyClient.hGetAll(JOB_HISTORY_KEY);
+    const loaded = Object.values(all)
+      .map((raw) => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    // Anything still "queued"/"downloading" when the process died has no
+    // real download behind it anymore - surface that instead of a job that
+    // looks stuck forever.
+    for (const job of loaded) {
+      if (job.status === "queued" || job.status === "downloading") {
+        job.status = "failed";
+        job.error = "Interrupted by server restart";
+        job.finishedAt = job.finishedAt || new Date().toISOString();
+      }
+    }
+
+    loaded.sort((a, b) => (b.id || 0) - (a.id || 0));
+    jobs.push(...loaded);
+    if (jobs.length > JOB_HISTORY_MAX) jobs.length = JOB_HISTORY_MAX;
+    jobId = loaded.reduce((max, job) => Math.max(max, job.id || 0), jobId);
+
+    return true;
+  } catch (err) {
+    console.warn("[job-history] Redis unavailable:", err.message);
+    historyClient = null;
+    return false;
+  }
+}
+
+function serializeJob(job) {
+  const { _promise, ...rest } = job;
+  return rest;
+}
+
+async function persistJob(job) {
+  if (!historyClient?.isReady) return;
+  try {
+    await historyClient.hSet(JOB_HISTORY_KEY, String(job.id), JSON.stringify(serializeJob(job)));
+  } catch (err) {
+    console.warn(`[job-history] persist failed for job #${job.id}:`, err.message);
+  }
+}
+
+async function pruneJobHistory() {
+  if (!historyClient?.isReady) return;
+  try {
+    const all = await historyClient.hGetAll(JOB_HISTORY_KEY);
+    const ids = Object.keys(all)
+      .map(Number)
+      .sort((a, b) => b - a);
+    if (ids.length <= JOB_HISTORY_MAX) return;
+    const stale = ids.slice(JOB_HISTORY_MAX).map(String);
+    if (stale.length) await historyClient.hDel(JOB_HISTORY_KEY, stale);
+  } catch {
+    // best-effort - a missed prune just means a few extra hash entries
+  }
+}
 
 function getDownloadDir() {
   return process.env.DOWNLOAD_DIR || path.join(__dirname, "downloads");
@@ -303,6 +386,8 @@ async function runDownload(job) {
       prefetchSubtitlesForFile(filePath).catch((err) => {
         console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
       });
+      persistJob(job);
+      pruneJobHistory();
       return;
     } catch (err) {
       lastError = err;
@@ -316,6 +401,8 @@ async function runDownload(job) {
   job.error = lastError?.message || "All download links failed";
   job.finishedAt = new Date().toISOString();
   console.error(`[download] failed job #${job.id}: ${job.error}`);
+  persistJob(job);
+  pruneJobHistory();
 }
 
 function startDownload({
@@ -358,6 +445,7 @@ function startDownload({
 
   jobs.unshift(job);
   if (jobs.length > 200) jobs.length = 200;
+  persistJob(job);
 
   console.log(`[download] queued job #${job.id} "${job.label}" -> ${getDownloadDir()}`);
   job._promise = runDownload(job).finally(() => {
@@ -426,6 +514,7 @@ function startSeasonJob({
 
   jobs.unshift(job);
   if (jobs.length > 200) jobs.length = 200;
+  persistJob(job);
 
   console.log(
     `[download] queued season job #${job.id} "${job.label}" (${episodes} episode(s))`
@@ -497,6 +586,8 @@ function startSeasonJob({
     console.log(
       `[download] season job #${job.id} finished: ${job.completedEpisodes} ok, ${job.skippedEpisodes} skipped, ${job.failedEpisodes} failed`
     );
+    persistJob(job);
+    pruneJobHistory();
   })().finally(() => {
     delete job._promise;
   });
@@ -1211,6 +1302,7 @@ module.exports = {
   waitForJob,
   getJob,
   listJobs,
+  initJobHistory,
   initDownloadDir,
   scanLibrary,
   listProgress,

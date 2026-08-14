@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.9
+
+- Download job history now survives a backend restart: job records (queued/completed/failed) are mirrored into a Redis hash (`movieserver:v1:jobhistory`, capped at 200) and reloaded on startup - any job still "downloading" when the process died is marked interrupted instead of showing stuck forever. Falls back to in-memory-only (today's behavior) when Redis isn't configured.
+- Added a redownload option: `POST /api/downloads/redownload` (body `{ jobId }`) re-runs a past job - the same URL/candidates for a regular download, or the same tmdbId/season/episodeCount for a season job - and works even for a job from a previous session now that history survives restarts. Wired into both the dashboard's Downloads tab and MediaNest's Downloads screen.
+- MediaNest: the download flow is now a popup (matching the dashboard's style) instead of a full-screen page, and TV shows get a season/episode picker with real names/episode counts from TMDB (no extra fetch - already part of the loaded movie data) - "download entire season" queues the whole season server-side, or pick a single episode's quality/fallback links directly.
+
 ## 1.7.8
 
 - Removed the Cineby feature entirely: the `/api/cineby-proxy` backend proxy, `cinebyProxy.js`, the `cineby_url` add-on option and `CINEBY_URL` env var, and all UI (dashboard, MediaNest sidebar tab, HelloTV sidenav panel + remote-control wiring).

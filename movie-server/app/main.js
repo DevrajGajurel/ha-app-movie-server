@@ -30,6 +30,7 @@ const {
   waitForJob,
   getJob,
   listJobs,
+  initJobHistory,
   initDownloadDir,
   getDownloadDir,
   scanLibrary,
@@ -553,6 +554,25 @@ async function downloadSheguEpisodeWithFallback({
   });
   await waitForJob(job);
   return job;
+}
+
+// Shared by the initial /api/downloads/season request and the redownload
+// route (re-running a past season job by tmdbId/season/episodeCount).
+function runSeasonDownload({ tmdbId, season, episodeCount, movieTitle }) {
+  return startSeasonJob({
+    tmdbId,
+    season,
+    episodeCount,
+    movieTitle,
+    downloadEpisode: async ({ seasonJob, season: s, episode: e }) =>
+      downloadSheguEpisodeWithFallback({
+        tmdbId,
+        season: s,
+        episode: e,
+        movieTitle,
+        parentId: seasonJob.id,
+      }),
+  });
 }
 
 function readBody(req) {
@@ -1235,20 +1255,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const job = startSeasonJob({
-        tmdbId,
-        season,
-        episodeCount,
-        movieTitle,
-        downloadEpisode: async ({ seasonJob, season: s, episode: e }) =>
-          downloadSheguEpisodeWithFallback({
-            tmdbId,
-            season: s,
-            episode: e,
-            movieTitle,
-            parentId: seasonJob.id,
-          }),
-      });
+      const job = runSeasonDownload({ tmdbId, season, episodeCount, movieTitle });
 
       sendJson(res, 202, {
         message: "Season download started",
@@ -1262,6 +1269,59 @@ const server = http.createServer(async (req, res) => {
 
   if (url === "/api/downloads/jobs" && req.method === "GET") {
     sendJson(res, 200, { downloadDir: getDownloadDir(), jobs: listJobs() });
+    return;
+  }
+
+  // Re-runs a past job (by id) with the same target - a completed download's
+  // candidates/season/episode, or a season job's tmdbId/season/episodeCount.
+  // Works even after a restart: job history survives in Redis (see
+  // initJobHistory), so the id from a past session is still resolvable here.
+  if (url === "/api/downloads/redownload" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const jobId = Number.parseInt(body.jobId, 10);
+      if (!Number.isFinite(jobId)) {
+        sendJson(res, 400, { error: "jobId is required" });
+        return;
+      }
+      const source = getJob(jobId);
+      if (!source) {
+        sendJson(res, 404, { error: "Job not found" });
+        return;
+      }
+
+      let job;
+      if (source.type === "season") {
+        if (!source.tmdbId || !source.season || !source.episodeCount) {
+          sendJson(res, 400, { error: "Original season job is missing tmdbId/season/episodeCount" });
+          return;
+        }
+        job = runSeasonDownload({
+          tmdbId: source.tmdbId,
+          season: source.season,
+          episodeCount: source.episodeCount,
+          movieTitle: source.movieTitle,
+        });
+      } else {
+        if (!source.url && !(source.candidates && source.candidates.length)) {
+          sendJson(res, 400, { error: "Original job has no URL/candidates to retry" });
+          return;
+        }
+        job = startDownload({
+          url: source.url,
+          label: source.label,
+          movieTitle: source.movieTitle,
+          tmdbId: source.tmdbId,
+          season: source.season,
+          episode: source.episode,
+          candidates: source.candidates,
+        });
+      }
+
+      sendJson(res, 202, { message: "Redownload started", job: getJob(job.id) });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
     return;
   }
 
@@ -1729,6 +1789,13 @@ async function startServer() {
     console.warn("Download options cache init failed:", err.message);
   }
 
+  let jobHistoryEnabled = false;
+  try {
+    jobHistoryEnabled = await initJobHistory(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("Job history Redis init failed, continuing without it:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
@@ -1746,6 +1813,7 @@ async function startServer() {
     console.log(`Emby:      ${isEmbyConfigured() ? "enabled" : "disabled (set EMBY_URL + EMBY_API_KEY)"}`);
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    console.log(`Job history: ${jobHistoryEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
   });
 
   runSubtitlePrefetchSweep();

@@ -1159,6 +1159,30 @@
       margin-top: 0.25rem;
     }
 
+    .job-actions {
+      grid-column: 1 / -1;
+      margin-top: 0.35rem;
+    }
+
+    .job-redownload-btn {
+      font-size: 0.72rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .job-redownload-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .job-redownload-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
     /* nav badge (active download count) */
     .nav-badge {
       display: inline-flex;
@@ -2411,6 +2435,9 @@
       const errorRow = job.status === "failed" && job.error
         ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
 
+      const redownloadRow = (job.status === "completed" || job.status === "failed")
+        ? `<div class="job-actions"><button type="button" class="job-redownload-btn" data-redownload-job="${job.id}">Redownload</button></div>` : "";
+
       const sizeHint = (job.receivedBytes > 0 || job.totalBytes > 0)
         ? `${formatBytes(job.receivedBytes)}${job.totalBytes > 0 ? ` / ${formatBytes(job.totalBytes)}` : ""}` : "";
 
@@ -2430,6 +2457,7 @@
           ${seasonRow}
           ${progressBar}
           ${errorRow}
+          ${redownloadRow}
         </div>`;
     }
 
@@ -2503,6 +2531,30 @@
     });
 
     downloadsRefreshBtn.addEventListener("click", () => loadDownloadsView());
+
+    downloadsContentEl.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-redownload-job]");
+      if (!btn) return;
+      const jobId = Number.parseInt(btn.dataset.redownloadJob, 10);
+      btn.disabled = true;
+      btn.textContent = "Starting…";
+      try {
+        const res = await fetch(apiUrl("downloads/redownload"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        downloadsActiveTab = "active";
+        document.querySelectorAll(".downloads-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === "active"));
+        await loadDownloadsView();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Redownload";
+        alert(`Redownload failed: ${err.message}`);
+      }
+    });
 
     async function applyMainUrl() {
       const nextUrl = mainUrlInput.value.trim();

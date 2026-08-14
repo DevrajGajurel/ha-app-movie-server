@@ -147,6 +147,12 @@ export async function getTmdbById(tmdbId: string): Promise<TmdbInfo | null> {
   }
 }
 
+export interface SeasonInfo {
+  seasonNumber: number;
+  episodeCount: number;
+  name: string;
+}
+
 export interface TmdbInfo {
   tmdbId: number;
   tmdbTitle: string;
@@ -162,6 +168,8 @@ export interface TmdbInfo {
   certification: string | null;
   director: string | null;
   trailerKey: string | null;
+  numberOfSeasons?: number | null;
+  seasons?: SeasonInfo[];
 }
 
 export interface Movie {
@@ -391,11 +399,63 @@ export async function startDownload(args: { url: string; label: string; movieTit
   return data.job;
 }
 
+// Single-episode direct links, resolved via shegu.st by tmdbId - same
+// backend path the dashboard's episode picker uses (source=secondary).
+export async function getEpisodeDownloadOptions(
+  tmdbId: string,
+  season: number,
+  episode: number
+): Promise<{ options: DownloadOption[] }> {
+  const params = new URLSearchParams({
+    source: "secondary",
+    tmdbId,
+    mediaType: "tv",
+    season: String(season),
+    episode: String(episode),
+  });
+  const res = await fetch(apiUrl(`downloads?${params.toString()}`));
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// Queues every episode of a season (server downloads up to 5 in parallel) -
+// each episode's own quality/fallback links are resolved server-side.
+export async function startSeasonDownload(args: {
+  tmdbId: string;
+  season: number;
+  episodeCount: number;
+  movieTitle: string;
+}): Promise<DownloadJob> {
+  const res = await fetch(apiUrl("downloads/season"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data.job;
+}
+
 export async function getJobs(): Promise<DownloadJob[]> {
   const res = await fetch(apiUrl("downloads/jobs"));
   if (!res.ok) return [];
   const data = await res.json();
   return data.jobs || [];
+}
+
+// Re-runs a completed/failed job (same URL/candidates, or same
+// tmdbId/season/episodeCount for a season job) - works even across a
+// restart since job history now survives in Redis.
+export async function redownloadJob(jobId: number): Promise<DownloadJob> {
+  const res = await fetch(apiUrl("downloads/redownload"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data.job;
 }
 
 export function reportClientError(source: string, message: string, context?: Record<string, unknown>): void {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getJobs, type DownloadJob } from "./api";
+import { getJobs, redownloadJob, type DownloadJob } from "./api";
 
 function formatStatus(job: DownloadJob): string {
   if (job.status === "queued") return "Queued…";
@@ -14,6 +14,7 @@ function formatStatus(job: DownloadJob): string {
 
 export function Downloads() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
+  const [redownloading, setRedownloading] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +31,22 @@ export function Downloads() {
     };
   }, []);
 
+  async function handleRedownload(jobId: number) {
+    setRedownloading((prev) => new Set(prev).add(jobId));
+    try {
+      await redownloadJob(jobId);
+      getJobs().then(setJobs);
+    } catch {
+      // Surfaced implicitly - the job list just won't show a new queued entry.
+    } finally {
+      setRedownloading((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  }
+
   return (
     <div className="rows" style={{ marginTop: 0, paddingTop: 48 }}>
       <h1 className="hero-title" style={{ fontSize: 32 }}>Downloads</h1>
@@ -42,6 +59,16 @@ export function Downloads() {
             <div className="player-progress-track" style={{ marginTop: 6, height: 4 }}>
               <div className="player-progress-fill" style={{ width: `${Math.round((job.receivedBytes / job.totalBytes) * 100)}%` }} />
             </div>
+          ) : null}
+          {job.status === "completed" || job.status === "failed" ? (
+            <button
+              type="button"
+              className="redownload-btn"
+              disabled={redownloading.has(job.id)}
+              onClick={() => handleRedownload(job.id)}
+            >
+              {redownloading.has(job.id) ? "Starting…" : "Redownload"}
+            </button>
           ) : null}
         </div>
       ))}

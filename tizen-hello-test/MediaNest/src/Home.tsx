@@ -385,6 +385,8 @@ export function Home({ onPlay }: HomeProps) {
           pageUrl={getMoviePageLink(openDownload)}
           movieTitle={openDownload.tmdb?.tmdbTitle || openDownload.title}
           tmdbId={openDownload.tmdb?.tmdbId ? String(openDownload.tmdb.tmdbId) : null}
+          mediaType={openDownload.tmdb?.type === "tv" ? "tv" : "movie"}
+          seasons={openDownload.tmdb?.seasons}
           onClose={() => setOpenDownload(null)}
           onDownloadStarted={() => getDownloadedMovies().then(setDownloaded)}
         />
