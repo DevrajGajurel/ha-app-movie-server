@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.12
+
+- MediaNest: the player's title/progress/time overlay now auto-hides after a few seconds during playback (matching HelloTV, and Netflix/Jellyfin/Prime convention) instead of staying on screen the whole time - any key press (play/pause, seek) brings it back and restarts the countdown; it stays visible while paused.
+- MediaNest: added a "TV Series" row to the Home screen, right after Top 10 Movies - previously TV shows only surfaced mixed into "Top 10 Movies"/genre rows with no dedicated section. "Top 10 Movies" itself now excludes TV entries so it isn't mislabeled.
+
 ## 1.7.11
 
 - MediaNest playback was failing with `webapis.avplay is not available on this platform` (logged for Cocktail 2): the Samsung AVPlay script (`$WEBAPIS/webapis/webapis.js`) was never loaded. Also made the player shell transparent so AVPlay's native video plane is not covered by an opaque background.

@@ -153,8 +153,18 @@ export function Home({ onPlay }: HomeProps) {
 
   const rows: RowDef[] = useMemo(() => {
     if (!movies.length) return [];
-    const byRating = [...movies].sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0));
+    const byRating = [...movies]
+      .filter((m) => m.tmdb?.type !== "tv")
+      .sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0));
     const recentlyAdded = [...movies].sort((a, b) => (b.sourceOrder ?? 0) - (a.sourceOrder ?? 0)).slice(0, 20);
+
+    const tvSeriesRow: RowDef[] = (() => {
+      const tvShows = movies
+        .filter((m) => m.tmdb?.type === "tv")
+        .sort((a, b) => (b.tmdb?.rating || 0) - (a.tmdb?.rating || 0))
+        .slice(0, 20);
+      return tvShows.length ? [{ title: "TV Series", movies: tvShows }] : [];
+    })();
 
     const genreCounts = new Map<string, number>();
     for (const m of movies) {
@@ -192,6 +202,7 @@ export function Home({ onPlay }: HomeProps) {
     return [
       ...continueWatchingRow,
       { title: "Top 10 Movies", movies: byRating.slice(0, 10), ranked: true },
+      ...tvSeriesRow,
       ...recentlyDownloadedRow,
       { title: "Recently Added", movies: recentlyAdded, badge: "NEW" },
       ...genreRows,
