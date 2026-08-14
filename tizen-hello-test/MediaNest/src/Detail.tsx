@@ -164,12 +164,39 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
   }
 
+  // The remote's dedicated Play/Pause button, same idea as Home's poster
+  // grid: jump straight into playback from whatever's focused, skipping the
+  // download popup entirely - but only when there's actually something
+  // downloaded to play.
+  function playFocused() {
+    if (focusRegion === "episodes") {
+      const ep = episodes[episodeFocusIdx];
+      if (ep && currentSeason && downloadedEpisodeNumbers.has(ep.episodeNumber)) {
+        getEpisodeFileToken(tmdbId, title, currentSeason.seasonNumber, ep.episodeNumber).then((tok) => {
+          if (tok) onPlay(tok);
+        });
+      }
+      return;
+    }
+    if (isTv) {
+      if (seriesResume) onPlay(seriesResume.fileToken);
+      else if (firstEpisodeToken) onPlay(firstEpisodeToken);
+    } else if (downloaded) {
+      onPlay();
+    }
+  }
+
   useEffect(() => {
     if (showDeleteConfirm || showTrailer || paused) return; // those handle their own keys
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
         onClose();
+        return;
+      }
+
+      if (e.keyCode === 415 || e.keyCode === 19 || e.keyCode === 10252) {
+        playFocused();
         return;
       }
 
@@ -223,6 +250,13 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     currentSeason,
     isTv,
     onClose,
+    downloadedEpisodeNumbers,
+    seriesResume,
+    firstEpisodeToken,
+    downloaded,
+    onPlay,
+    tmdbId,
+    title,
   ]);
 
   // The action list can shrink (e.g. Delete disappears once deleted) -
