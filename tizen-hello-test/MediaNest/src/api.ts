@@ -50,6 +50,55 @@ export function matchMovieForDownload(item: DownloadedMovie, movies: Movie[]): M
   return movies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === normalized);
 }
 
+// Builds a playable Movie for every downloaded folder: catalog match first
+// (so TMDB posters/backdrops come through), otherwise a library-only stub
+// keyed by tmdbId/title so playback still works.
+export function libraryItemToMovie(item: DownloadedMovie, movies: Movie[]): Movie {
+  const existing = matchMovieForDownload(item, movies);
+  const key = item.tmdbId || normalizeTitle(item.title) || item.title;
+  if (existing) {
+    return existing;
+  }
+  const title = item.title || "Downloaded movie";
+  const tmdbId = item.tmdbId ? Number(item.tmdbId) : null;
+  return {
+    title,
+    link: `library:${key}`,
+    tmdb: tmdbId
+      ? {
+          tmdbId,
+          tmdbTitle: title,
+          type: "movie",
+          poster: null,
+          backdrop: null,
+          rating: null,
+          year: null,
+          genres: [],
+          overview: null,
+          tagline: null,
+          runtimeMinutes: null,
+          certification: null,
+          director: null,
+          trailerKey: null,
+        }
+      : undefined,
+  };
+}
+
+export function getLibraryMovies(downloaded: DownloadedMovie[], movies: Movie[]): Movie[] {
+  const seen = new Set<string>();
+  const result: Movie[] = [];
+  const sorted = [...downloaded].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  for (const item of sorted) {
+    const movie = libraryItemToMovie(item, movies);
+    const id = movie.tmdb?.tmdbId ? `tmdb:${movie.tmdb.tmdbId}` : movie.link;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(movie);
+  }
+  return result;
+}
+
 export interface ProgressItem {
   folder: string;
   tmdbId: string | null;

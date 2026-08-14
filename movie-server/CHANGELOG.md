@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.5
+
+- MediaNest: added a Library sidebar menu that shows every downloaded title in a TMDB poster grid (7 columns), with Play from the detail screen or the remote Play button.
+
 ## 1.7.4
 
 - Fixed a performance regression from 1.7.3: `scanLibrary()` (backing `/api/downloads/library`, called by the dashboard/TV app right after "Loading library from cache…") was walking every download folder's directory tree *twice* - once to check for any media file, once again to find the newest file's timestamp - after season-subfolder support made that walk recursive instead of a single flat `readdir`. Now walks each folder once and reuses the file list for both checks.

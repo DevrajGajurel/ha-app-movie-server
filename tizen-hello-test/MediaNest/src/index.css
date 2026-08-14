@@ -421,6 +421,34 @@ img {
   padding-left: calc(var(--sidebar-width) + 25px);
 }
 
+/* ---- Library grid ---- */
+.library-view {
+  position: relative;
+  z-index: 5;
+  margin-top: 0;
+  padding: 48px 56px 60px calc(var(--sidebar-width) + 25px);
+  height: 1080px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.library-view::-webkit-scrollbar {
+  display: none;
+}
+
+.library-hint {
+  color: var(--muted);
+  font-size: 16px;
+  margin: 0 0 28px;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 216px);
+  gap: 22px 18px;
+  padding: 16px 8px 40px 16px;
+}
+
 /* ---- Cineby ---- */
 .cineby-view {
   position: fixed;

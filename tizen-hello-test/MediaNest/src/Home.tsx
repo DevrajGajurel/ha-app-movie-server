@@ -5,6 +5,7 @@ import {
   getContinueWatching,
   matchMovieForProgress,
   matchMovieForDownload,
+  getLibraryMovies,
   getMoviePageLink,
   isDownloaded,
   type Movie,
@@ -17,6 +18,7 @@ import { Detail } from "./Detail";
 import { DownloadModal } from "./DownloadModal";
 import { Search } from "./Search";
 import { Downloads } from "./Downloads";
+import { Library } from "./Library";
 import { Cineby } from "./Cineby";
 import { ExitConfirm } from "./ExitConfirm";
 
@@ -94,6 +96,8 @@ export function Home({ onPlay }: HomeProps) {
   useEffect(() => {
     if (rowIndex === -1) document.getElementById("root")?.scrollTo({ top: 0, behavior: "smooth" });
   }, [rowIndex]);
+
+  const libraryMovies = useMemo(() => getLibraryMovies(downloaded, movies), [downloaded, movies]);
 
   const rows: RowDef[] = useMemo(() => {
     if (!movies.length) return [];
@@ -178,7 +182,7 @@ export function Home({ onPlay }: HomeProps) {
     if (openDetail || openDownload || showExitConfirm) return; // those handle their own keys
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
-        // Back: leave search/downloads back to the browse screen. On the
+        // Back: leave search/library/downloads back to the browse screen. On the
         // browse screen itself there's nothing left to "close" at this
         // level, so ask before quitting instead - an accidental extra Back
         // press shouldn't kick the user out of the app.
@@ -299,6 +303,16 @@ export function Home({ onPlay }: HomeProps) {
           onSelect={openMovie}
           progressFor={(movie) => continueWatchingPercent.get(movie.link)}
           downloadedFor={(movie) => isDownloaded(movie, downloaded)}
+        />
+      )}
+      {view === "library" && (
+        <Library
+          movies={libraryMovies}
+          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm}
+          onSelect={openMovie}
+          onPlay={onPlay}
+          onLeaveToSidebar={() => setSidebarFocused(true)}
+          progressFor={(movie) => continueWatchingPercent.get(movie.link)}
         />
       )}
       {view === "downloads" && <Downloads />}
