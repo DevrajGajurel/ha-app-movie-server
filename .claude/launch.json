@@ -4,7 +4,7 @@
     {
       "name": "movie-server",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["src/movie_server/main.js"],
+      "runtimeArgs": ["movie-server/app/main.js"],
       "port": 3001,
       "autoPort": false
     },

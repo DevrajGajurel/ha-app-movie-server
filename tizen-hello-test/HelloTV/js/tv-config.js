@@ -3,7 +3,7 @@
 // The dashboard is bundled *inside* the .wgt package (see tizen/dist/), so
 // its relative "api/..." fetches would otherwise resolve against the local
 // widget package instead of your movie-server backend. Point this at the
-// LAN address of the machine running `npm start` in src/movie_server.
+// LAN address of the machine running `npm start` in movie-server/app.
 //
 // Edit the value below and re-run `npm run build:tizen` (this file is
 // copied as-is, no build step required beyond that).

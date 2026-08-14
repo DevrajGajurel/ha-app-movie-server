@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.7
+
+- Home Assistant add-on builds are much faster: the Node app is copied from `movie-server/app` instead of `git clone` of the whole GitHub repo, Node comes from Debian (no NodeSource), and apt runs once. Code-only updates can reuse the apt and `npm install` layers.
+
 ## 1.7.6
 
 - Local `docker compose` now matches the Home Assistant add-on image: no Chrome/Xvfb/Python, no vidsrc/hlsProxy copies, and no cf-clearance sidecar. The compose Dockerfile copies `src/movie_server` from the working tree.

@@ -54,6 +54,6 @@ copy .env.example .env
 ├── brand/
 ├── repository.yaml
 ├── movie-server/
-├── src/movie_server/
+├── movie-server/          # HA add-on (app/ is the Node server)
 └── custom_components/movie_server/
 ```

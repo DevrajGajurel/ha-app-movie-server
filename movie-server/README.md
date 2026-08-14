@@ -30,5 +30,5 @@ On the **Configuration** tab, open **Show unused optional configuration options*
 - Downloads are saved under the configured `download_dir` (default `/media`).
 - When Emby is configured, new downloads trigger a library update automatically.
 - Open the UI from the add-on page or the **Movie Server** sidebar entry.
-- No bundled browser: Chrome, the cf-clearance sidecar, and the Streams/Remote Index features that needed them have been removed to keep the image light.
+- The add-on image copies `movie-server/app` (the Node server) and installs Debian Node 18 + ffmpeg + aria2. It does not clone GitHub or install Node from NodeSource.
 - `flaresolverr_url` (optional) — a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) instance you run yourself, used only as a fallback when a download-host redirect hits a genuine Cloudflare Turnstile challenge that plain `fetch()` can't pass. Point it at FlareSolverr's `/v1` endpoint (e.g. `http://192.168.1.50:8191/v1`). Nothing runs inside this image for it - without it configured, a Turnstile-blocked download just fails with a clear log message.

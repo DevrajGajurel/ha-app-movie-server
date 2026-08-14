@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$appDir = Join-Path $PSScriptRoot "src\movie_server"
+$appDir = Join-Path $PSScriptRoot "movie-server\app"
 Set-Location $appDir
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {

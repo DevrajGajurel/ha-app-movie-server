@@ -1,14 +1,11 @@
 FROM node:20-bookworm
 
-# Local compose image — same runtime as the Home Assistant add-on
-# (movie-server/Dockerfile): Node, ffmpeg, aria2. No Chrome, Xvfb, Python,
-# vidsrc, or cf-clearance sidecar. Source is copied from this repo instead
-# of cloned from GitHub so `docker compose up --build` uses the working tree.
+# Same runtime as the Home Assistant add-on (ffmpeg, aria2; no Chrome/Python).
+# App source lives in movie-server/app so HA and local compose share one tree.
 ENV DEBIAN_FRONTEND=noninteractive \
     PORT=3001
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
         ca-certificates \
         ffmpeg \
         aria2 \
@@ -16,10 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY src/movie_server/package.json src/movie_server/package-lock.json* ./
+COPY movie-server/app/package.json movie-server/app/package-lock.json* ./
 RUN npm install --omit=dev
 
-COPY src/movie_server/ ./
+COPY movie-server/app/ ./
 
 EXPOSE 3001
 
