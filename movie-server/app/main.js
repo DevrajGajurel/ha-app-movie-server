@@ -38,6 +38,7 @@ const {
   scanLibrary,
   findMediaFile,
   findMediaFiles,
+  findEpisodeFile,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,
@@ -1494,6 +1495,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       sendJson(res, 200, { deletedDirs });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // Looks up a specific episode's file token (if downloaded) so the caller
+  // can decide "play this episode" vs "open the download flow" - unlike
+  // findMediaFile, which just returns the largest file this whole series
+  // has anywhere and has no way to pick out one specific episode.
+  if (url === "/api/downloads/episode-file" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+      const season = searchParams.get("season");
+      const episode = searchParams.get("episode");
+      if ((!tmdbId && !title) || season == null || episode == null) {
+        sendJson(res, 400, { error: "tmdbId or title, plus season and episode, are required" });
+        return;
+      }
+      const file = findEpisodeFile({ tmdbId, title, season: Number(season), episode: Number(episode) });
+      sendJson(res, 200, { token: file?.token || null });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

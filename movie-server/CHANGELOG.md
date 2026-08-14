@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.15
+
+- Added `GET /api/downloads/episode-file` (tmdbId/title + season/episode -> file token if downloaded) and wired it into MediaNest's episode grid: selecting an episode that's already on disk now plays that exact file directly instead of opening the download popup - previously "Play" on a TV show just grabbed the largest video file across every folder matching that show's id, which meant nothing once more than one episode was downloaded (confirmed this was resolving to the wrong season entirely).
+- Cleaned up ~127GB of duplicate/stale files found while investigating the above: House of the Dragon Season 2 had every episode downloaded 2-3 times over (one exact duplicate plus a lower-quality alternate each), and a leftover flat "House of the Dragon S01E01" folder from before this release's folder-nesting fix. Kept the single best-quality copy of each episode.
+
 ## 1.7.14
 
 - Fixed single-episode downloads (MediaNest's episode grid, the dashboard's per-episode picker) creating their own separate "Title SxxEyy (tmdb-id)" folder instead of nesting into the season-batch layout ("Title (tmdb-id)/S0X/") - `/api/downloads/save` now accepts season/episode and threads them through like the season-batch downloader always has.

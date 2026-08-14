@@ -510,6 +510,29 @@ export async function cancelJob(jobId: number): Promise<void> {
   }
 }
 
+// Looks up a specific episode's file token (if downloaded) - unlike a plain
+// tmdbId/title match (which just returns the largest file the whole series
+// has anywhere), this can tell "this exact episode is downloaded" from
+// "it isn't", so the episode grid can play instead of opening the download
+// flow.
+export async function getEpisodeFileToken(
+  tmdbId: string | null,
+  title: string,
+  season: number,
+  episode: number
+): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ title, season: String(season), episode: String(episode) });
+    if (tmdbId) params.set("tmdbId", tmdbId);
+    const res = await fetch(apiUrl(`downloads/episode-file?${params.toString()}`));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.token || null;
+  } catch {
+    return null;
+  }
+}
+
 export function reportClientError(source: string, message: string, context?: Record<string, unknown>): void {
   fetch(apiUrl("client-log"), {
     method: "POST",

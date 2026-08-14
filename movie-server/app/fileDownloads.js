@@ -795,6 +795,15 @@ function findMediaFile({ tmdbId, title }) {
   return files.length ? files[0].path : null;
 }
 
+// A specific episode's file (if downloaded) rather than just "the largest
+// file this series has anywhere" - findMediaFile alone is meaningless for a
+// TV show once it has more than one episode on disk, since it has no idea
+// which one the caller actually wants.
+function findEpisodeFile({ tmdbId, title, season, episode }) {
+  const tag = `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+  return findMediaFiles({ tmdbId, title }).find((f) => f.filename.toUpperCase().includes(tag)) || null;
+}
+
 // Removes every downloaded folder matching a movie (all versions, plus the
 // marker/progress files living alongside them) — the same granularity
 // findMatchingDirs already groups things at, so "delete this movie" removes
@@ -1418,6 +1427,7 @@ module.exports = {
   normalizeTitle,
   findMediaFile,
   findMediaFiles,
+  findEpisodeFile,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,

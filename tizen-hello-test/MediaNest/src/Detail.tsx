@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Movie } from "./api";
-import { deleteMedia, getSeasonEpisodeDetails, type EpisodeDetail } from "./api";
+import { deleteMedia, getSeasonEpisodeDetails, getEpisodeFileToken, type EpisodeDetail } from "./api";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { Trailer } from "./Trailer";
 
 interface DetailProps {
   movie: Movie;
   downloaded: boolean;
-  onPlay: () => void;
+  onPlay: (fileToken?: string) => void;
   onDownload: (episode?: { seasonNumber: number; episodeNumber: number }) => void;
   onDeleted: () => void;
   onClose: () => void;
@@ -94,6 +94,22 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     episodeRefs.current[episodeFocusIdx]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focusRegion, episodeFocusIdx]);
 
+  // Plays this exact episode if it's already downloaded, otherwise opens
+  // the download popup straight at its quality options - a plain
+  // tmdbId/title match would just return the largest file this whole
+  // series has anywhere, which means nothing once more than one episode
+  // is on disk.
+  async function selectEpisode(ep: EpisodeDetail) {
+    if (!currentSeason) return;
+    const tmdbId = t?.tmdbId ? String(t.tmdbId) : null;
+    const token = await getEpisodeFileToken(tmdbId, title, currentSeason.seasonNumber, ep.episodeNumber);
+    if (token) {
+      onPlay(token);
+    } else {
+      onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
+    }
+  }
+
   useEffect(() => {
     if (showDeleteConfirm || showTrailer) return; // those handle their own keys
 
@@ -132,7 +148,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
         setEpisodeFocusIdx((i) => Math.min(episodes.length - 1, i + 1));
       } else if (e.keyCode === 13) {
         const ep = episodes[episodeFocusIdx];
-        if (ep && currentSeason) onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
+        if (ep) selectEpisode(ep);
       }
     }
 
@@ -242,9 +258,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
                     episodeRefs.current[i] = el;
                   }}
                   className={"episode-card" + (focusRegion === "episodes" && i === episodeFocusIdx ? " focused" : "")}
-                  onClick={() =>
-                    currentSeason && onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber })
-                  }
+                  onClick={() => selectEpisode(ep)}
                 >
                   {ep.still ? (
                     <img src={ep.still} alt="" className="episode-card-thumb" />

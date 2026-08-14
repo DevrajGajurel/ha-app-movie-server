@@ -26,7 +26,7 @@ import { ExitConfirm } from "./ExitConfirm";
 type View = SidebarView;
 
 interface HomeProps {
-  onPlay: (movie: Movie) => void;
+  onPlay: (movie: Movie, fileToken?: string) => void;
 }
 
 interface RowDef {
@@ -236,9 +236,9 @@ export function Home({ onPlay }: HomeProps) {
     setOpenDetail(movie);
   }
 
-  function handlePlayFromDetail(movie: Movie) {
+  function handlePlayFromDetail(movie: Movie, fileToken?: string) {
     setOpenDetail(null);
-    onPlay(movie);
+    onPlay(movie, fileToken);
   }
 
   function handleDownloadFromDetail(movie: Movie, episode?: { seasonNumber: number; episodeNumber: number }) {
@@ -393,7 +393,7 @@ export function Home({ onPlay }: HomeProps) {
           key={openDetail.link}
           movie={openDetail}
           downloaded={isDownloaded(openDetail, downloaded)}
-          onPlay={() => handlePlayFromDetail(openDetail)}
+          onPlay={(fileToken) => handlePlayFromDetail(openDetail, fileToken)}
           onDownload={(episode) => handleDownloadFromDetail(openDetail, episode)}
           onDeleted={() => {
             setOpenDetail(null);
