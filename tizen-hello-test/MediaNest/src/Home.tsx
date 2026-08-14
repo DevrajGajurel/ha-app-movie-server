@@ -242,7 +242,8 @@ export function Home({ onPlay }: HomeProps) {
   }
 
   function handleDownloadFromDetail(movie: Movie, episode?: { seasonNumber: number; episodeNumber: number }) {
-    setOpenDetail(null);
+    // Detail stays open behind the download popup (its dimmed backdrop is
+    // meant to show whatever opened it) instead of closing back to Home.
     setOpenDownload(movie);
     setOpenDownloadEpisode(episode || null);
   }
@@ -400,6 +401,7 @@ export function Home({ onPlay }: HomeProps) {
             getDownloadedMovies().then(setDownloaded);
           }}
           onClose={() => setOpenDetail(null)}
+          paused={!!openDownload}
         />
       )}
       {openDownload && (

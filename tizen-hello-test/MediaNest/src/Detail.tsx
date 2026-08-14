@@ -19,6 +19,11 @@ interface DetailProps {
   onDownload: (episode?: { seasonNumber: number; episodeNumber: number }) => void;
   onDeleted: () => void;
   onClose: () => void;
+  // True while a child popup (the download picker) is layered on top -
+  // Detail stays mounted underneath so the dimmed backdrop shows the movie's
+  // own page instead of falling back to Home, but its own keydown handler
+  // must stand down so the two don't fight over the same key presses.
+  paused?: boolean;
 }
 
 type ActionKind = "primary" | "trailer" | "delete";
@@ -30,7 +35,7 @@ function formatEpisodeYear(airDate: string | null): string {
   return airDate ? airDate.slice(0, 4) : "";
 }
 
-export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClose }: DetailProps) {
+export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClose, paused }: DetailProps) {
   const t = movie.tmdb;
   const title = t?.tmdbTitle || movie.title;
   const backdrop = t?.backdrop || t?.poster;
@@ -160,7 +165,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   }
 
   useEffect(() => {
-    if (showDeleteConfirm || showTrailer) return; // those handle their own keys
+    if (showDeleteConfirm || showTrailer || paused) return; // those handle their own keys
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
@@ -207,6 +212,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   }, [
     showDeleteConfirm,
     showTrailer,
+    paused,
     focusRegion,
     actionIndex,
     actions,
