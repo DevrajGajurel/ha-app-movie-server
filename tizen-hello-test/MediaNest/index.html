@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1920, height=1080, user-scalable=no" />
     <title>MediaNest</title>
+    <!-- Samsung Product API: required for webapis.avplay. Without this, play
+         fails with "webapis.avplay is not available on this platform" even
+         though the avplay privilege is declared in config.xml. -->
+    <script type="text/javascript" src="$WEBAPIS/webapis/webapis.js"></script>
   </head>
   <body>
     <div id="root"></div>

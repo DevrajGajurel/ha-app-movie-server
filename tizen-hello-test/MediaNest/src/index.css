@@ -43,6 +43,12 @@ img {
   background: var(--bg);
 }
 
+/* AVPlay draws on a native plane behind the DOM. An opaque .app fill
+   covers the picture completely even when playback is running. */
+.app.playing {
+  background: transparent;
+}
+
 /* ---- Sidebar ---- */
 .sidebar {
   position: fixed;
@@ -468,6 +474,13 @@ img {
   flex-direction: column;
   justify-content: flex-end;
   padding: 48px 56px;
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+
+.player-overlay.controls-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .player-title {

@@ -8,7 +8,7 @@ export function App() {
 
   if (playing) {
     return (
-      <div className="app">
+      <div className="app playing">
         <Player
           tmdbId={playing.tmdb?.tmdbId ? String(playing.tmdb.tmdbId) : null}
           title={playing.tmdb?.tmdbTitle || playing.title}

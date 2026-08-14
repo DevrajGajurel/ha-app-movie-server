@@ -38,7 +38,7 @@ export class AVPlayer {
   }
 
   private get api() {
-    const api = window.webapis?.avplay;
+    const api = window.webapis?.avplay || (typeof webapis !== "undefined" ? webapis?.avplay : undefined);
     if (!api) throw new Error("webapis.avplay is not available on this platform");
     return api;
   }

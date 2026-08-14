@@ -48,6 +48,35 @@ export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps
   const [centerIcon, setCenterIcon] = useState<string | null>(null);
   const centerIconTimerRef = useRef<number | null>(null);
 
+  // Auto-hides the title/progress/time overlay after a few seconds of
+  // inactivity during playback, matching HelloTV's showPlayerControls() -
+  // stays visible while paused (nothing to hide it from) or right after any
+  // interaction, same Netflix/Jellyfin/Prime convention.
+  const CONTROLS_HIDE_MS = 4000;
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsHideTimerRef = useRef<number | null>(null);
+
+  function showControls() {
+    setControlsVisible(true);
+    if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current);
+    if (player.state === "PLAYING") {
+      controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_MS);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (controlsHideTimerRef.current) window.clearTimeout(controlsHideTimerRef.current);
+    };
+  }, []);
+
+  // Resuming playback (e.g. after the tracks panel closes, or after a
+  // pause) should restart the hide countdown even without a fresh keypress.
+  useEffect(() => {
+    showControls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.state]);
+
   // Brief play/pause glyph flash on toggle, matching HelloTV's
   // flashPlayerCenterIcon() - the only visual feedback Enter/OK gives here,
   // since there's no persistent play/pause button.
@@ -61,6 +90,7 @@ export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps
     const wasPlaying = player.state === "PLAYING";
     player.togglePlayPause();
     flashCenterIcon(wasPlaying ? "⏸" : "▶");
+    showControls();
   }
 
   // Opens the stream once on mount. raw=1 (baked into buildPlayUrl) is
@@ -176,6 +206,7 @@ export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps
     }
     const step = SEEK_STEP_SECONDS * (1 + seekRepeatCountRef.current);
     player.seekBy(direction === "right" ? step : -step);
+    showControls();
   }
 
   useEffect(() => {
@@ -264,7 +295,7 @@ export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps
       <object id="avplayer" className="player-surface" type="application/avplayer" />
       <div className={"player-center-icon" + (centerIcon ? " show" : "")}>{centerIcon}</div>
       {player.subtitleText && <div className="subtitle-cue">{player.subtitleText}</div>}
-      <div className="player-overlay">
+      <div className={"player-overlay" + (controlsVisible ? "" : " controls-hidden")}>
         <div className="player-title">{title}</div>
         <div className="player-progress-track">
           <div className="player-progress-fill" style={{ width: `${pct}%` }} />
