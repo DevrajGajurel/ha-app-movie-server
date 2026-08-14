@@ -660,6 +660,38 @@ async function enrichMovies(movies, apiKey, concurrency = 5) {
   return enriched;
 }
 
+const SUGGEST_POSTER_BASE = "https://image.tmdb.org/t/p/w92";
+
+// Live type-ahead suggestions as the user types in the search box - raw
+// TMDB relevance (not run through parseSourceTitle/scoreCandidate at all,
+// unlike searchMedia), since this is suggesting real titles to search for
+// rather than matching a specific scraped filename to one.
+async function suggestTitles(apiKey, query) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+
+  const url = new URL(`${TMDB_BASE}/search/multi`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("query", q);
+  url.searchParams.set("include_adult", "false");
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`TMDB suggest failed: ${res.status}`);
+  const data = await res.json();
+
+  return (data.results || [])
+    .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 8)
+    .map((r) => ({
+      tmdbId: r.id,
+      type: r.media_type,
+      title: r.title || r.name || "",
+      year: (r.release_date || r.first_air_date || "").slice(0, 4) || null,
+      poster: r.poster_path ? `${SUGGEST_POSTER_BASE}${r.poster_path}` : null,
+    }));
+}
+
 module.exports = {
   cleanTitle,
   parseSourceTitle,
@@ -667,4 +699,5 @@ module.exports = {
   searchMedia,
   enrichMovies,
   getTmdbById,
+  suggestTitles,
 };

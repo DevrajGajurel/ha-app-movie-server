@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.13
+
+- Dashboard: the search box now shows live title suggestions from TMDB as you type (2+ characters, debounced), with poster thumbnails, year, and movie/TV badges - arrow keys + Enter or a click to pick one. Backed by a new `GET /api/tmdb/suggest?q=` route. Picking a suggestion just fills in TMDB's canonical title and re-runs the normal search - it's a typing aid, not a way to browse or download anything TMDB has that isn't actually on the scraped listing site.
+
 ## 1.7.12
 
 - MediaNest: the player's title/progress/time overlay now auto-hides after a few seconds during playback (matching HelloTV, and Netflix/Jellyfin/Prime convention) instead of staying on screen the whole time - any key press (play/pause, seek) brings it back and restarts the countdown; it stays visible while paused.

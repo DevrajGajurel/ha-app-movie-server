@@ -167,6 +167,65 @@
     .filters-row input { flex: 1; min-width: 160px; }
     .filters-row select { min-width: 130px; }
 
+    .search-input-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 160px;
+    }
+    .search-input-wrap input { width: 100%; }
+
+    .search-suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 30;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .search-suggestion {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.45rem 0.65rem;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+
+    .search-suggestion:hover,
+    .search-suggestion.active {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .search-suggestion img {
+      width: 32px;
+      height: 46px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .search-suggestion-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .search-suggestion-type {
+      margin-left: auto;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
     #refresh {
       margin-left: auto;
       flex-shrink: 0;
@@ -1249,7 +1308,10 @@
         <section class="filters" id="filters" hidden>
           <div class="filters-panel">
             <div class="filters-row">
-              <input id="search-input" type="search" placeholder="Search titles…" />
+              <div class="search-input-wrap">
+                <input id="search-input" type="search" placeholder="Search titles…" autocomplete="off" />
+                <div id="search-suggestions" class="search-suggestions" hidden></div>
+              </div>
               <select id="sort-select" aria-label="Sort by">
                 <option value="source-order">Source order</option>
                 <option value="release-desc">Newest first</option>
@@ -2755,6 +2817,116 @@
     [searchInput, sortSelect, typeFilter, genreFilter, yearFilter, qualityFilter].forEach((el) => {
       el.addEventListener("input", applyFiltersAndRender);
       el.addEventListener("change", applyFiltersAndRender);
+    });
+
+    // ── Live search suggestions (TMDB) ──────────────────────────────────
+    // Purely a typing aid: picking one just fills in TMDB's canonical title
+    // and re-runs the normal search (which still only ever finds what's
+    // actually on the scraped listing site) - it doesn't search TMDB's own
+    // catalog for anything to download.
+    const searchSuggestionsEl = document.getElementById("search-suggestions");
+    let suggestDebounceTimer = null;
+    let suggestAbortController = null;
+    let suggestActiveIndex = -1;
+    let currentSuggestions = [];
+
+    function hideSuggestions() {
+      searchSuggestionsEl.hidden = true;
+      searchSuggestionsEl.innerHTML = "";
+      suggestActiveIndex = -1;
+      currentSuggestions = [];
+    }
+
+    function updateSuggestionActive() {
+      searchSuggestionsEl.querySelectorAll(".search-suggestion").forEach((el, i) => {
+        el.classList.toggle("active", i === suggestActiveIndex);
+      });
+    }
+
+    function renderSuggestions(results) {
+      currentSuggestions = results;
+      suggestActiveIndex = -1;
+      if (!results.length) {
+        hideSuggestions();
+        return;
+      }
+      searchSuggestionsEl.innerHTML = results
+        .map(
+          (r, i) => `
+        <div class="search-suggestion" data-index="${i}">
+          <img src="${escapeAttr(r.poster || "")}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />
+          <div>
+            <div>${escapeHtml(r.title)}</div>
+            <div class="search-suggestion-meta">${escapeHtml(r.year || "")}</div>
+          </div>
+          <span class="search-suggestion-type">${r.type === "tv" ? "TV" : "Movie"}</span>
+        </div>`
+        )
+        .join("");
+      searchSuggestionsEl.hidden = false;
+    }
+
+    async function fetchSuggestions(query) {
+      if (suggestAbortController) suggestAbortController.abort();
+      suggestAbortController = new AbortController();
+      try {
+        const res = await fetch(apiUrl(`tmdb/suggest?q=${encodeURIComponent(query)}`), {
+          signal: suggestAbortController.signal,
+        });
+        if (!res.ok) {
+          hideSuggestions();
+          return;
+        }
+        const data = await res.json();
+        renderSuggestions(data.results || []);
+      } catch (err) {
+        if (err.name !== "AbortError") hideSuggestions();
+      }
+    }
+
+    function selectSuggestion(item) {
+      searchInput.value = item.title;
+      hideSuggestions();
+      applyFiltersAndRender();
+    }
+
+    searchInput.addEventListener("input", () => {
+      const q = searchInput.value.trim();
+      if (suggestDebounceTimer) clearTimeout(suggestDebounceTimer);
+      if (q.length < 2) {
+        hideSuggestions();
+        return;
+      }
+      suggestDebounceTimer = setTimeout(() => fetchSuggestions(q), 300);
+    });
+
+    searchInput.addEventListener("keydown", (e) => {
+      if (searchSuggestionsEl.hidden || !currentSuggestions.length) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        suggestActiveIndex = Math.min(currentSuggestions.length - 1, suggestActiveIndex + 1);
+        updateSuggestionActive();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        suggestActiveIndex = Math.max(0, suggestActiveIndex - 1);
+        updateSuggestionActive();
+      } else if (e.key === "Enter" && suggestActiveIndex >= 0) {
+        e.preventDefault();
+        selectSuggestion(currentSuggestions[suggestActiveIndex]);
+      } else if (e.key === "Escape") {
+        hideSuggestions();
+      }
+    });
+
+    searchSuggestionsEl.addEventListener("click", (e) => {
+      const row = e.target.closest(".search-suggestion");
+      if (!row) return;
+      const item = currentSuggestions[Number.parseInt(row.dataset.index, 10)];
+      if (item) selectSuggestion(item);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".search-input-wrap")) hideSuggestions();
     });
 
     document.querySelectorAll(".chip[data-preset]").forEach((chip) => {

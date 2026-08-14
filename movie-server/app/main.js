@@ -20,7 +20,7 @@ process.env.REDIS_URL = cleanEnvValue(process.env.REDIS_URL);
 
 const http = require("http");
 const { parseHTML } = require("linkedom");
-const { enrichMovies, getTmdbById } = require("./tmdb");
+const { enrichMovies, getTmdbById, suggestTitles } = require("./tmdb");
 const { initTmdbCache } = require("./tmdbCache");
 const { parseKeywordList, tagQuality } = require("./quality");
 const { streamYoutubeTrailer } = require("./trailer");
@@ -1328,6 +1328,24 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // Live type-ahead suggestions for the search box - checked before the
+  // by-id route below since both share the "/api/tmdb" prefix.
+  if (url.startsWith("/api/tmdb/suggest") && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const q = searchParams.get("q") || "";
+      if (!TMDB_API_KEY) {
+        sendJson(res, 400, { error: "TMDB is not configured" });
+        return;
+      }
+      const results = await suggestTitles(TMDB_API_KEY, q);
+      sendJson(res, 200, { results });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
