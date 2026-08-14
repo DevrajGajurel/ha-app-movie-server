@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.6
+
+- Local `docker compose` now matches the Home Assistant add-on image: no Chrome/Xvfb/Python, no vidsrc/hlsProxy copies, and no cf-clearance sidecar. The compose Dockerfile copies `src/movie_server` from the working tree.
+
 ## 1.7.5
 
 - MediaNest: added a Library sidebar menu that shows every downloaded title in a TMDB poster grid (7 columns), with Play from the detail screen or the remote Play button.
