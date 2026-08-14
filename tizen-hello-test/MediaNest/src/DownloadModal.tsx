@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   getDownloadOptions,
   getEpisodeDownloadOptions,
+  getEpisodeFileToken,
   startDownload,
   startSeasonDownload,
   getJobs,
@@ -19,6 +20,9 @@ interface DownloadModalProps {
   // Opens straight to this episode's quality options (e.g. from the Detail
   // page's episode grid) instead of starting at the season/episode picker.
   initialEpisode?: { seasonNumber: number; episodeNumber: number } | null;
+  // Present only when initialEpisode is already downloaded - lets this
+  // popup offer "Play" instead of only "Download" for it.
+  onPlayExisting?: (fileToken: string) => void;
   onClose: () => void;
   onDownloadStarted: () => void;
 }
@@ -29,12 +33,6 @@ type Stage =
   | { kind: "direct"; options: DownloadOption[]; parentLabel: string }
   | { kind: "error"; message: string };
 
-// TV rows, in focus order, before any episode quality options are loaded.
-const TV_ROW_SEASON = 0;
-const TV_ROW_DOWNLOAD_SEASON = 1;
-const TV_ROW_EPISODE = 2;
-const TV_ROW_LOAD_EPISODE = 3;
-
 export function DownloadModal({
   pageUrl,
   movieTitle,
@@ -42,6 +40,7 @@ export function DownloadModal({
   mediaType,
   seasons,
   initialEpisode = null,
+  onPlayExisting,
   onClose,
   onDownloadStarted,
 }: DownloadModalProps) {
@@ -60,7 +59,7 @@ export function DownloadModal({
     return idx >= 0 ? idx : 0;
   });
   const [episodeNum, setEpisodeNum] = useState(initialEpisode?.episodeNumber || 1);
-  const [tvRow, setTvRow] = useState(TV_ROW_SEASON);
+  const [tvRow, setTvRow] = useState(0);
   // Tracks the seasonIdx this effect has already reacted to - starting it
   // at the initial seasonIdx (not a boolean "have we run yet" flag) makes
   // the skip-on-first-run check idempotent under React StrictMode's
@@ -73,9 +72,25 @@ export function DownloadModal({
   const [episodeOptionsError, setEpisodeOptionsError] = useState<string | null>(null);
   const [episodeJobStatus, setEpisodeJobStatus] = useState<Record<string, string>>({});
   const [seasonJobStatus, setSeasonJobStatus] = useState<string | null>(null);
+  // Whether initialEpisode is already downloaded - if so, a "Play" row
+  // appears above the season/episode picker instead of jumping straight to
+  // quality options for something that's already here.
+  const [existingToken, setExistingToken] = useState<string | null>(null);
+  const [checkingExisting, setCheckingExisting] = useState(Boolean(isTv && initialEpisode));
 
   const seasonList = seasons || [];
   const currentSeason = seasonList[seasonIdx];
+
+  // TV rows, in focus order. A "Play" row only exists (and only shifts
+  // everything else down by one) once we know initialEpisode is already
+  // downloaded - computed here rather than as module constants so they stay
+  // correct whether or not that row is present.
+  const rowOffset = existingToken ? 1 : 0;
+  const ROW_PLAY = 0;
+  const ROW_SEASON = rowOffset;
+  const ROW_DOWNLOAD_SEASON = rowOffset + 1;
+  const ROW_EPISODE = rowOffset + 2;
+  const ROW_LOAD_EPISODE = rowOffset + 3;
 
   useEffect(() => {
     if (isTv) return; // TV never scrapes a listing page - seasons come from TMDB already
@@ -102,10 +117,28 @@ export function DownloadModal({
     setEpisodeOptions(null);
   }, [isTv, seasonIdx]);
 
-  // Jump straight to this episode's quality options when opened from the
-  // Detail page's episode grid, instead of starting at the picker.
+  // Opened from the Detail page's episode grid: check whether this exact
+  // episode is already downloaded first. If so, show the "Play" row instead
+  // of jumping straight to quality options for something that's already
+  // here; if not, jump straight to quality options as before.
   useEffect(() => {
-    if (isTv && initialEpisode) loadEpisodeOptions();
+    if (!isTv || !initialEpisode || !tmdbId) {
+      setCheckingExisting(false);
+      return;
+    }
+    let cancelled = false;
+    getEpisodeFileToken(tmdbId, movieTitle, initialEpisode.seasonNumber, initialEpisode.episodeNumber).then((token) => {
+      if (cancelled) return;
+      setCheckingExisting(false);
+      if (token) {
+        setExistingToken(token);
+      } else {
+        loadEpisodeOptions();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -180,7 +213,7 @@ export function DownloadModal({
       .then((data) => {
         setEpisodeOptions(data.options);
         setEpisodeOptionsLoading(false);
-        setTvRow(TV_ROW_LOAD_EPISODE + 1);
+        setTvRow(ROW_LOAD_EPISODE + 1);
       })
       .catch((err) => {
         setEpisodeOptionsLoading(false);
@@ -246,7 +279,7 @@ export function DownloadModal({
   useEffect(() => {
     if (!isTv) return;
     const episodeRowCount = episodeOptions ? episodeOptions.length : 0;
-    const maxRow = TV_ROW_LOAD_EPISODE + episodeRowCount;
+    const maxRow = ROW_LOAD_EPISODE + episodeRowCount;
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
@@ -263,18 +296,19 @@ export function DownloadModal({
       }
       if (e.keyCode === 37 || e.keyCode === 39) {
         const dir = e.keyCode === 39 ? 1 : -1;
-        if (tvRow === TV_ROW_SEASON) {
+        if (tvRow === ROW_SEASON) {
           setSeasonIdx((i) => Math.min(seasonList.length - 1, Math.max(0, i + dir)));
-        } else if (tvRow === TV_ROW_EPISODE && currentSeason) {
+        } else if (tvRow === ROW_EPISODE && currentSeason) {
           setEpisodeNum((n) => Math.min(currentSeason.episodeCount, Math.max(1, n + dir)));
         }
         return;
       }
       if (e.keyCode === 13) {
-        if (tvRow === TV_ROW_DOWNLOAD_SEASON) downloadEntireSeason();
-        else if (tvRow === TV_ROW_LOAD_EPISODE) loadEpisodeOptions();
-        else if (episodeOptions && tvRow >= TV_ROW_LOAD_EPISODE + 1) {
-          const option = episodeOptions[tvRow - TV_ROW_LOAD_EPISODE - 1];
+        if (existingToken && tvRow === ROW_PLAY) onPlayExisting?.(existingToken);
+        else if (tvRow === ROW_DOWNLOAD_SEASON) downloadEntireSeason();
+        else if (tvRow === ROW_LOAD_EPISODE) loadEpisodeOptions();
+        else if (episodeOptions && tvRow >= ROW_LOAD_EPISODE + 1) {
+          const option = episodeOptions[tvRow - ROW_LOAD_EPISODE - 1];
           if (option) pickEpisodeDirect(option);
         }
       }
@@ -282,7 +316,7 @@ export function DownloadModal({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTv, tvRow, seasonIdx, episodeNum, currentSeason, episodeOptions, seasonList.length]);
+  }, [isTv, tvRow, seasonIdx, episodeNum, currentSeason, episodeOptions, seasonList.length, existingToken]);
 
   if (isTv) {
     return (
@@ -290,28 +324,41 @@ export function DownloadModal({
         <div className="download-popup" role="dialog" aria-labelledby="download-popup-title">
           <h2 id="download-popup-title" className="download-popup-title">{movieTitle}</h2>
 
-          <div className={"tv-picker-row" + (tvRow === TV_ROW_SEASON ? " focused" : "")}>
+          {checkingExisting ? <p className="download-popup-hint">Checking…</p> : null}
+
+          {existingToken ? (
+            <button
+              type="button"
+              className={"tv-picker-btn" + (tvRow === ROW_PLAY ? " focused" : "")}
+              onClick={() => onPlayExisting?.(existingToken)}
+            >
+              ▶ Play S{String(initialEpisode?.seasonNumber).padStart(2, "0")}E
+              {String(initialEpisode?.episodeNumber).padStart(2, "0")}
+            </button>
+          ) : null}
+
+          <div className={"tv-picker-row" + (tvRow === ROW_SEASON ? " focused" : "")}>
             <span className="tv-picker-label">Season</span>
             <span className="tv-picker-value">◀ {currentSeason?.name || `Season ${seasonIdx + 1}`} ▶</span>
           </div>
 
           <button
             type="button"
-            className={"tv-picker-btn" + (tvRow === TV_ROW_DOWNLOAD_SEASON ? " focused" : "")}
+            className={"tv-picker-btn" + (tvRow === ROW_DOWNLOAD_SEASON ? " focused" : "")}
             onClick={downloadEntireSeason}
           >
             Download entire season ({currentSeason?.episodeCount ?? 0} episodes)
           </button>
           {seasonJobStatus && <p className="download-popup-hint">{seasonJobStatus}</p>}
 
-          <div className={"tv-picker-row" + (tvRow === TV_ROW_EPISODE ? " focused" : "")}>
+          <div className={"tv-picker-row" + (tvRow === ROW_EPISODE ? " focused" : "")}>
             <span className="tv-picker-label">Episode</span>
             <span className="tv-picker-value">◀ Episode {episodeNum} ▶</span>
           </div>
 
           <button
             type="button"
-            className={"tv-picker-btn" + (tvRow === TV_ROW_LOAD_EPISODE ? " focused" : "")}
+            className={"tv-picker-btn" + (tvRow === ROW_LOAD_EPISODE ? " focused" : "")}
             onClick={loadEpisodeOptions}
           >
             {episodeOptionsLoading ? "Loading…" : "Find this episode's downloads"}
@@ -329,7 +376,7 @@ export function DownloadModal({
               {episodeOptions.map((option, i) => (
                 <li
                   key={option.href}
-                  className={"download-popup-option" + (tvRow === TV_ROW_LOAD_EPISODE + 1 + i ? " focused" : "")}
+                  className={"download-popup-option" + (tvRow === ROW_LOAD_EPISODE + 1 + i ? " focused" : "")}
                 >
                   {option.label}
                   {episodeJobStatus[option.href] ? <span className="download-popup-status"> — {episodeJobStatus[option.href]}</span> : null}

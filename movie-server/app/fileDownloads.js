@@ -804,6 +804,20 @@ function findEpisodeFile({ tmdbId, title, season, episode }) {
   return findMediaFiles({ tmdbId, title }).find((f) => f.filename.toUpperCase().includes(tag)) || null;
 }
 
+// Which episode numbers of a season are already downloaded - one call for
+// the whole season's episode grid (a "downloaded" badge per card) instead
+// of a separate lookup per episode.
+function findDownloadedEpisodeNumbers({ tmdbId, title, season }) {
+  const seasonTag = `S${String(season).padStart(2, "0")}E`;
+  const epRegex = new RegExp(`${seasonTag}(\\d{2})`, "i");
+  const found = new Set();
+  for (const f of findMediaFiles({ tmdbId, title })) {
+    const m = epRegex.exec(f.filename.toUpperCase());
+    if (m) found.add(Number.parseInt(m[1], 10));
+  }
+  return [...found];
+}
+
 // Removes every downloaded folder matching a movie (all versions, plus the
 // marker/progress files living alongside them) — the same granularity
 // findMatchingDirs already groups things at, so "delete this movie" removes
@@ -862,6 +876,10 @@ function saveProgress({ tmdbId, title, fileToken, positionSeconds, durationSecon
     audioTrack: Number.isInteger(audioTrack) ? audioTrack : 0,
     subtitleTrack: Number.isInteger(subtitleTrack) ? subtitleTrack : null,
     updatedAt: new Date().toISOString(),
+    // Which file this position applies to - a season folder can hold
+    // several episodes sharing one progress file, so without this a
+    // "resume" reader would have no way to tell which episode it's for.
+    fileToken: fileToken || null,
   };
 
   for (const dir of dirs) {
@@ -890,6 +908,42 @@ function getProgress({ tmdbId, title, fileToken }) {
     }
   }
   return null;
+}
+
+// The single "where did I leave off" point for an entire TV series, across
+// however many season folders it has - getProgress() alone only checks the
+// top-level series folder, which is never where an episode's own progress
+// file actually lives (see progressDirsFor: that's always the season
+// subfolder containing the specific file that was played). Picks whichever
+// season's progress was updated most recently.
+function getSeriesResumePoint({ tmdbId, title }) {
+  let best = null;
+  for (const dir of findMatchingDirs({ tmdbId, title })) {
+    const candidateDirs = [dir];
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && /^S\d+$/i.test(entry.name)) candidateDirs.push(path.join(dir, entry.name));
+      }
+    } catch {
+      // dir unreadable - just check it directly, no season subfolders
+    }
+
+    for (const candidateDir of candidateDirs) {
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(path.join(candidateDir, PROGRESS_FILE), "utf8"));
+      } catch {
+        continue;
+      }
+      if (!(data.positionSeconds >= RESUME_MIN_SECONDS) || !data.fileToken) continue;
+      // The file itself may have since been deleted/replaced (e.g. a
+      // redownload, or cleaning up a duplicate) - a resume point pointing
+      // at a file that's gone is worse than no resume point at all.
+      if (!resolveMediaToken(data.fileToken)) continue;
+      if (!best || new Date(data.updatedAt) > new Date(best.updatedAt)) best = data;
+    }
+  }
+  return best;
 }
 
 // Inspects a file's streams via ffprobe. Resolves to null (rather than
@@ -1428,6 +1482,7 @@ module.exports = {
   findMediaFile,
   findMediaFiles,
   findEpisodeFile,
+  findDownloadedEpisodeNumbers,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,
@@ -1440,4 +1495,5 @@ module.exports = {
   prefetchAllSubtitles,
   saveProgress,
   getProgress,
+  getSeriesResumePoint,
 };

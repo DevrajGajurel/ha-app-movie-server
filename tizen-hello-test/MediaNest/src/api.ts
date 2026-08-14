@@ -533,6 +533,45 @@ export async function getEpisodeFileToken(
   }
 }
 
+// Which episode numbers of a season are already downloaded - one call per
+// season shown, for a "downloaded" badge on each episode card (mirrors
+// PosterCard's own downloaded/play-icon indicator).
+export async function getDownloadedEpisodes(tmdbId: string | null, title: string, season: number): Promise<Set<number>> {
+  try {
+    const params = new URLSearchParams({ title, season: String(season) });
+    if (tmdbId) params.set("tmdbId", tmdbId);
+    const res = await fetch(apiUrl(`downloads/season-status?${params.toString()}`));
+    if (!res.ok) return new Set();
+    const data = await res.json();
+    return new Set((data.episodes || []) as number[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export interface SeriesResumePoint {
+  fileToken: string;
+  positionSeconds: number;
+  durationSeconds: number;
+}
+
+// The one "continue watching" point for a whole series, however many
+// seasons/episodes it has - used to decide whether the Detail page's
+// primary action should say "Play" (start at S1E1) or "Continue Watching"
+// (resume this exact file/position).
+export async function getSeriesResume(tmdbId: string | null, title: string): Promise<SeriesResumePoint | null> {
+  try {
+    const params = new URLSearchParams({ title });
+    if (tmdbId) params.set("tmdbId", tmdbId);
+    const res = await fetch(apiUrl(`downloads/series-resume?${params.toString()}`));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.fileToken ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function reportClientError(source: string, message: string, context?: Record<string, unknown>): void {
   fetch(apiUrl("client-log"), {
     method: "POST",

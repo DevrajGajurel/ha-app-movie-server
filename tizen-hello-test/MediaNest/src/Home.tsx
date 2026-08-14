@@ -415,6 +415,12 @@ export function Home({ onPlay }: HomeProps) {
             setOpenDownloadEpisode(null);
           }}
           onDownloadStarted={() => getDownloadedMovies().then(setDownloaded)}
+          onPlayExisting={(fileToken) => {
+            const movie = openDownload;
+            setOpenDownload(null);
+            setOpenDownloadEpisode(null);
+            if (movie) onPlay(movie, fileToken);
+          }}
         />
       )}
       {showExitConfirm && <ExitConfirm onCancel={() => setShowExitConfirm(false)} />}

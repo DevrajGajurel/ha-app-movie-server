@@ -39,6 +39,7 @@ const {
   findMediaFile,
   findMediaFiles,
   findEpisodeFile,
+  findDownloadedEpisodeNumbers,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,
@@ -50,6 +51,7 @@ const {
   prefetchAllSubtitles,
   saveProgress,
   getProgress,
+  getSeriesResumePoint,
   listProgress,
 } = require("./fileDownloads");
 const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelete } = require("./emby");
@@ -1518,6 +1520,47 @@ const server = http.createServer(async (req, res) => {
       }
       const file = findEpisodeFile({ tmdbId, title, season: Number(season), episode: Number(episode) });
       sendJson(res, 200, { token: file?.token || null });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // Which episodes of a season are already downloaded - one call per season
+  // shown, for a "downloaded" badge on each episode card.
+  if (url === "/api/downloads/season-status" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+      const season = searchParams.get("season");
+      if ((!tmdbId && !title) || season == null) {
+        sendJson(res, 400, { error: "tmdbId or title, plus season, are required" });
+        return;
+      }
+      const episodes = findDownloadedEpisodeNumbers({ tmdbId, title, season: Number(season) });
+      sendJson(res, 200, { episodes });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // The series-wide "continue watching" point (which file, what position) -
+  // used to decide whether a TV show's primary action should say "Play"
+  // (start from S1E1) or "Continue Watching" (resume exactly where the user
+  // left off), across however many seasons/episodes have been watched.
+  if (url === "/api/downloads/series-resume" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+      if (!tmdbId && !title) {
+        sendJson(res, 400, { error: "tmdbId or title is required" });
+        return;
+      }
+      const resume = getSeriesResumePoint({ tmdbId, title });
+      sendJson(res, 200, resume || { fileToken: null });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

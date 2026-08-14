@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Movie } from "./api";
-import { deleteMedia, getSeasonEpisodeDetails, getEpisodeFileToken, type EpisodeDetail } from "./api";
+import {
+  deleteMedia,
+  getSeasonEpisodeDetails,
+  getDownloadedEpisodes,
+  getEpisodeFileToken,
+  getSeriesResume,
+  type EpisodeDetail,
+  type SeriesResumePoint,
+} from "./api";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { Trailer } from "./Trailer";
 
@@ -35,26 +43,67 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   const [episodeFocusIdx, setEpisodeFocusIdx] = useState(0);
   const [episodes, setEpisodes] = useState<EpisodeDetail[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [downloadedEpisodeNumbers, setDownloadedEpisodeNumbers] = useState<Set<number>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const episodeRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // TV-only "where did I leave off" state: a resume point (any episode,
+  // any season) means the primary action becomes "Continue Watching" and
+  // resumes exactly there; otherwise, if S1E1 is downloaded, it means "Play"
+  // (always starts from the beginning of the series); otherwise "Download".
+  const [seriesResume, setSeriesResume] = useState<SeriesResumePoint | null>(null);
+  const [firstEpisodeToken, setFirstEpisodeToken] = useState<string | null>(null);
+
   const currentSeason = seasons[seasonIdx];
+  const tmdbId = t?.tmdbId ? String(t.tmdbId) : null;
+
+  useEffect(() => {
+    if (!isTv) return;
+    let cancelled = false;
+    getSeriesResume(tmdbId, title).then((resume) => {
+      if (cancelled) return;
+      setSeriesResume(resume);
+      if (!resume) {
+        getEpisodeFileToken(tmdbId, title, 1, 1).then((tok) => {
+          if (!cancelled) setFirstEpisodeToken(tok);
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTv, tmdbId, title]);
 
   const actions = useMemo(() => {
-    const list: { kind: ActionKind; label: string }[] = [
-      { kind: "primary", label: downloaded ? "▶ Play" : "⬇ Download" },
-    ];
+    const primaryLabel = isTv
+      ? seriesResume
+        ? "▶ Continue Watching"
+        : firstEpisodeToken
+          ? "▶ Play"
+          : "⬇ Download"
+      : downloaded
+        ? "▶ Play"
+        : "⬇ Download";
+    const list: { kind: ActionKind; label: string }[] = [{ kind: "primary", label: primaryLabel }];
     if (t?.trailerKey) list.push({ kind: "trailer", label: "▶ Trailer" });
     if (downloaded) list.push({ kind: "delete", label: "🗑 Delete" });
     return list;
-  }, [downloaded, t?.trailerKey]);
+  }, [downloaded, t?.trailerKey, isTv, seriesResume, firstEpisodeToken]);
 
   function runAction(kind: ActionKind) {
-    if (kind === "primary") (downloaded ? onPlay : () => onDownload())();
-    else if (kind === "trailer") setShowTrailer(true);
+    if (kind === "primary") {
+      if (isTv) {
+        if (seriesResume) onPlay(seriesResume.fileToken);
+        else if (firstEpisodeToken) onPlay(firstEpisodeToken);
+        else onDownload();
+      } else {
+        (downloaded ? onPlay : () => onDownload())();
+      }
+    } else if (kind === "trailer") setShowTrailer(true);
     else if (kind === "delete") setShowDeleteConfirm(true);
   }
 
@@ -73,15 +122,21 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   // Fetching episode details is genuinely fast: seasons[] (names/episode
   // counts) is already part of the loaded movie, only the per-episode
   // name/overview/still needs its own TMDB call, one per season shown.
+  // Which episodes are already downloaded is fetched alongside it, for the
+  // play-icon badge on each card (mirrors PosterCard's own badge).
   useEffect(() => {
     if (!isTv || !t?.tmdbId || !currentSeason) return;
     let cancelled = false;
     setEpisodesLoading(true);
+    setDownloadedEpisodeNumbers(new Set());
     getSeasonEpisodeDetails(String(t.tmdbId), currentSeason.seasonNumber).then((eps) => {
       if (cancelled) return;
       setEpisodes(eps);
       setEpisodesLoading(false);
       setEpisodeFocusIdx(0);
+    });
+    getDownloadedEpisodes(tmdbId, title, currentSeason.seasonNumber).then((nums) => {
+      if (!cancelled) setDownloadedEpisodeNumbers(nums);
     });
     return () => {
       cancelled = true;
@@ -94,20 +149,14 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     episodeRefs.current[episodeFocusIdx]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focusRegion, episodeFocusIdx]);
 
-  // Plays this exact episode if it's already downloaded, otherwise opens
-  // the download popup straight at its quality options - a plain
-  // tmdbId/title match would just return the largest file this whole
-  // series has anywhere, which means nothing once more than one episode
-  // is on disk.
-  async function selectEpisode(ep: EpisodeDetail) {
+  // Selecting an episode card always opens the download popup - same as a
+  // poster in the main grid always opening Detail regardless of whether
+  // it's downloaded. The popup itself offers "Play" when it detects this
+  // episode is already downloaded; the "downloaded" badge on the card
+  // (mirroring PosterCard's play icon) is a visual indicator only.
+  function selectEpisode(ep: EpisodeDetail) {
     if (!currentSeason) return;
-    const tmdbId = t?.tmdbId ? String(t.tmdbId) : null;
-    const token = await getEpisodeFileToken(tmdbId, title, currentSeason.seasonNumber, ep.episodeNumber);
-    if (token) {
-      onPlay(token);
-    } else {
-      onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
-    }
+    onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
   }
 
   useEffect(() => {
@@ -260,11 +309,16 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
                   className={"episode-card" + (focusRegion === "episodes" && i === episodeFocusIdx ? " focused" : "")}
                   onClick={() => selectEpisode(ep)}
                 >
-                  {ep.still ? (
-                    <img src={ep.still} alt="" className="episode-card-thumb" />
-                  ) : (
-                    <div className="episode-card-thumb" />
-                  )}
+                  <div className="episode-card-thumb-wrap">
+                    {ep.still ? (
+                      <img src={ep.still} alt="" className="episode-card-thumb" />
+                    ) : (
+                      <div className="episode-card-thumb" />
+                    )}
+                    {downloadedEpisodeNumbers.has(ep.episodeNumber) ? (
+                      <div className="poster-play-icon episode-play-icon">▶</div>
+                    ) : null}
+                  </div>
                   <div className="episode-card-body">
                     <div className="episode-card-num">E{ep.episodeNumber}</div>
                     <div className="episode-card-title">{ep.name}</div>

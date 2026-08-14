@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.16
+
+- MediaNest: TV show detail page now has a real "Continue Watching" flow - the primary button reads "Continue Watching" and jumps straight back to the exact episode/position last watched (via a new `GET /api/downloads/series-resume`, which validates the saved progress still points at a file that exists on disk), falls back to "Play" (S1E1) if nothing's been started yet and it's already downloaded, or "Download" otherwise. Saved progress now records which episode's file it belongs to (`fileToken`), since a season folder holds multiple episodes and previously had only one shared, unlabeled progress record.
+- MediaNest: selecting an episode in the grid always opens the download popup now (previously it played the file directly if already downloaded, skipping the popup entirely) - already-downloaded episodes get a small play-icon badge on their thumbnail instead (same treatment as the Library poster grid), and the popup itself gets a "Play S0XE0Y" option at the top when that episode is already on disk, so redownloading is still one extra click away instead of automatic.
+
 ## 1.7.15
 
 - Added `GET /api/downloads/episode-file` (tmdbId/title + season/episode -> file token if downloaded) and wired it into MediaNest's episode grid: selecting an episode that's already on disk now plays that exact file directly instead of opening the download popup - previously "Play" on a TV show just grabbed the largest video file across every folder matching that show's id, which meant nothing once more than one episode was downloaded (confirmed this was resolving to the wrong season entirely).

@@ -522,12 +522,20 @@ img {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.episode-card-thumb-wrap {
+  position: relative;
+}
+
 .episode-card-thumb {
   width: 100%;
   aspect-ratio: 16 / 9;
   background: #1a1a20;
   object-fit: cover;
   display: block;
+}
+
+.episode-card.focused .poster-play-icon {
+  opacity: 1;
 }
 
 .episode-card-body {
