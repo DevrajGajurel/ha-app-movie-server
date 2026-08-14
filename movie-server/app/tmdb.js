@@ -530,6 +530,97 @@ async function searchMedia(apiKey, title, genres, opts = {}) {
   return meta;
 }
 
+// Direct id lookup (no fuzzy title matching) for a downloaded library item
+// whose folder already carries a tmdbId but fell outside the currently
+// cached listing pages, so enrichMovies() never had a chance to attach its
+// poster/backdrop. Tries movie first, then tv, since the folder alone
+// doesn't record which type it is.
+async function fetchAndMapById(apiKey, tmdbId, mediaType) {
+  const isTv = mediaType === "tv";
+  const append = isTv ? "videos,credits,content_ratings" : "videos,credits,release_dates";
+  const url = new URL(`${TMDB_BASE}/${mediaType}/${tmdbId}`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("append_to_response", append);
+
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const details = await res.json();
+
+  const extras = {
+    runtimeMinutes: (isTv ? details?.episode_run_time?.[0] : details?.runtime) || null,
+    tagline: details?.tagline || null,
+    director: extractDirector(details),
+    certification: extractCertification(details, isTv),
+    trailerKey: extractTrailerKey(details),
+  };
+  // /movie/{id} and /tv/{id} return genres as [{id,name}] directly, unlike
+  // search results (genre_ids only) - no genre map lookup needed here.
+  const genres = (details.genres || []).map((g) => g.name);
+
+  if (isTv) {
+    const seasons = (details?.seasons || [])
+      .filter((s) => Number(s.season_number) > 0)
+      .map((s) => ({
+        seasonNumber: Number(s.season_number),
+        episodeCount: Number(s.episode_count) || 0,
+        name: s.name || `Season ${s.season_number}`,
+      }));
+
+    return {
+      type: "tv",
+      tmdbId: details.id,
+      tmdbTitle: details.name,
+      year: details.first_air_date?.slice(0, 4) || null,
+      releaseDate: details.first_air_date || null,
+      rating: details.vote_average ? Number(details.vote_average.toFixed(1)) : null,
+      overview: details.overview || null,
+      genres,
+      poster: details.poster_path ? `${POSTER_BASE}${details.poster_path}` : null,
+      backdrop: details.backdrop_path ? `${BACKDROP_BASE}${details.backdrop_path}` : null,
+      tmdbUrl: `https://www.themoviedb.org/tv/${details.id}`,
+      numberOfSeasons: details.number_of_seasons || seasons.length || null,
+      seasons,
+      ...extras,
+    };
+  }
+
+  return {
+    type: "movie",
+    tmdbId: details.id,
+    tmdbTitle: details.title,
+    year: details.release_date?.slice(0, 4) || null,
+    releaseDate: details.release_date || null,
+    rating: details.vote_average ? Number(details.vote_average.toFixed(1)) : null,
+    overview: details.overview || null,
+    genres,
+    poster: details.poster_path ? `${POSTER_BASE}${details.poster_path}` : null,
+    backdrop: details.backdrop_path ? `${BACKDROP_BASE}${details.backdrop_path}` : null,
+    tmdbUrl: `https://www.themoviedb.org/movie/${details.id}`,
+    ...extras,
+  };
+}
+
+async function getTmdbById(apiKey, tmdbId) {
+  const id = String(tmdbId || "").trim();
+  if (!id || !/^\d+$/.test(id)) return null;
+
+  const cacheKey = `byid|${id}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const cached = await getCachedTmdb(cacheKey);
+  if (cached !== undefined) {
+    cache.set(cacheKey, cached);
+    return cached;
+  }
+
+  let meta = await fetchAndMapById(apiKey, id, "movie").catch(() => null);
+  if (!meta) meta = await fetchAndMapById(apiKey, id, "tv").catch(() => null);
+
+  cache.set(cacheKey, meta);
+  await setCachedTmdb(cacheKey, meta);
+  return meta;
+}
+
 async function enrichMovies(movies, apiKey, concurrency = 5) {
   const genres = await loadGenreMap(apiKey);
   const enriched = [...movies];
@@ -559,4 +650,5 @@ module.exports = {
   titleSimilarity,
   searchMedia,
   enrichMovies,
+  getTmdbById,
 };

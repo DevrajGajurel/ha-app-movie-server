@@ -449,54 +449,6 @@ img {
   padding: 16px 8px 40px 16px;
 }
 
-/* ---- Cineby ---- */
-.cineby-view {
-  position: fixed;
-  top: 0;
-  left: var(--sidebar-width);
-  right: 0;
-  bottom: 0;
-  padding: 48px 56px;
-  box-sizing: border-box;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-}
-
-.cineby-view-frame {
-  padding: 0;
-}
-
-.cineby-chrome {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 14px 20px;
-  background: linear-gradient(180deg, rgba(12, 14, 18, 0.96), rgba(12, 14, 18, 0.88));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  z-index: 2;
-}
-
-.cineby-chrome-title {
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.cineby-chrome-hint {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.cineby-frame {
-  flex: 1 1 auto;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: #000;
-}
-
 /* ---- Player ---- */
 /* AVPlay's actual render target - must match AVPlayer.open()'s
    setDisplayRect(0, 0, 1920, 1080) call exactly. */

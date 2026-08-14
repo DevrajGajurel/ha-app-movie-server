@@ -22,7 +22,6 @@ On the **Configuration** tab, open **Show unused optional configuration options*
 - `hd_keywords` — `720p,1080p,HD,HDRip,WEB-DL,BluRay,Blu-Ray`
 - `k4_keywords` — `2160p,4k,4K,UHD`
 - `emby_path_prefix` — only if Emby uses a different path than `download_dir`
-- `cineby_url` — URL opened by the TV app's Cineby sidebar tab (iframe)
 - `secondary_url` — optional second listing site (4khdhub-style `movie-card` pages); titles are merged as HD and downloads resolve via shegu.st using TMDB id
 
 ## Notes

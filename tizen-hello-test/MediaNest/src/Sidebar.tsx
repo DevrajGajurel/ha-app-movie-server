@@ -8,12 +8,11 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { icon: "🔍", label: "Search" },
   { icon: "▤", label: "Library" },
   { icon: "⬇", label: "Downloads" },
-  { icon: "🎬", label: "Cineby" },
 ];
 
-export type SidebarView = "browse" | "search" | "library" | "downloads" | "cineby";
+export type SidebarView = "browse" | "search" | "library" | "downloads";
 
-export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "library", "downloads", "cineby"];
+export const SIDEBAR_VIEWS: SidebarView[] = ["browse", "search", "library", "downloads"];
 
 interface SidebarProps {
   activeIndex: number;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.8
+
+- Removed the Cineby feature entirely: the `/api/cineby-proxy` backend proxy, `cinebyProxy.js`, the `cineby_url` add-on option and `CINEBY_URL` env var, and all UI (dashboard, MediaNest sidebar tab, HelloTV sidenav panel + remote-control wiring).
+- Added a direct-by-id TMDB lookup (`GET /api/tmdb?id=`) and wired it into MediaNest's Library grid: a downloaded title only got its poster/backdrop before if it happened to match something on the currently cached listing pages, so anything downloaded a while ago (since rotated off those pages) showed up posterless. The Library view now fetches those directly by tmdbId (a few at a time) and fills the poster in once it lands.
+
 ## 1.7.7
 
 - Home Assistant add-on builds are much faster: the Node app is copied from `movie-server/app` instead of `git clone` of the whole GitHub repo, Node comes from Debian (no NodeSource), and apt runs once. Code-only updates can reuse the apt and `npm install` layers.

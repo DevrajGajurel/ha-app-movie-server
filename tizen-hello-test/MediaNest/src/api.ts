@@ -131,6 +131,22 @@ export function matchMovieForProgress(item: ProgressItem, movies: Movie[]): Movi
   return movies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === normalized);
 }
 
+// Direct-by-id TMDB lookup for a downloaded library item whose match against
+// the currently loaded catalog (matchMovieForDownload) failed - typically an
+// older download that's since rotated off the scraped listing's cached
+// pages, so it never got a poster/backdrop any other way. Returns null on
+// any failure (not configured, not found, offline) so callers can just fall
+// back to the posterless stub they already had.
+export async function getTmdbById(tmdbId: string): Promise<TmdbInfo | null> {
+  try {
+    const res = await fetch(apiUrl(`tmdb?id=${encodeURIComponent(tmdbId)}`));
+    if (!res.ok) return null;
+    return (await res.json()) as TmdbInfo;
+  } catch {
+    return null;
+  }
+}
+
 export interface TmdbInfo {
   tmdbId: number;
   tmdbTitle: string;
@@ -205,25 +221,12 @@ export interface Config {
   maxPages: number;
   initialPages: number;
   tmdbEnabled?: boolean;
-  cinebyUrl?: string;
 }
 
 export async function getConfig(): Promise<Config> {
   const res = await fetch(apiUrl("config"));
   if (!res.ok) throw new Error(`Failed to load config: ${res.status}`);
   return res.json();
-}
-
-// Same-origin proxy that strips cineby's frame-blocking headers and injects
-// a TV virtual cursor so the remote can drive the page.
-export function buildCinebyProxyUrl(): string {
-  return apiUrl("cineby-proxy/");
-}
-
-export async function getCinebyProxyUrl(): Promise<string | null> {
-  const config = await getConfig();
-  if (!(config.cinebyUrl || "").trim()) return null;
-  return buildCinebyProxyUrl();
 }
 
 async function getMoviesPage(from: number, to: number): Promise<{ movies: Movie[]; tmdbEnabled: boolean }> {

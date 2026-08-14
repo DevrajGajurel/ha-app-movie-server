@@ -20,7 +20,7 @@ process.env.REDIS_URL = cleanEnvValue(process.env.REDIS_URL);
 
 const http = require("http");
 const { parseHTML } = require("linkedom");
-const { enrichMovies } = require("./tmdb");
+const { enrichMovies, getTmdbById } = require("./tmdb");
 const { initTmdbCache } = require("./tmdbCache");
 const { parseKeywordList, tagQuality } = require("./quality");
 const { streamYoutubeTrailer } = require("./trailer");
@@ -52,7 +52,6 @@ const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelet
 const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
-const { PROXY_PREFIX: CINEBY_PROXY_PREFIX, handleCinebyProxy } = require("./cinebyProxy");
 const { initDownloadOptionsCache, resolveDirectOptionsCached, prefetchDirectOptionsInBackground } = require("./downloadOptionsCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
@@ -72,7 +71,6 @@ const K4_KEYWORDS = resolveKeywords(process.env.K4_KEYWORDS, DEFAULT_K4_KEYWORDS
 let mainUrl = process.env.MAIN_URL;
 let maxPages = parseMaxPages(process.env.MAX_PAGES);
 let initialPages = parseInitialPages(process.env.INITIAL_PAGES);
-let cinebyUrl = cleanEnvValue(process.env.CINEBY_URL);
 let secondaryUrl = cleanEnvValue(process.env.SECONDARY_URL);
 
 function isHomeAssistantAddon() {
@@ -85,7 +83,6 @@ function getConfigPayload(extra = {}) {
     secondaryUrl,
     maxPages,
     initialPages,
-    cinebyUrl,
     embyConfigured: isEmbyConfigured(),
     configEditable: !isHomeAssistantAddon(),
     ...extra,
@@ -178,7 +175,6 @@ function persistConfig() {
     setEnvVar("SECONDARY_URL", secondaryUrl);
     setEnvVar("MAX_PAGES", String(maxPages));
     setEnvVar("INITIAL_PAGES", String(initialPages));
-    setEnvVar("CINEBY_URL", cinebyUrl);
   } catch (err) {
     console.warn("Could not write .env:", err.message);
   }
@@ -199,12 +195,6 @@ function setSecondaryUrl(newUrl) {
 function setMaxPages(pages) {
   maxPages = parseMaxPages(pages);  
   process.env.MAX_PAGES = String(maxPages);
-  persistConfig();
-}
-
-function setCinebyUrl(newUrl) {
-  cinebyUrl = String(newUrl || "").trim();
-  process.env.CINEBY_URL = cinebyUrl;
   persistConfig();
 }
 
@@ -1107,15 +1097,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url === CINEBY_PROXY_PREFIX || url.startsWith(`${CINEBY_PROXY_PREFIX}/`)) {
-    try {
-      await handleCinebyProxy(req, res, cinebyUrl);
-    } catch (err) {
-      if (!res.headersSent) sendJson(res, 500, { error: err.message });
-    }
-    return;
-  }
-
   if (url === "/api/config" && req.method === "GET") {
     sendJson(res, 200, await getConfigPayloadAsync());
     return;
@@ -1153,12 +1134,6 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         setMaxPages(nextPages);
-      }
-
-      if (body.cinebyUrl !== undefined) {
-        const nextCineby = String(body.cinebyUrl).trim();
-        if (nextCineby) new URL(nextCineby);
-        setCinebyUrl(nextCineby);
       }
 
       sendJson(res, 200, getConfigPayload({ message: "Config updated" }));
@@ -1293,6 +1268,35 @@ const server = http.createServer(async (req, res) => {
   if (url === "/api/downloads/library" && req.method === "GET") {
     try {
       sendJson(res, 200, { downloadDir: getDownloadDir(), ...scanLibrary() });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // Direct-by-id TMDB lookup for a downloaded library item whose tmdbId
+  // falls outside the currently cached listing pages - enrichMovies() only
+  // ever runs against scraped listing pages, so a title downloaded a while
+  // ago (and since rotated off those pages) never gets a poster any other
+  // way.
+  if (url.startsWith("/api/tmdb") && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("id");
+      if (!tmdbId) {
+        sendJson(res, 400, { error: "id query parameter is required" });
+        return;
+      }
+      if (!TMDB_API_KEY) {
+        sendJson(res, 400, { error: "TMDB is not configured" });
+        return;
+      }
+      const meta = await getTmdbById(TMDB_API_KEY, tmdbId);
+      if (!meta) {
+        sendJson(res, 404, { error: "Not found" });
+        return;
+      }
+      sendJson(res, 200, meta);
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
@@ -1697,7 +1701,6 @@ async function startServer() {
         mainUrl,
         secondaryUrl,
         maxPages,
-        cinebyUrl,
         initialPages,
         tmdbEnabled: Boolean(TMDB_API_KEY),
       }),

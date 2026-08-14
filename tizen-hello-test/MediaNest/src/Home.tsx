@@ -7,9 +7,11 @@ import {
   matchMovieForDownload,
   getLibraryMovies,
   getMoviePageLink,
+  getTmdbById,
   isDownloaded,
   type Movie,
   type DownloadedMovie,
+  type TmdbInfo,
 } from "./api";
 import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
 import { Hero } from "./Hero";
@@ -19,7 +21,6 @@ import { DownloadModal } from "./DownloadModal";
 import { Search } from "./Search";
 import { Downloads } from "./Downloads";
 import { Library } from "./Library";
-import { Cineby } from "./Cineby";
 import { ExitConfirm } from "./ExitConfirm";
 
 type View = SidebarView;
@@ -97,7 +98,58 @@ export function Home({ onPlay }: HomeProps) {
     if (rowIndex === -1) document.getElementById("root")?.scrollTo({ top: 0, behavior: "smooth" });
   }, [rowIndex]);
 
-  const libraryMovies = useMemo(() => getLibraryMovies(downloaded, movies), [downloaded, movies]);
+  const [tmdbById, setTmdbById] = useState<Map<string, TmdbInfo>>(new Map());
+  const rawLibraryMovies = useMemo(() => getLibraryMovies(downloaded, movies), [downloaded, movies]);
+
+  // rawLibraryMovies only has poster/backdrop art for downloads that also
+  // matched something in the currently cached listing pages
+  // (matchMovieForDownload) - anything downloaded a while ago and since
+  // rotated off those pages comes back as a posterless stub instead. Fetch
+  // those directly by tmdbId (a couple at a time, not all at once) and
+  // splice the result back in once it lands.
+  useEffect(() => {
+    const missing = rawLibraryMovies.filter(
+      (m) => m.tmdb?.tmdbId && !m.tmdb.poster && !tmdbById.has(String(m.tmdb.tmdbId))
+    );
+    if (!missing.length) return;
+
+    let cancelled = false;
+    const CONCURRENCY = 3;
+
+    (async () => {
+      for (let i = 0; i < missing.length; i += CONCURRENCY) {
+        if (cancelled) return;
+        const batch = missing.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          batch.map((m) => getTmdbById(String(m.tmdb!.tmdbId)).then((info) => [String(m.tmdb!.tmdbId), info] as const))
+        );
+        if (cancelled) return;
+        setTmdbById((prev) => {
+          const next = new Map(prev);
+          for (const [id, info] of results) {
+            if (info) next.set(id, info);
+          }
+          return next;
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when the missing set actually changes shape, not on every
+    // tmdbById update this effect itself causes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawLibraryMovies]);
+
+  const libraryMovies = useMemo(() => {
+    if (!tmdbById.size) return rawLibraryMovies;
+    return rawLibraryMovies.map((m) => {
+      const id = m.tmdb?.tmdbId ? String(m.tmdb.tmdbId) : null;
+      const fetched = id ? tmdbById.get(id) : undefined;
+      return fetched ? { ...m, tmdb: fetched } : m;
+    });
+  }, [rawLibraryMovies, tmdbById]);
 
   const rows: RowDef[] = useMemo(() => {
     if (!movies.length) return [];
@@ -216,8 +268,6 @@ export function Home({ onPlay }: HomeProps) {
         return;
       }
 
-      // Cineby's own capture listener forwards D-pad/OK into the iframe.
-      if (view === "cineby") return;
       if (view !== "browse") return;
 
       switch (e.keyCode) {
@@ -316,7 +366,6 @@ export function Home({ onPlay }: HomeProps) {
         />
       )}
       {view === "downloads" && <Downloads />}
-      {view === "cineby" && <Cineby active={!sidebarFocused} onBack={() => setView("browse")} />}
       {openDetail && (
         <Detail
           key={openDetail.link}
