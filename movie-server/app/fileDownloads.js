@@ -238,6 +238,40 @@ function cleanupPartialFile(filePath) {
   }
 }
 
+// Confirmed real bug: aria2c's segmented download (ARIA2_CONNECTIONS-way
+// split) can exit 0 - and job.receivedBytes can match totalBytes - even
+// though one of those segments left a gap of zero bytes in the middle of
+// the file. A duration-only ffprobe (see probeMediaFile) never notices,
+// since Matroska's duration lives in the header; only a full demux catches
+// it, which is exactly what this does - stream-copying every packet to
+// nowhere is the cheapest way to force ffmpeg to walk the whole file and
+// surface a corrupt segment ("invalid as first byte of an EBML number")
+// without paying for an actual video decode. Scoped to video files only
+// (subtitle/sample downloads don't go through aria2's split path).
+function verifyDownloadedFile(filePath) {
+  return new Promise((resolve) => {
+    if (!VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
+      resolve(true);
+      return;
+    }
+    let ffmpeg;
+    try {
+      ffmpeg = spawn("ffmpeg", ["-v", "error", "-i", filePath, "-map", "0", "-c", "copy", "-f", "null", "-"]);
+    } catch {
+      resolve(true); // ffmpeg unavailable - can't verify, don't block the download over it
+      return;
+    }
+    let stderr = "";
+    ffmpeg.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    ffmpeg.on("error", () => resolve(true));
+    ffmpeg.on("close", () => {
+      resolve(!/invalid as first byte of an EBML number/i.test(stderr));
+    });
+  });
+}
+
 // Plain single-connection fetch + stream-to-disk — the original (and
 // still default) download path.
 async function downloadFileWithFetch(job, dir) {
@@ -415,6 +449,16 @@ async function runDownload(job) {
     try {
       const dir = ensureDir(job.movieTitle, job.tmdbId, job.season);
       const filePath = await downloadFile(job, dir);
+
+      // Stays "downloading" through verification (rather than a new status
+      // value) so the dashboard/MediaNest job lists - which only recognize
+      // queued/downloading/completed/failed - keep showing it as active
+      // instead of it vanishing from every tab for however long this takes.
+      const verified = await verifyDownloadedFile(filePath);
+      if (!verified) {
+        cleanupPartialFile(filePath);
+        throw new Error("Downloaded file failed integrity check (corrupted segment detected)");
+      }
 
       job.filePath = filePath;
       job.status = "completed";

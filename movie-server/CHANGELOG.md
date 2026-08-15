@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.17
+
+- Fixed a real, confirmed data-corruption bug in the download pipeline: aria2c's segmented download (splits each file across 8 connections) can exit successfully even when one of those segments left a gap of zero bytes partway through the file - invisible to a lightweight duration probe (which only reads the header), but exactly what broke seeking on House of the Dragon and one other title (playback from the start worked since it never touched the gap; seeking anywhere landed on or near one of several scattered gaps per file). Every download is now verified with a full stream-copy demux pass before being marked complete; a corrupted result is deleted and retried against the next fallback candidate, the same way a network failure already was.
+
 ## 1.7.16
 
 - MediaNest: TV show detail page now has a real "Continue Watching" flow - the primary button reads "Continue Watching" and jumps straight back to the exact episode/position last watched (via a new `GET /api/downloads/series-resume`, which validates the saved progress still points at a file that exists on disk), falls back to "Play" (S1E1) if nothing's been started yet and it's already downloaded, or "Download" otherwise. Saved progress now records which episode's file it belongs to (`fileToken`), since a season folder holds multiple episodes and previously had only one shared, unlabeled progress record.
