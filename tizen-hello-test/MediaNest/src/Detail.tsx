@@ -6,6 +6,7 @@ import {
   getDownloadedEpisodes,
   getEpisodeFileToken,
   getSeriesResume,
+  getSeasonPackToken,
   type EpisodeDetail,
   type SeriesResumePoint,
 } from "./api";
@@ -27,7 +28,7 @@ interface DetailProps {
 }
 
 type ActionKind = "primary" | "trailer" | "delete";
-type FocusRegion = "actions" | "seasons" | "episodes";
+type FocusRegion = "actions" | "seasons" | "seasonPack" | "episodes";
 
 const EPISODE_GRID_COLUMNS = 6;
 
@@ -49,6 +50,11 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   const [episodes, setEpisodes] = useState<EpisodeDetail[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [downloadedEpisodeNumbers, setDownloadedEpisodeNumbers] = useState<Set<number>>(new Set());
+  // Only set when this season has one whole-season file rather than
+  // per-episode ones (main-source TV downloads - see v1.7.20) - lets the
+  // season offer a "Play all episodes" option, but only when that file
+  // genuinely exists in the library, never as a guess.
+  const [seasonPackToken, setSeasonPackToken] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -134,6 +140,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     let cancelled = false;
     setEpisodesLoading(true);
     setDownloadedEpisodeNumbers(new Set());
+    setSeasonPackToken(null);
     getSeasonEpisodeDetails(String(t.tmdbId), currentSeason.seasonNumber).then((eps) => {
       if (cancelled) return;
       setEpisodes(eps);
@@ -142,6 +149,9 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     });
     getDownloadedEpisodes(tmdbId, title, currentSeason.seasonNumber).then((nums) => {
       if (!cancelled) setDownloadedEpisodeNumbers(nums);
+    });
+    getSeasonPackToken(tmdbId, title, currentSeason.seasonNumber).then((tok) => {
+      if (!cancelled) setSeasonPackToken(tok);
     });
     return () => {
       cancelled = true;
@@ -169,6 +179,10 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   // download popup entirely - but only when there's actually something
   // downloaded to play.
   function playFocused() {
+    if (focusRegion === "seasonPack") {
+      if (seasonPackToken) onPlay(seasonPackToken);
+      return;
+    }
     if (focusRegion === "episodes") {
       const ep = episodes[episodeFocusIdx];
       if (ep && currentSeason && downloadedEpisodeNumbers.has(ep.episodeNumber)) {
@@ -210,16 +224,27 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
 
       if (focusRegion === "seasons") {
         if (e.keyCode === 38) setFocusRegion("actions");
-        else if (e.keyCode === 40 && episodes.length) setFocusRegion("episodes");
-        else if (e.keyCode === 37) setSeasonIdx((i) => Math.max(0, i - 1));
+        else if (e.keyCode === 40) {
+          if (seasonPackToken) setFocusRegion("seasonPack");
+          else if (episodes.length) setFocusRegion("episodes");
+        } else if (e.keyCode === 37) setSeasonIdx((i) => Math.max(0, i - 1));
         else if (e.keyCode === 39) setSeasonIdx((i) => Math.min(seasons.length - 1, i + 1));
+        return;
+      }
+
+      if (focusRegion === "seasonPack") {
+        if (e.keyCode === 38) setFocusRegion("seasons");
+        else if (e.keyCode === 40 && episodes.length) setFocusRegion("episodes");
+        else if (e.keyCode === 13) {
+          if (seasonPackToken) onPlay(seasonPackToken);
+        }
         return;
       }
 
       // focusRegion === "episodes"
       if (e.keyCode === 38) {
         const row = Math.floor(episodeFocusIdx / EPISODE_GRID_COLUMNS);
-        if (row === 0) setFocusRegion("seasons");
+        if (row === 0) setFocusRegion(seasonPackToken ? "seasonPack" : "seasons");
         else setEpisodeFocusIdx((i) => Math.max(0, i - EPISODE_GRID_COLUMNS));
       } else if (e.keyCode === 40) {
         setEpisodeFocusIdx((i) => Math.min(episodes.length - 1, i + EPISODE_GRID_COLUMNS));
@@ -251,6 +276,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     isTv,
     onClose,
     downloadedEpisodeNumbers,
+    seasonPackToken,
     seriesResume,
     firstEpisodeToken,
     downloaded,
@@ -335,6 +361,15 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
                 </div>
               ))}
             </div>
+          )}
+          {seasonPackToken && (
+            <button
+              type="button"
+              className={"season-pack-btn" + (focusRegion === "seasonPack" ? " focused" : "")}
+              onClick={() => onPlay(seasonPackToken)}
+            >
+              ▶ Play All Episodes ({currentSeason?.name || "This Season"})
+            </button>
           )}
           {episodesLoading ? (
             <p className="status" style={{ paddingLeft: 0 }}>Loading episodes…</p>

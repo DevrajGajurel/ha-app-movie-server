@@ -549,6 +549,24 @@ export async function getDownloadedEpisodes(tmdbId: string | null, title: string
   }
 }
 
+// Whether this season has a single whole-season file on disk (main-source
+// TV downloads publish exactly this - one file per season, no per-episode
+// links) - lets the season view offer a "Play all episodes" option only
+// when that file actually exists, rather than assuming every season works
+// like a shegu-downloaded one where the episodes are separate files.
+export async function getSeasonPackToken(tmdbId: string | null, title: string, season: number): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ title, season: String(season) });
+    if (tmdbId) params.set("tmdbId", tmdbId);
+    const res = await fetch(apiUrl(`downloads/season-pack?${params.toString()}`));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.token || null;
+  } catch {
+    return null;
+  }
+}
+
 export interface SeriesResumePoint {
   fileToken: string;
   positionSeconds: number;

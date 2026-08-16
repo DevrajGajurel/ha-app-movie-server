@@ -40,6 +40,7 @@ const {
   findMediaFiles,
   findEpisodeFile,
   findDownloadedEpisodeNumbers,
+  findSeasonPackFile,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,
@@ -1569,6 +1570,27 @@ const server = http.createServer(async (req, res) => {
       }
       const episodes = findDownloadedEpisodeNumbers({ tmdbId, title, season: Number(season) });
       sendJson(res, 200, { episodes });
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+    return;
+  }
+
+  // Whether this season has a single whole-season file (main-source TV
+  // downloads publish exactly this) - used for a "Play all episodes"
+  // option on the season, shown only when that file actually exists.
+  if (url === "/api/downloads/season-pack" && req.method === "GET") {
+    try {
+      const searchParams = new URL(req.url, "http://localhost").searchParams;
+      const tmdbId = searchParams.get("tmdbId") || null;
+      const title = searchParams.get("title") || null;
+      const season = searchParams.get("season");
+      if ((!tmdbId && !title) || season == null) {
+        sendJson(res, 400, { error: "tmdbId or title, plus season, are required" });
+        return;
+      }
+      const file = findSeasonPackFile({ tmdbId, title, season: Number(season) });
+      sendJson(res, 200, { token: file?.token || null });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }

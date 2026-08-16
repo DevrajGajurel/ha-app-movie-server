@@ -930,6 +930,25 @@ function findDownloadedEpisodeNumbers({ tmdbId, title, season }) {
   return [...found];
 }
 
+// A single file covering the whole season rather than one episode - main-
+// source TV downloads publish exactly this (one file per quality tier for
+// the whole season, no per-episode links; see the v1.7.20 change), so it
+// has no SxxEyy tag at all. Distinguished from an episode file by that
+// absence, scoped to this season's own folder so a same-named pack sitting
+// in a different season isn't matched.
+function findSeasonPackFile({ tmdbId, title, season }) {
+  const seasonFolder = seasonFolderName(season);
+  const episodeTagPattern = /S\d{2}E\d{2}/i;
+  return (
+    findMediaFiles({ tmdbId, title }).find((f) => {
+      const segments = f.token.split("/");
+      const parentDir = segments[segments.length - 2];
+      if (parentDir !== seasonFolder) return false;
+      return !episodeTagPattern.test(f.filename.toUpperCase());
+    }) || null
+  );
+}
+
 // Removes every downloaded folder matching a movie (all versions, plus the
 // marker/progress files living alongside them) — the same granularity
 // findMatchingDirs already groups things at, so "delete this movie" removes
@@ -1595,6 +1614,7 @@ module.exports = {
   findMediaFiles,
   findEpisodeFile,
   findDownloadedEpisodeNumbers,
+  findSeasonPackFile,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,

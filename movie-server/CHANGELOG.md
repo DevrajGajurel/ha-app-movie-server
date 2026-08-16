@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.21
+
+- MediaNest: added a "Play All Episodes" option to a season's episode grid, shown only when a single whole-season file (as opposed to per-episode files) actually exists in the library for that season - the same layout main-source TV downloads produce (see 1.7.20). New `GET /api/downloads/season-pack` backend route detects this by finding a video file in the season's folder with no SxxEyy tag at all, scoped to that season so a same-named pack in a different season isn't matched. Verified against synthetic per-episode-only, season-pack-present, and wrong-season scenarios.
+
 ## 1.7.20
 
 - Fixed TV downloads always resolving through the secondary source (shegu) even when a show's listing was scraped from the main source, which made the new Main/Secondary badge misleading (a card labeled "Main" would still hand you secondary-sourced download links). Checked real data from the main source: each season listing publishes one whole-season file per quality tier, not per-episode links, so main-source TV now downloads that file directly (same quality/direct flow a movie already uses) and saves it into the same `Series (tmdb-id)/S0X/` folder structure, tagged with the season number parsed from the listing's own title. Secondary-sourced TV is unaffected and still uses shegu's per-episode picker. Note: since it's one file for the whole season, per-episode features (downloaded badge, episode-level play/resume) don't apply to main-source TV downloads - only to secondary-sourced ones.

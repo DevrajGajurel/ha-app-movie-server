@@ -503,6 +503,24 @@ img {
   border-color: var(--focus-ring);
 }
 
+.season-pack-btn {
+  display: block;
+  margin-bottom: 24px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 15px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.season-pack-btn.focused {
+  border-color: var(--focus-ring);
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .episode-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
