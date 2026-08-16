@@ -1877,7 +1877,7 @@
               ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
             ` : `<div class="meta-row">${sourceBadge}</div>${tmdbEnabled ? `<p class="overview">No TMDB match</p>` : ""}`}
             <div class="links">
-              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}" data-media-type="${escapeAttr(t?.type || (m.seasons ? "tv" : "movie"))}" data-seasons="${escapeAttr(JSON.stringify(t?.seasons || []))}" data-season-hint="${escapeAttr(m.seasons || "")}">Download</a>
+              <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-scraped-title="${escapeAttr(m.title || "")}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}" data-media-type="${escapeAttr(t?.type || (m.seasons ? "tv" : "movie"))}" data-seasons="${escapeAttr(JSON.stringify(t?.seasons || []))}" data-season-hint="${escapeAttr(m.seasons || "")}">Download</a>
               ${t?.tmdbUrl ? `<a class="card-action-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
             </div>
             ${renderCardDownloadStatus(displayTitle)}
@@ -2048,14 +2048,20 @@
     }
 
     async function startServerDownload(button) {
-      const { url, label, movieTitle, tmdbId } = button.dataset;
+      const { url, label, movieTitle, tmdbId, season } = button.dataset;
       button.disabled = true;
       button.textContent = `${label} — Starting…`;
 
       const res = await fetch(apiUrl("downloads/save"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, label, movieTitle, tmdbId: tmdbId || null }),
+        body: JSON.stringify({
+          url,
+          label,
+          movieTitle,
+          tmdbId: tmdbId || null,
+          season: season ? Number.parseInt(season, 10) : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
@@ -2110,6 +2116,7 @@
                 data-label="${escapeAttr(option.label)}"
                 data-movie-title="${escapeAttr(movieTitle || "")}"
                 data-tmdb-id="${escapeAttr(tmdbId ? String(tmdbId) : "")}"
+                data-season="${escapeAttr(downloadModalState.season ? String(downloadModalState.season) : "")}"
               >
                 ${escapeHtml(option.label)}
               </button>
@@ -2352,24 +2359,27 @@
       });
     }
 
-    async function openDownloadModal(pageUrl, title, tmdbId, source, mediaType, seasonsJson, seasonHint) {
+    async function openDownloadModal(pageUrl, title, tmdbId, source, mediaType, seasonsJson, seasonHint, scrapedTitle) {
       downloadModalTitle.textContent = title || "Download options";
       downloadModalContent.className = "download-state";
       downloadModalContent.textContent = "Loading download options…";
       downloadModal.hidden = false;
 
       try {
-        // TV entries always get the season/episode picker, regardless of
-        // which listing site this particular card was scraped from - shegu
-        // resolves downloads by tmdbId/season/episode, not by this page's
-        // own URL, so a primary-source show (e.g. filmyfly's own "House of
-        // the Dragon" listing) needs this exactly as much as a secondary
-        // one. Previously this was nested inside the isSecondary branch, so
-        // any TV show scraped from the primary source silently fell through
-        // to the plain single-page quality-link scrape instead, with no
-        // season/episode picker at all.
+        const isSecondary = String(source || "").toLowerCase() === "secondary";
         const isTv = String(mediaType || "").toLowerCase() === "tv" || Boolean(seasonHint);
-        if (isTv && tmdbId) {
+
+        // Secondary-sourced TV gets the shegu season/episode picker (shegu
+        // resolves per-episode by tmdbId/season/episode, independent of this
+        // page's own URL). Main-source TV listings don't have that option at
+        // all - the site only publishes one whole-season file per listing
+        // (confirmed: every "quality" tier for a season page resolves to a
+        // single file, not per-episode links) - so those fall through to the
+        // plain quality/direct flow below, same as a movie, just tagged with
+        // the season number parsed from the listing's own scraped title so
+        // the file still lands in Series (tmdb-id)/S0X/ instead of a flat
+        // movie-style folder.
+        if (isTv && isSecondary && tmdbId) {
           downloadModalState = {
             title: title || "Download options",
             options: [],
@@ -2386,7 +2396,17 @@
           return;
         }
 
-        const isSecondary = String(source || "").toLowerCase() === "secondary";
+        // Whole-season pack from the main source: only tag with a season
+        // number when the listing unambiguously covers exactly one season -
+        // a listing spanning a range (e.g. "S1-S3" as one file) has no
+        // single correct season folder, so it's left untagged rather than
+        // guessed at.
+        let mainSourceSeason = null;
+        if (isTv && !isSecondary) {
+          const hint = parseSeasonHint(scrapedTitle || seasonHint || "");
+          if (hint && hint.from === hint.to) mainSourceSeason = hint.from;
+        }
+
         if (isSecondary) {
           if (!tmdbId) {
             downloadModalContent.className = "download-state";
@@ -2453,6 +2473,7 @@
           movieTitle: title || "",
           tmdbId: tmdbId || null,
           source: "",
+          season: mainSourceSeason,
         };
         downloadModalContent.innerHTML = renderQualityOptions(data.options);
       } catch (err) {
@@ -2836,7 +2857,8 @@
         btn.dataset.source || "",
         btn.dataset.mediaType || "",
         btn.dataset.seasons || "[]",
-        btn.dataset.seasonHint || ""
+        btn.dataset.seasonHint || "",
+        btn.dataset.scrapedTitle || ""
       );
     });
 

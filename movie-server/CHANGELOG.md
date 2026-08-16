@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.20
+
+- Fixed TV downloads always resolving through the secondary source (shegu) even when a show's listing was scraped from the main source, which made the new Main/Secondary badge misleading (a card labeled "Main" would still hand you secondary-sourced download links). Checked real data from the main source: each season listing publishes one whole-season file per quality tier, not per-episode links, so main-source TV now downloads that file directly (same quality/direct flow a movie already uses) and saves it into the same `Series (tmdb-id)/S0X/` folder structure, tagged with the season number parsed from the listing's own title. Secondary-sourced TV is unaffected and still uses shegu's per-episode picker. Note: since it's one file for the whole season, per-episode features (downloaded badge, episode-level play/resume) don't apply to main-source TV downloads - only to secondary-sourced ones.
+
 ## 1.7.19
 
 - Fixed single-episode/movie redownloads reusing the original job's stored candidate links - those are shegu-issued signed URLs that expire in a few hours, so a redownload triggered later than that retried an already-dead link every time regardless of the recent retry fix. Redownloading a TV episode job now re-resolves fresh shegu candidates first, the same way a season redownload already did.
