@@ -784,7 +784,7 @@ function collectAnchors(document, selectors) {
   return anchors;
 }
 
-async function fetchDownloadOptions(pageUrl) {
+async function fetchDownloadOptions(pageUrl, source = null) {
   let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.quality;
   let anchors = collectAnchors(document, selectors);
@@ -814,7 +814,7 @@ async function fetchDownloadOptions(pageUrl) {
   // of them now, in the background, so that by the time the user actually
   // clicks a quality the "direct" list is already resolved instead of
   // paying the Cloudflare cost inside that click's own request.
-  prefetchDirectOptionsInBackground(options.map((o) => o.href), fetchDirectDownloadOptionsLive);
+  prefetchDirectOptionsInBackground(options.map((o) => o.href), source, fetchDirectDownloadOptionsLive);
 
   return {
     options,
@@ -855,8 +855,8 @@ async function fetchDirectDownloadOptionsLive(pageUrl) {
 // after the prefetch already finished gets the cached result instantly, and
 // one that lands while it's still running joins the same in-flight
 // resolution instead of starting a second one.
-async function fetchDirectDownloadOptions(pageUrl) {
-  return resolveDirectOptionsCached(pageUrl, () => fetchDirectDownloadOptionsLive(pageUrl));
+async function fetchDirectDownloadOptions(pageUrl, source = null) {
+  return resolveDirectOptionsCached(pageUrl, source, () => fetchDirectDownloadOptionsLive(pageUrl));
 }
 
 async function resolveDownloadLink(detailUrl) {
@@ -1350,14 +1350,43 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 400, { error: "Original job has no URL/candidates to retry" });
           return;
         }
+
+        // The stored candidates are shegu-issued signed URLs (season+episode
+        // present is the reliable signal a job came from shegu, since only
+        // TV downloads set those) that expire in a few hours - reusing them
+        // as-is on a redownload triggered later just retries an already-dead
+        // link every time. Re-resolving live here mirrors what the season
+        // redownload path above already does on every run.
+        let url = source.url;
+        let label = source.label;
+        let candidates = source.candidates;
+        if (source.tmdbId && source.season && source.episode) {
+          try {
+            const fresh = await fetchSheguDownloadOptions({
+              tmdbId: source.tmdbId,
+              mediaType: "tv",
+              season: source.season,
+              episode: source.episode,
+            });
+            const ranked = rankSheguOptionsByQuality(fresh.options);
+            if (ranked.length) {
+              url = ranked[0].href;
+              label = ranked[0].label;
+              candidates = ranked.map((opt) => ({ url: opt.href, label: opt.label }));
+            }
+          } catch (err) {
+            console.warn(`[download] redownload #${jobId}: failed to refresh shegu links, falling back to stored candidates: ${err.message}`);
+          }
+        }
+
         job = startDownload({
-          url: source.url,
-          label: source.label,
+          url,
+          label,
           movieTitle: source.movieTitle,
           tmdbId: source.tmdbId,
           season: source.season,
           episode: source.episode,
-          candidates: source.candidates,
+          candidates,
         });
       }
 
@@ -1875,8 +1904,8 @@ const server = http.createServer(async (req, res) => {
       const type = searchParams.get("type") || "quality";
       const result =
         type === "direct"
-          ? await fetchDirectDownloadOptions(pageUrl)
-          : await fetchDownloadOptions(pageUrl);
+          ? await fetchDirectDownloadOptions(pageUrl, source || null)
+          : await fetchDownloadOptions(pageUrl, source || null);
       sendJson(res, 200, {
         url: pageUrl,
         type,

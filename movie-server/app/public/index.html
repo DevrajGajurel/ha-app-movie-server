@@ -473,6 +473,21 @@
       background: rgba(167, 139, 250, 0.12);
     }
 
+    .source-badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+    }
+
+    .source-badge.secondary {
+      background: rgba(251, 146, 60, 0.12);
+      color: #fb923c;
+    }
+
     .overview {
       font-size: 0.75rem;
       color: var(--muted);
@@ -1336,6 +1351,11 @@
                 <option value="hd">HD</option>
                 <option value="k4">4K</option>
               </select>
+              <select id="source-filter" aria-label="Filter by source">
+                <option value="all">All sources</option>
+                <option value="main">Main source</option>
+                <option value="secondary">Secondary source</option>
+              </select>
               <button id="refresh" type="button">Refresh</button>
             </div>
             <div class="filter-chips">
@@ -1426,6 +1446,7 @@
     const genreFilter = document.getElementById("genre-filter");
     const yearFilter = document.getElementById("year-filter");
     const qualityFilter = document.getElementById("quality-filter");
+    const sourceFilter = document.getElementById("source-filter");
     const filterCountEl = document.getElementById("filter-count");
     const downloadModal = document.getElementById("download-modal");
     const downloadModalTitle = document.getElementById("download-modal-title");
@@ -1611,6 +1632,7 @@
       const genre = genreFilter.value;
       const year = yearFilter.value;
       const quality = qualityFilter.value;
+      const source = sourceFilter.value;
       const sort = sortSelect.value;
 
       if (search) {
@@ -1640,6 +1662,12 @@
         list = list.filter((m) => m.quality?.hd);
       } else if (quality === "k4") {
         list = list.filter((m) => m.quality?.k4);
+      }
+
+      if (source === "main") {
+        list = list.filter((m) => !m.source);
+      } else if (source === "secondary") {
+        list = list.filter((m) => m.source === "secondary");
       }
 
       if (activePresets.has("recent")) {
@@ -1829,6 +1857,9 @@
             ${m.quality?.hd ? '<span class="quality-badge hd">HD</span>' : ""}
           </div>`;
 
+        const isSecondarySource = m.source === "secondary";
+        const sourceBadge = `<span class="source-badge${isSecondarySource ? " secondary" : ""}">${isSecondarySource ? "Secondary" : "Main"}</span>`;
+
         return `
         <article class="card">
           <div class="poster">${poster}${qualityBadges}${renderDownloadedBadge(m, displayTitle)}</div>
@@ -1838,12 +1869,13 @@
             ${t ? `
               <div class="meta-row">
                 <span class="type-badge${t.type === "tv" ? " tv" : ""}">${t.type === "tv" ? "TV Series" : "Movie"}</span>
+                ${sourceBadge}
                 ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
                 ${t.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
               </div>
               ${t.genres?.length ? `<div class="genre-tags">${t.genres.slice(0, 3).map((g) => `<span class="genre-tag">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
               ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
-            ` : (tmdbEnabled ? `<p class="overview">No TMDB match</p>` : "")}
+            ` : `<div class="meta-row">${sourceBadge}</div>${tmdbEnabled ? `<p class="overview">No TMDB match</p>` : ""}`}
             <div class="links">
               <a href="#" class="download-link card-action-btn" data-download-link="${escapeAttr(m.link)}" data-download-title="${escapeAttr(displayTitle)}" data-tmdb-id="${escapeAttr(t?.tmdbId ? String(t.tmdbId) : "")}" data-source="${escapeAttr(m.source || "")}" data-media-type="${escapeAttr(t?.type || (m.seasons ? "tv" : "movie"))}" data-seasons="${escapeAttr(JSON.stringify(t?.seasons || []))}" data-season-hint="${escapeAttr(m.seasons || "")}">Download</a>
               ${t?.tmdbUrl ? `<a class="card-action-btn" href="${escapeAttr(t.tmdbUrl)}" target="_blank" rel="noopener noreferrer">TMDB</a>` : ""}
@@ -2091,7 +2123,11 @@
       downloadModalContent.className = "download-state";
       downloadModalContent.textContent = "Loading direct download links…";
 
-      const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}&type=direct`));
+      const res = await fetch(
+        apiUrl(
+          `downloads?url=${encodeURIComponent(pageUrl)}&type=direct&source=${encodeURIComponent(downloadModalState.source || "primary")}`
+        )
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
 
@@ -2395,7 +2431,9 @@
           return;
         }
 
-        const res = await fetch(apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}`));
+        const res = await fetch(
+          apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}&source=${encodeURIComponent(source || "primary")}`)
+        );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
 
@@ -2840,7 +2878,7 @@
       }
     });
 
-    [searchInput, sortSelect, typeFilter, genreFilter, yearFilter, qualityFilter].forEach((el) => {
+    [searchInput, sortSelect, typeFilter, genreFilter, yearFilter, qualityFilter, sourceFilter].forEach((el) => {
       el.addEventListener("input", applyFiltersAndRender);
       el.addEventListener("change", applyFiltersAndRender);
     });

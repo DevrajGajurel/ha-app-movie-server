@@ -242,34 +242,76 @@ function cleanupPartialFile(filePath) {
 // split) can exit 0 - and job.receivedBytes can match totalBytes - even
 // though one of those segments left a gap of zero bytes in the middle of
 // the file. A duration-only ffprobe (see probeMediaFile) never notices,
-// since Matroska's duration lives in the header; only a full demux catches
-// it, which is exactly what this does - stream-copying every packet to
-// nowhere is the cheapest way to force ffmpeg to walk the whole file and
-// surface a corrupt segment ("invalid as first byte of an EBML number")
-// without paying for an actual video decode. Scoped to video files only
-// (subtitle/sample downloads don't go through aria2's split path).
-function verifyDownloadedFile(filePath) {
+// since Matroska's duration lives in the header; only demuxing the actual
+// packets surfaces it ("invalid as first byte of an EBML number").
+//
+// This was originally a full-file stream-copy-to-null pass, which reads
+// every byte of a 15-20GB file a second time after the download itself -
+// several extra minutes per file, on every download, every time. The
+// corruption this catches showed up densely when it happened (confirmed on
+// real affected files: dozens of instances spread every 200-800MB through
+// the whole file), so a handful of short windows spread across the runtime
+// catches the same class of corruption for a small fraction of the cost -
+// this is a sampling check, not a guarantee every byte is intact.
+const VERIFY_SAMPLE_COUNT = 6;
+const VERIFY_SAMPLE_WINDOW_SECONDS = 15;
+const CORRUPTION_SIGNATURE = /invalid as first byte of an EBML number/i;
+
+function ffmpegWindowHasCorruption(filePath, startSeconds, windowSeconds) {
   return new Promise((resolve) => {
-    if (!VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
-      resolve(true);
-      return;
-    }
     let ffmpeg;
     try {
-      ffmpeg = spawn("ffmpeg", ["-v", "error", "-i", filePath, "-map", "0", "-c", "copy", "-f", "null", "-"]);
+      ffmpeg = spawn("ffmpeg", [
+        "-v",
+        "error",
+        "-ss",
+        String(Math.max(0, Math.floor(startSeconds))),
+        "-i",
+        filePath,
+        "-t",
+        String(windowSeconds),
+        "-map",
+        "0",
+        "-c",
+        "copy",
+        "-f",
+        "null",
+        "-",
+      ]);
     } catch {
-      resolve(true); // ffmpeg unavailable - can't verify, don't block the download over it
+      resolve(false); // ffmpeg unavailable - can't verify, don't block the download over it
       return;
     }
     let stderr = "";
     ffmpeg.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    ffmpeg.on("error", () => resolve(true));
+    ffmpeg.on("error", () => resolve(false));
     ffmpeg.on("close", () => {
-      resolve(!/invalid as first byte of an EBML number/i.test(stderr));
+      resolve(CORRUPTION_SIGNATURE.test(stderr));
     });
   });
+}
+
+async function verifyDownloadedFile(filePath) {
+  if (!VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return true;
+
+  const probe = await probeMediaFile(filePath);
+  const duration = probe?.durationSeconds;
+  if (!duration || duration <= VERIFY_SAMPLE_WINDOW_SECONDS) {
+    // Too short (or duration unknown) to usefully sample - fall back to a
+    // single check of whatever's there.
+    return !(await ffmpegWindowHasCorruption(filePath, 0, VERIFY_SAMPLE_WINDOW_SECONDS));
+  }
+
+  const offsets = Array.from(
+    { length: VERIFY_SAMPLE_COUNT },
+    (_, i) => (duration * (i + 1)) / (VERIFY_SAMPLE_COUNT + 1)
+  );
+  for (const offset of offsets) {
+    if (await ffmpegWindowHasCorruption(filePath, offset, VERIFY_SAMPLE_WINDOW_SECONDS)) return false;
+  }
+  return true;
 }
 
 // Plain single-connection fetch + stream-to-disk — the original (and

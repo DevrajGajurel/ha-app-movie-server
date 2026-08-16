@@ -33,65 +33,74 @@ async function initDownloadOptionsCache(redisUrl) {
   }
 }
 
-function keyFor(pageUrl) {
-  return `${CACHE_PREFIX}${pageUrl}`;
+// Keyed on (source, pageUrl) rather than pageUrl alone: the same page URL
+// can resolve differently depending on which site's flow led there (the
+// primary/secondary source sites don't necessarily serve identical content
+// for what looks like the same intermediate hop) - caching by URL only
+// risked serving one source's resolved links back for the other's request.
+function keyFor(pageUrl, source) {
+  return `${CACHE_PREFIX}${source || "primary"}:${pageUrl}`;
 }
 
-async function getCachedDirectOptions(pageUrl) {
+async function getCachedDirectOptions(pageUrl, source) {
   if (!client?.isReady) return null;
   try {
-    const raw = await client.get(keyFor(pageUrl));
+    const raw = await client.get(keyFor(pageUrl, source));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-async function setCachedDirectOptions(pageUrl, result) {
+async function setCachedDirectOptions(pageUrl, source, result) {
   if (!client?.isReady) return;
   try {
-    await client.set(keyFor(pageUrl), JSON.stringify(result), { EX: CACHE_TTL_SEC });
+    await client.set(keyFor(pageUrl, source), JSON.stringify(result), { EX: CACHE_TTL_SEC });
   } catch (err) {
     console.warn("[downloads-cache] write failed:", err.message);
   }
 }
 
-// Cache-then-in-flight-then-live: repeat requests for the same URL (a
-// background prefetch racing a real click, or the user reopening the same
-// quality's direct list) share one resolution instead of each paying the
-// Cloudflare cost separately.
-async function resolveDirectOptionsCached(pageUrl, resolveLive) {
-  const cached = await getCachedDirectOptions(pageUrl);
+// Cache-then-in-flight-then-live: repeat requests for the same (source,
+// URL) pair (a background prefetch racing a real click, or the user
+// reopening the same quality's direct list) share one resolution instead
+// of each paying the Cloudflare cost separately.
+async function resolveDirectOptionsCached(pageUrl, source, resolveLive) {
+  const inflightKey = keyFor(pageUrl, source);
+  const cached = await getCachedDirectOptions(pageUrl, source);
   if (cached) return { ...cached, cached: true };
 
-  if (inflight.has(pageUrl)) {
-    const result = await inflight.get(pageUrl);
+  if (inflight.has(inflightKey)) {
+    const result = await inflight.get(inflightKey);
     return { ...result, cached: false };
   }
 
   const pending = resolveLive()
-    .then((result) => setCachedDirectOptions(pageUrl, result).then(() => result))
+    .then((result) => setCachedDirectOptions(pageUrl, source, result).then(() => result))
     .finally(() => {
-      inflight.delete(pageUrl);
+      inflight.delete(inflightKey);
     });
 
-  inflight.set(pageUrl, pending);
+  inflight.set(inflightKey, pending);
   const result = await pending;
   return { ...result, cached: false };
 }
 
 // Fire-and-forget: warms the cache for a batch of inner URLs (the quality
-// page's own "direct" hrefs) without blocking whatever caller discovered
-// them. Skips anything already cached or already resolving so this can be
-// called every time the quality list loads without piling up duplicate
-// browser/cf-clearance sessions for the same URL.
-function prefetchDirectOptionsInBackground(pageUrls, resolveLive) {
+// page's own "direct" hrefs, inheriting that page's own source) without
+// blocking whatever caller discovered them. Skips anything already cached
+// or already resolving so this can be called every time the quality list
+// loads without piling up duplicate browser/cf-clearance sessions for the
+// same (source, URL) pair.
+function prefetchDirectOptionsInBackground(pageUrls, source, resolveLive) {
   for (const pageUrl of pageUrls) {
-    if (!pageUrl || inflight.has(pageUrl)) continue;
-    getCachedDirectOptions(pageUrl).then((cached) => {
-      if (cached || inflight.has(pageUrl)) return;
-      console.log(`[downloads-cache] background prefetch: ${pageUrl}`);
-      resolveDirectOptionsCached(pageUrl, () => resolveLive(pageUrl)).catch((err) => {
+    if (!pageUrl) continue;
+    const inflightKey = keyFor(pageUrl, source);
+    if (inflight.has(inflightKey)) continue;
+    getCachedDirectOptions(pageUrl, source).then((cached) => {
+      if (cached || inflight.has(inflightKey)) return;
+      console.log(`[downloads-cache] background prefetch (${source || "primary"}): ${pageUrl}`);
+      resolveDirectOptionsCached(pageUrl, source, () => resolveLive(pageUrl)).catch((err) => {
         console.warn(`[downloads-cache] background prefetch failed for ${pageUrl}:`, err.message);
       });
     });
