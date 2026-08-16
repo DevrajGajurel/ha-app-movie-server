@@ -335,7 +335,13 @@ async function resolveAria2Filename(job) {
 // download finishes and would need an explicit shutdown call).
 const ARIA2_PROGRESS_RE = /\[#\w+\s+([\d.]+)(B|KiB|MiB|GiB|TiB)\/([\d.]+)(B|KiB|MiB|GiB|TiB)\(/;
 const ARIA2_UNIT_BYTES = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
-const ARIA2_CONNECTIONS = 8;
+// Was 8 - confirmed via direct testing that these mirror links intermittently
+// 403 a fraction of requests fired at the same signed URL (reproduced with
+// plain concurrent curl, no aria2 involved), and a segmented download can't
+// tolerate even one of its N connections failing - a single connection only
+// needs one request to succeed instead of all N, and produces no scattered
+// zero-byte gaps if a segment ever does come up short.
+const ARIA2_CONNECTIONS = 1;
 
 function parseAria2Progress(text) {
   const match = ARIA2_PROGRESS_RE.exec(text);
@@ -428,6 +434,22 @@ async function downloadFile(job, dir) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Confirmed real bug: the 4khdhub/shegu mirror links are served through
+// ephemeral Cloudflare Worker proxies that intermittently 403 a request for
+// no discernible reason - reproduced directly with curl: the exact same
+// signed URL, requested sequentially with no concurrency at all, returned
+// 403 twice in a row and then 206 on the third try. aria2c treats HTTP 403
+// as a permanent client error and gives up immediately (confirmed: neither
+// --max-tries nor --retry-wait make it retry a 403), so without a retry of
+// our own here, a plain warm-up hiccup on their end permanently fails the
+// whole candidate instead of the couple of seconds' wait it actually needed.
+const SAME_CANDIDATE_RETRIES = 3;
+const SAME_CANDIDATE_RETRY_DELAY_MS = 3000;
+
 async function runDownload(job) {
   job.status = "downloading";
 
@@ -438,7 +460,7 @@ async function runDownload(job) {
 
   let lastError = null;
 
-  for (let i = 0; i < candidates.length; i++) {
+  outer: for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i];
     job.url = candidate.url;
     job.label = candidate.label || job.label;
@@ -446,57 +468,61 @@ async function runDownload(job) {
     job.attemptsTotal = candidates.length;
     job.error = null;
 
-    try {
-      const dir = ensureDir(job.movieTitle, job.tmdbId, job.season);
-      const filePath = await downloadFile(job, dir);
-
-      // Stays "downloading" through verification (rather than a new status
-      // value) so the dashboard/MediaNest job lists - which only recognize
-      // queued/downloading/completed/failed - keep showing it as active
-      // instead of it vanishing from every tab for however long this takes.
-      const verified = await verifyDownloadedFile(filePath);
-      if (!verified) {
-        cleanupPartialFile(filePath);
-        throw new Error("Downloaded file failed integrity check (corrupted segment detected)");
-      }
-
-      job.filePath = filePath;
-      job.status = "completed";
-      job.finishedAt = new Date().toISOString();
-
-      writeMarker(dir, {
-        tmdbId: job.tmdbId || null,
-        movieTitle: job.movieTitle || null,
-        label: job.label || null,
-        file: path.basename(filePath),
-        savedAt: job.finishedAt,
-      });
-
-      console.log(
-        `[download] saved job #${job.id} (attempt ${job.attempt}/${job.attemptsTotal}) -> ${filePath}`
-      );
-
+    for (let retry = 0; retry < SAME_CANDIDATE_RETRIES; retry++) {
       try {
-        const { refreshAfterDownload } = require("./emby");
-        await refreshAfterDownload(filePath);
-      } catch (err) {
-        console.warn(`[download] Emby refresh failed: ${err.message}`);
-      }
+        const dir = ensureDir(job.movieTitle, job.tmdbId, job.season);
+        const filePath = await downloadFile(job, dir);
 
-      prefetchSubtitlesForFile(filePath).catch((err) => {
-        console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
-      });
-      persistJob(job);
-      pruneJobHistory();
-      return;
-    } catch (err) {
-      lastError = err;
-      console.warn(
-        `[download] job #${job.id} attempt ${i + 1}/${candidates.length} failed (${candidate.label || candidate.url}): ${err.message}`
-      );
-      // A cancelled job shouldn't fall through to the next fallback link -
-      // the user asked for this to stop, not to keep trying alternates.
-      if (job._cancelled) break;
+        // Stays "downloading" through verification (rather than a new status
+        // value) so the dashboard/MediaNest job lists - which only recognize
+        // queued/downloading/completed/failed - keep showing it as active
+        // instead of it vanishing from every tab for however long this takes.
+        const verified = await verifyDownloadedFile(filePath);
+        if (!verified) {
+          cleanupPartialFile(filePath);
+          throw new Error("Downloaded file failed integrity check (corrupted segment detected)");
+        }
+
+        job.filePath = filePath;
+        job.status = "completed";
+        job.finishedAt = new Date().toISOString();
+
+        writeMarker(dir, {
+          tmdbId: job.tmdbId || null,
+          movieTitle: job.movieTitle || null,
+          label: job.label || null,
+          file: path.basename(filePath),
+          savedAt: job.finishedAt,
+        });
+
+        console.log(
+          `[download] saved job #${job.id} (candidate ${job.attempt}/${job.attemptsTotal}, try ${retry + 1}/${SAME_CANDIDATE_RETRIES}) -> ${filePath}`
+        );
+
+        try {
+          const { refreshAfterDownload } = require("./emby");
+          await refreshAfterDownload(filePath);
+        } catch (err) {
+          console.warn(`[download] Emby refresh failed: ${err.message}`);
+        }
+
+        prefetchSubtitlesForFile(filePath).catch((err) => {
+          console.warn(`[subtitles] prefetch failed for ${filePath}: ${err.message}`);
+        });
+        persistJob(job);
+        pruneJobHistory();
+        return;
+      } catch (err) {
+        lastError = err;
+        console.warn(
+          `[download] job #${job.id} candidate ${i + 1}/${candidates.length} try ${retry + 1}/${SAME_CANDIDATE_RETRIES} failed (${candidate.label || candidate.url}): ${err.message}`
+        );
+        // A cancelled job shouldn't retry or fall through to the next
+        // fallback link - the user asked for this to stop, not to keep
+        // trying alternates.
+        if (job._cancelled) break outer;
+        if (retry < SAME_CANDIDATE_RETRIES - 1) await sleep(SAME_CANDIDATE_RETRY_DELAY_MS);
+      }
     }
   }
 

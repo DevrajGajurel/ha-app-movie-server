@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.18
+
+- Investigated frequent secondary-source download failures (aria2c exiting with an HTTP 403 from the 4khdhub/shegu mirror links). Confirmed directly with concurrent curl requests (no aria2 involved) that these Cloudflare-Worker-fronted mirrors intermittently reject a fraction of simultaneous requests against the same signed link, and that a segmented download can't tolerate even one of its connections getting rejected - aria2c also doesn't retry HTTP 403 at all (confirmed `--max-tries`/`--retry-wait` don't apply to it), so a single rejected connection failed the entire candidate outright. aria2 downloads now use a single connection (down from 8) instead of splitting, and a failed candidate is retried a few times before falling through to the next quality/source, instead of giving up immediately. Note: follow-up validation of the exact retry count got muddied by likely self-inflicted rate-limiting from the testing itself (heavy request volume against the same endpoints in a short window) - the mechanism is confirmed real, but how much this fully resolves the reported failure rate isn't proven end-to-end yet.
+
 ## 1.7.17
 
 - Fixed a real, confirmed data-corruption bug in the download pipeline: aria2c's segmented download (splits each file across 8 connections) can exit successfully even when one of those segments left a gap of zero bytes partway through the file - invisible to a lightweight duration probe (which only reads the header), but exactly what broke seeking on House of the Dragon and one other title (playback from the start worked since it never touched the gap; seeking anywhere landed on or near one of several scattered gaps per file). Every download is now verified with a full stream-copy demux pass before being marked complete; a corrupted result is deleted and retried against the next fallback candidate, the same way a network failure already was.
