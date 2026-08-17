@@ -27,6 +27,11 @@ type View = SidebarView;
 
 interface HomeProps {
   onPlay: (movie: Movie, fileToken?: string) => void;
+  // True while Player is showing on top - Home stays mounted underneath
+  // (see App.tsx) rather than unmounting, so its own keydown handling and
+  // the hero rotation timer must stand down instead of running alongside
+  // the player's.
+  suspended?: boolean;
 }
 
 interface RowDef {
@@ -38,7 +43,7 @@ interface RowDef {
 
 const HERO_ROTATE_MS = 8000;
 
-export function Home({ onPlay }: HomeProps) {
+export function Home({ onPlay, suspended }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
   const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
@@ -84,13 +89,14 @@ export function Home({ onPlay }: HomeProps) {
   }, [movies]);
 
   // Cycles the hero spotlight automatically, same idea as HelloTV's hero
-  // rotation - paused implicitly whenever a modal is open since those
-  // unmount this timer's owner component's re-renders don't matter then.
+  // rotation - paused while a modal is open, and while Player is showing
+  // (Home stays mounted, just hidden, during playback - see App.tsx - so
+  // this timer would otherwise keep ticking uselessly in the background).
   useEffect(() => {
-    if (heroMovies.length <= 1 || openDetail || openDownload) return;
+    if (heroMovies.length <= 1 || openDetail || openDownload || suspended) return;
     const timer = window.setInterval(() => setHeroIndex((i) => (i + 1) % heroMovies.length), HERO_ROTATE_MS);
     return () => window.clearInterval(timer);
-  }, [heroMovies.length, openDetail, openDownload]);
+  }, [heroMovies.length, openDetail, openDownload, suspended]);
 
   // Scrolling back up to the hero has nothing to trigger it otherwise:
   // Row.tsx only scrolls the page when ITS OWN row becomes focused, and the
@@ -237,7 +243,10 @@ export function Home({ onPlay }: HomeProps) {
   }
 
   function handlePlayFromDetail(movie: Movie, fileToken?: string) {
-    setOpenDetail(null);
+    // Detail stays open (just hidden along with the rest of Home while
+    // Player is showing - see App.tsx) instead of closing here, so Back
+    // from the player returns to this same Detail page rather than Home's
+    // browse view.
     onPlay(movie, fileToken);
   }
 
@@ -249,7 +258,7 @@ export function Home({ onPlay }: HomeProps) {
   }
 
   useEffect(() => {
-    if (openDetail || openDownload || showExitConfirm) return; // those handle their own keys
+    if (openDetail || openDownload || showExitConfirm || suspended) return; // those handle their own keys
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
         // Back: leave search/library/downloads back to the browse screen. On the
@@ -327,7 +336,7 @@ export function Home({ onPlay }: HomeProps) {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, downloaded, openDetail, openDownload, showExitConfirm]);
+  }, [view, sidebarFocused, sidebarIndex, rowIndex, itemIndex, rows, currentHeroMovie, downloaded, openDetail, openDownload, showExitConfirm, suspended]);
 
   function selectSidebar(index: number) {
     setSidebarIndex(index);
@@ -368,6 +377,7 @@ export function Home({ onPlay }: HomeProps) {
       {view === "search" && (
         <Search
           movies={movies}
+          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm && !suspended}
           onSelect={openMovie}
           progressFor={(movie) => continueWatchingPercent.get(movie.link)}
           downloadedFor={(movie) => isDownloaded(movie, downloaded)}
@@ -376,7 +386,7 @@ export function Home({ onPlay }: HomeProps) {
       {view === "library" && (
         <Library
           movies={libraryMovies}
-          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm}
+          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm && !suspended}
           onSelect={openMovie}
           onPlay={onPlay}
           onLeaveToSidebar={() => setSidebarFocused(true)}
@@ -385,7 +395,7 @@ export function Home({ onPlay }: HomeProps) {
       )}
       {view === "downloads" && (
         <Downloads
-          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm}
+          active={!sidebarFocused && !openDetail && !openDownload && !showExitConfirm && !suspended}
           onLeaveToSidebar={() => setSidebarFocused(true)}
         />
       )}
@@ -401,7 +411,7 @@ export function Home({ onPlay }: HomeProps) {
             getDownloadedMovies().then(setDownloaded);
           }}
           onClose={() => setOpenDetail(null)}
-          paused={!!openDownload}
+          paused={!!openDownload || !!suspended}
         />
       )}
       {openDownload && (

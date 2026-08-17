@@ -1,5 +1,10 @@
 # Changelog
 
+## MediaNest 1.0.10
+
+- Fixed the remote's Back button during playback always landing on Home's default browse view (scrolled to the top) instead of wherever the user actually was before pressing Play - a Detail page, the Library/Downloads view, a scrolled-down row. Root cause: Home fully unmounted while Player was showing and remounted fresh when it closed, discarding all of its state; on top of that, starting playback from Detail explicitly cleared its own open state before navigating away. Home now stays mounted (just hidden) behind Player, and Detail no longer clears itself when playback starts, so Back returns to exactly where the user left off. Verified in the dev preview: Player mounts with Detail preserved underneath (hidden, not unmounted), and closing it returns to that same Detail page.
+- Fixed multi-line subtitles rendering the literal text "<br>" instead of a line break - AVPlay delivers a literal `<br>` tag in cue text for multi-line subtitles, which showed up as-is in a plain React text node. Now converted to a real line break before display.
+
 ## 1.7.21
 
 - MediaNest: added a "Play All Episodes" option to a season's episode grid, shown only when a single whole-season file (as opposed to per-episode files) actually exists in the library for that season - the same layout main-source TV downloads produce (see 1.7.20). New `GET /api/downloads/season-pack` backend route detects this by finding a video file in the season's folder with no SxxEyy tag at all, scoped to that season so a same-named pack in a different season isn't matched. Verified against synthetic per-episode-only, season-pack-present, and wrong-season scenarios.

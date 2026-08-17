@@ -13,6 +13,15 @@ import type { AVPlayApi, AVPlayState, AVPlayStreamInfo } from "./tizen-globals";
 const DISPLAY_WIDTH = 1920;
 const DISPLAY_HEIGHT = 1080;
 
+// AVPlay delivers multi-line subtitle cues with a literal "<br>" tag
+// instead of an actual newline - rendered as a plain React text node (see
+// Player.tsx's .subtitle-cue, which relies on white-space: pre-line for
+// real newlines), that showed up on screen as the literal characters
+// "<br>" rather than a line break.
+function normalizeSubtitleText(text: string): string {
+  return text.replace(/<br\s*\/?>/gi, "\n");
+}
+
 export interface AVPlayerEvents {
   onStateChange?: (state: AVPlayState) => void;
   onProgress?: (currentMs: number, durationMs: number) => void;
@@ -98,7 +107,7 @@ export class AVPlayer {
         oncurrentplaytime: (ms) => this.events.onProgress?.(ms, this.getDurationMs()),
         onstreamcompleted: () => this.events.onStreamCompleted?.(),
         onerror: (eventType) => this.events.onError?.(String(eventType)),
-        onsubtitlechange: (_duration, text) => this.events.onSubtitle?.(text || ""),
+        onsubtitlechange: (_duration, text) => this.events.onSubtitle?.(normalizeSubtitleText(text || "")),
       });
     } catch (err) {
       this.events.onError?.(err instanceof Error ? err.message : "Could not attach playback listener");

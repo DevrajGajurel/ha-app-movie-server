@@ -4,6 +4,7 @@ import { Row } from "./Row";
 
 interface SearchProps {
   movies: Movie[];
+  active: boolean;
   onSelect: (movie: Movie) => void;
   progressFor?: (movie: Movie) => number | undefined;
   downloadedFor?: (movie: Movie) => boolean;
@@ -12,7 +13,7 @@ interface SearchProps {
 // Tizen brings up its own on-screen keyboard automatically when a real
 // <input> receives focus - no custom virtual-keyboard UI needed, same
 // approach HelloTV's search box already relies on.
-export function Search({ movies, onSelect, progressFor, downloadedFor }: SearchProps) {
+export function Search({ movies, active, onSelect, progressFor, downloadedFor }: SearchProps) {
   const [query, setQuery] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -27,6 +28,7 @@ export function Search({ movies, onSelect, progressFor, downloadedFor }: SearchP
     : [];
 
   useEffect(() => {
+    if (!active) return;
     function onKeyDown(e: KeyboardEvent) {
       if (document.activeElement === inputRef.current) {
         if (e.keyCode === 40 && results.length) {
@@ -44,7 +46,7 @@ export function Search({ movies, onSelect, progressFor, downloadedFor }: SearchP
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [results, focusedIndex, onSelect]);
+  }, [active, results, focusedIndex, onSelect]);
 
   return (
     <div className="rows" style={{ marginTop: 0, paddingTop: 48 }}>
