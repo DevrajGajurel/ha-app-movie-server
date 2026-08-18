@@ -114,6 +114,7 @@ export interface ProgressItem {
   folder: string;
   tmdbId: string | null;
   title: string;
+  type: "movie" | "tv";
   positionSeconds: number;
   durationSeconds: number;
   percent: number;
@@ -140,6 +141,41 @@ export function matchMovieForProgress(item: ProgressItem, movies: Movie[]): Movi
   }
   const normalized = normalizeTitle(item.title);
   return movies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === normalized);
+}
+
+// Same "catalog match, else posterless stub" fallback as libraryItemToMovie
+// - a title that's rotated off the scraped listing's currently-loaded pages
+// (common for anything watched over more than a few days, e.g. a season
+// binged episode by episode) previously vanished from Continue Watching
+// entirely instead of showing up without art.
+export function progressItemToMovie(item: ProgressItem, movies: Movie[]): Movie {
+  const existing = matchMovieForProgress(item, movies);
+  if (existing) return existing;
+  const key = item.tmdbId || normalizeTitle(item.title) || item.title;
+  const title = item.title || "In progress";
+  const tmdbId = item.tmdbId ? Number(item.tmdbId) : null;
+  return {
+    title,
+    link: `progress:${key}`,
+    tmdb: tmdbId
+      ? {
+          tmdbId,
+          tmdbTitle: title,
+          type: item.type,
+          poster: null,
+          backdrop: null,
+          rating: null,
+          year: null,
+          genres: [],
+          overview: null,
+          tagline: null,
+          runtimeMinutes: null,
+          certification: null,
+          director: null,
+          trailerKey: null,
+        }
+      : undefined,
+  };
 }
 
 // Direct-by-id TMDB lookup for a downloaded library item whose match against

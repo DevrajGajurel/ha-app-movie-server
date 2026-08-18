@@ -1559,10 +1559,19 @@ function listProgress() {
         ? Math.min(99, Math.max(1, Math.round((position / duration) * 100)))
         : 0;
 
+    // A progress file living one level deeper than the series folder is
+    // always a season subfolder (only TV downloads create those) - same
+    // signal scanLibrary() already uses to tell movies and TV apart, needed
+    // here so a stub recovery lookup (when the title has rotated off the
+    // scraped catalog - see progressItemToMovie in api.ts) can pass the
+    // right type hint and avoid a movie/TV tmdbId collision.
+    const type = path.basename(dir) !== seriesFolderName ? "tv" : "movie";
+
     items.push({
       folder: seriesFolderName,
       tmdbId,
       title,
+      type,
       positionSeconds: position,
       durationSeconds: duration,
       percent,

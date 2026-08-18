@@ -41,6 +41,20 @@ export class AVPlayer {
   private trackIndexMap: TrackIndexMap = { audio: [], text: [] };
   private ready = false;
   private seekBusy = false;
+  // onsubtitlechange only fires when a NEW cue starts, never when one ends -
+  // left as-is, the previous line just sat on screen through every silent
+  // gap between lines of dialogue until the next cue happened to arrive.
+  // AVPlay does pass this cue's own duration (ms, as a string) alongside the
+  // text; this schedules the clear that duration implies instead of
+  // ignoring it.
+  private subtitleClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearSubtitleTimer(): void {
+    if (this.subtitleClearTimer != null) {
+      clearTimeout(this.subtitleClearTimer);
+      this.subtitleClearTimer = null;
+    }
+  }
 
   constructor(events: AVPlayerEvents = {}) {
     this.events = events;
@@ -65,6 +79,7 @@ export class AVPlayer {
   open(url: string): void {
     this.ready = false;
     this.trackIndexMap = { audio: [], text: [] };
+    this.clearSubtitleTimer();
 
     let api: AVPlayApi;
     try {
@@ -107,7 +122,18 @@ export class AVPlayer {
         oncurrentplaytime: (ms) => this.events.onProgress?.(ms, this.getDurationMs()),
         onstreamcompleted: () => this.events.onStreamCompleted?.(),
         onerror: (eventType) => this.events.onError?.(String(eventType)),
-        onsubtitlechange: (_duration, text) => this.events.onSubtitle?.(normalizeSubtitleText(text || "")),
+        onsubtitlechange: (duration, text) => {
+          this.clearSubtitleTimer();
+          const normalized = normalizeSubtitleText(text || "");
+          this.events.onSubtitle?.(normalized);
+          const durationMs = Number(duration);
+          if (normalized && Number.isFinite(durationMs) && durationMs > 0) {
+            this.subtitleClearTimer = setTimeout(() => {
+              this.subtitleClearTimer = null;
+              this.events.onSubtitle?.("");
+            }, durationMs);
+          }
+        },
       });
     } catch (err) {
       this.events.onError?.(err instanceof Error ? err.message : "Could not attach playback listener");
@@ -247,6 +273,7 @@ export class AVPlayer {
   selectSubtitleTrack(trackPosition: number | null): void {
     try {
       if (trackPosition == null) {
+        this.clearSubtitleTimer();
         this.api.setSilentSubtitle(true);
         this.events.onSubtitle?.("");
         return;
@@ -260,6 +287,7 @@ export class AVPlayer {
   }
 
   stopAndClose(): void {
+    this.clearSubtitleTimer();
     try {
       const state = this.api.getState();
       if (state === "PLAYING" || state === "PAUSED") this.api.stop();

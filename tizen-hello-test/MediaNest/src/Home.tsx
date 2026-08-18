@@ -3,7 +3,7 @@ import {
   getAllMovies,
   getDownloadedMovies,
   getContinueWatching,
-  matchMovieForProgress,
+  progressItemToMovie,
   matchMovieForDownload,
   getLibraryMovies,
   getMoviePageLink,
@@ -11,6 +11,7 @@ import {
   isDownloaded,
   type Movie,
   type DownloadedMovie,
+  type ProgressItem,
   type TmdbInfo,
 } from "./api";
 import { Sidebar, SIDEBAR_ITEMS, SIDEBAR_VIEWS, type SidebarView } from "./Sidebar";
@@ -46,7 +47,7 @@ const HERO_ROTATE_MS = 8000;
 export function Home({ onPlay, suspended }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
-  const [continueWatchingPercent, setContinueWatchingPercent] = useState<Map<string, number>>(new Map());
+  const [continueWatchingItems, setContinueWatchingItems] = useState<ProgressItem[]>([]);
   const [status, setStatus] = useState("Loading your library…");
   const [heroIndex, setHeroIndex] = useState(0);
 
@@ -64,19 +65,12 @@ export function Home({ onPlay, suspended }: HomeProps) {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   useEffect(() => {
-    Promise.all([getAllMovies(), getDownloadedMovies()])
-      .then(([m, d]) => {
+    Promise.all([getAllMovies(), getDownloadedMovies(), getContinueWatching()])
+      .then(([m, d, progress]) => {
         setMovies(m);
         setDownloaded(d);
         setStatus(m.length ? "" : "No movies found.");
-        return getContinueWatching().then((items) => {
-          const percentByLink = new Map<string, number>();
-          for (const item of items) {
-            const match = matchMovieForProgress(item, m);
-            if (match) percentByLink.set(match.link, item.percent);
-          }
-          setContinueWatchingPercent(percentByLink);
-        });
+        setContinueWatchingItems(progress);
       })
       .catch((err) => setStatus("Failed to load library: " + err.message));
   }, []);
@@ -109,15 +103,21 @@ export function Home({ onPlay, suspended }: HomeProps) {
 
   const [tmdbById, setTmdbById] = useState<Map<string, TmdbInfo>>(new Map());
   const rawLibraryMovies = useMemo(() => getLibraryMovies(downloaded, movies), [downloaded, movies]);
+  const rawContinueWatchingMovies = useMemo(
+    () => continueWatchingItems.map((item) => progressItemToMovie(item, movies)),
+    [continueWatchingItems, movies]
+  );
 
-  // rawLibraryMovies only has poster/backdrop art for downloads that also
-  // matched something in the currently cached listing pages
-  // (matchMovieForDownload) - anything downloaded a while ago and since
-  // rotated off those pages comes back as a posterless stub instead. Fetch
-  // those directly by tmdbId (a couple at a time, not all at once) and
-  // splice the result back in once it lands.
+  // rawLibraryMovies/rawContinueWatchingMovies only have poster/backdrop art
+  // for entries that also matched something in the currently cached listing
+  // pages (matchMovieForDownload/matchMovieForProgress) - anything watched a
+  // while ago and since rotated off those pages comes back as a posterless
+  // stub instead. Fetch those directly by tmdbId (a couple at a time, not
+  // all at once) and splice the result back in once it lands - shared
+  // between both lists (keyed by tmdbId) so the same title showing up in
+  // both doesn't fetch twice.
   useEffect(() => {
-    const missing = rawLibraryMovies.filter(
+    const missing = [...rawLibraryMovies, ...rawContinueWatchingMovies].filter(
       (m) => m.tmdb?.tmdbId && !m.tmdb.poster && !tmdbById.has(String(m.tmdb.tmdbId))
     );
     if (!missing.length) return;
@@ -151,7 +151,7 @@ export function Home({ onPlay, suspended }: HomeProps) {
     // Only re-run when the missing set actually changes shape, not on every
     // tmdbById update this effect itself causes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawLibraryMovies]);
+  }, [rawLibraryMovies, rawContinueWatchingMovies]);
 
   const libraryMovies = useMemo(() => {
     if (!tmdbById.size) return rawLibraryMovies;
@@ -161,6 +161,24 @@ export function Home({ onPlay, suspended }: HomeProps) {
       return fetched ? { ...m, tmdb: fetched } : m;
     });
   }, [rawLibraryMovies, tmdbById]);
+
+  const continueWatchingMovies = useMemo(() => {
+    if (!tmdbById.size) return rawContinueWatchingMovies;
+    return rawContinueWatchingMovies.map((m) => {
+      const id = m.tmdb?.tmdbId ? String(m.tmdb.tmdbId) : null;
+      const fetched = id ? tmdbById.get(id) : undefined;
+      return fetched ? { ...m, tmdb: fetched } : m;
+    });
+  }, [rawContinueWatchingMovies, tmdbById]);
+
+  const continueWatchingPercent = useMemo(() => {
+    const percentByLink = new Map<string, number>();
+    continueWatchingItems.forEach((item, i) => {
+      const movie = continueWatchingMovies[i];
+      if (movie) percentByLink.set(movie.link, item.percent);
+    });
+    return percentByLink;
+  }, [continueWatchingItems, continueWatchingMovies]);
 
   const rows: RowDef[] = useMemo(() => {
     if (!movies.length) return [];
@@ -191,7 +209,6 @@ export function Home({ onPlay, suspended }: HomeProps) {
       movies: movies.filter((m) => m.tmdb?.genres?.includes(genre)).slice(0, 20),
     }));
 
-    const continueWatchingMovies = movies.filter((m) => continueWatchingPercent.has(m.link));
     const continueWatchingRow: RowDef[] = continueWatchingMovies.length
       ? [{ title: "Continue Watching", movies: continueWatchingMovies }]
       : [];
@@ -218,7 +235,7 @@ export function Home({ onPlay, suspended }: HomeProps) {
       { title: "Recently Added", movies: recentlyAdded, badge: "NEW" },
       ...genreRows,
     ];
-  }, [movies, downloaded, continueWatchingPercent]);
+  }, [movies, downloaded, continueWatchingMovies]);
 
   const currentHeroMovie = heroMovies[heroIndex] || null;
 
