@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.24
+
+- Fixed "No direct download links found" (0 matches on `a[class*="button"]`) for real: this wasn't a selector or redirect issue - the file-host (new6.filesdl.top, confirmed live) replaced plain `<a>` download links with JS-driven `<button>`s that reveal the real link through a signed two-step API (the page's own pgid/pgsig plus each button's data-ea, POSTed to a "click" step that returns a one-time redirect token). Confirmed end-to-end against a real Breaking Bad link that both steps are plain HTTP with no JavaScript execution needed - the page's own script only orchestrates two fetches, which are now replicated directly (a HEAD-only redirect resolution for the final hop, so a multi-GB file body is never actually downloaded just to learn its URL). Only attempted as a fallback when the classic anchor selectors find nothing, so this costs nothing on pages that still use plain links.
+
 ## 1.7.23 / MediaNest 1.0.12
 
 - Some seasons on the main source are split into "Part-01 (Ep.01-06)"/"Part-02"/... batches, each with its own quality tier of download buttons - confirmed on real pages (e.g. Breaking Bad S05) the split is marked by a plain text divider sitting between groups of buttons, not a wrapping element. The quality scraper now walks page order to attach each option's part label, grouping (never interleaving) by part while keeping the previous best-quality-first sort within each group. Shown as a header in both the dashboard's and MediaNest's download popups.

@@ -866,6 +866,60 @@ async function fetchDownloadOptions(pageUrl, source = null) {
   };
 }
 
+// Some file-host pages (new6.filesdl.top, confirmed live) replaced plain
+// <a> download links with JS-driven buttons that reveal the real link via
+// a signed two-step API instead of a static href - the page's own
+// pgid/pgsig <meta> tags plus each button's data-ea are POSTed (well, GET
+// with query params, matching what the page's own script does) to
+// "?step=click", returning a one-time { redir } token; requesting the page
+// again with that token 302s straight to the real file host. Both steps
+// are plain HTTP - the page's own "JavaScript" only orchestrates two
+// fetches, so no headless browser/JS execution is needed to replicate it.
+// Confirmed end-to-end against a real Breaking Bad episode link.
+async function resolveSecureDownloadButtons(document, pageUrl) {
+  const pgid = document.querySelector('meta[name="pgid"]')?.getAttribute("content") || "";
+  const pgsig = document.querySelector('meta[name="pgsig"]')?.getAttribute("content") || "";
+  const buttons = [...document.querySelectorAll(".secure-download-button")]
+    .map((btn) => ({ label: (btn.textContent || "").trim(), ea: btn.getAttribute("data-ea") || "" }))
+    .filter((b) => b.label && b.ea);
+  if (!pgid || !pgsig || !buttons.length) return [];
+
+  const fileId = new URL(pageUrl).pathname.split("/").filter(Boolean).pop() || "";
+  const results = [];
+
+  for (const { label, ea } of buttons) {
+    try {
+      const clickUrl = new URL(pageUrl);
+      clickUrl.search = "";
+      clickUrl.searchParams.set("id", fileId);
+      clickUrl.searchParams.set("step", "click");
+      clickUrl.searchParams.set("ea", ea);
+      clickUrl.searchParams.set("pgid", pgid);
+      clickUrl.searchParams.set("pgsig", pgsig);
+
+      const clickRes = await scrapeFetch(clickUrl.href, { referer: pageUrl, label: "downloads-secure-click" });
+      if (!clickRes.ok) continue;
+      const data = await clickRes.json().catch(() => null);
+      if (!data?.redir) continue;
+
+      const redirUrl = new URL(pageUrl);
+      redirUrl.search = "";
+      redirUrl.searchParams.set("id", fileId);
+      redirUrl.searchParams.set("redir", data.redir);
+
+      // HEAD-only redirect resolution (the same helper every other cross-
+      // domain hop in this file already uses) - this final hop 302s
+      // straight to the real file host, which would otherwise mean
+      // downloading the entire multi-GB body just to learn its URL.
+      const finalUrl = await resolveRedirectUrl(redirUrl.href);
+      results.push({ label, href: finalUrl || redirUrl.href });
+    } catch (err) {
+      console.warn(`[downloads] secure-download-button resolve failed for "${label}":`, err.message);
+    }
+  }
+  return results;
+}
+
 async function fetchDirectDownloadOptionsLive(pageUrl) {
   let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.direct;
@@ -884,11 +938,23 @@ async function fetchDirectDownloadOptionsLive(pageUrl) {
   }
 
   const baseUrl = resolvedUrl || pageUrl;
+  let options = sortDownloadOptions(anchors.map((anchor) => ({
+    label: (anchor.textContent || "Download").trim(),
+    href: new URL(anchor.getAttribute("href"), baseUrl).href,
+  })));
+
+  // Only attempted when the classic anchor selectors found nothing - it
+  // costs 2 extra requests per button, so it's a fallback, not the default.
+  if (!options.length) {
+    try {
+      options = sortDownloadOptions(await resolveSecureDownloadButtons(document, baseUrl));
+    } catch (err) {
+      console.warn("[downloads] secure-download-button resolve failed:", err.message);
+    }
+  }
+
   return {
-    options: sortDownloadOptions(anchors.map((anchor) => ({
-      label: (anchor.textContent || "Download").trim(),
-      href: new URL(anchor.getAttribute("href"), baseUrl).href,
-    }))),
+    options,
     selectors: selectorDiagnostics(document, selectors),
   };
 }
