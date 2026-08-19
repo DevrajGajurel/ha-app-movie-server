@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.25 / MediaNest 1.0.13
+
+- "Play All Episodes" now offers one button per part when a season was downloaded as split "Part-01"/"Part-02"/... batches, instead of a single button that could only ever point at one of them. Previously `findSeasonPackFile` (fileDownloads.js) picked whichever season-pack file it found first via `.find()`, so a season split into 3 parts silently lost 2/3 of the library to the UI.
+- Fix: the part a quality option belongs to (already scraped via `findPartLabel`, see v1.7.23) is now carried all the way through to the saved file - `startDownload`/`/api/downloads/save` accept an optional `part`, and the downloaded filename gets a `PART-01 -` style tag (`withPartTag`, fileDownloads.js) so it survives regardless of what the file host's own filename looks like. `findSeasonPackFile` is now `findSeasonPackFiles`, returning every part-tagged (or untagged, for old-style single-file seasons) match in a season's folder, sorted by part number.
+- MediaNest's Detail page renders one "▶ Play Part-NN" button per part (or the original single "▶ Play All Episodes" button when the season has no parts), with left/right arrow-key navigation between them.
+- Backwards compatible: files downloaded before this change have no part tag and keep showing as a single "Play All Episodes" button, exactly as before.
+
 ## 1.7.24
 
 - Fixed "No direct download links found" (0 matches on `a[class*="button"]`) for real: this wasn't a selector or redirect issue - the file-host (new6.filesdl.top, confirmed live) replaced plain `<a>` download links with JS-driven `<button>`s that reveal the real link through a signed two-step API (the page's own pgid/pgsig plus each button's data-ea, POSTed to a "click" step that returns a one-time redirect token). Confirmed end-to-end against a real Breaking Bad link that both steps are plain HTTP with no JavaScript execution needed - the page's own script only orchestrates two fetches, which are now replicated directly (a HEAD-only redirect resolution for the final hop, so a multi-GB file body is never actually downloaded just to learn its URL). Only attempted as a fallback when the classic anchor selectors find nothing, so this costs nothing on pages that still use plain links.

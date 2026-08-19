@@ -503,9 +503,15 @@ img {
   border-color: var(--focus-ring);
 }
 
+.season-pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
 .season-pack-btn {
   display: block;
-  margin-bottom: 24px;
   padding: 12px 20px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);

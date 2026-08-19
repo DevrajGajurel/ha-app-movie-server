@@ -53,7 +53,10 @@ interface DownloadModalProps {
 type Stage =
   | { kind: "loading" }
   | { kind: "quality"; options: DownloadOption[] }
-  | { kind: "direct"; options: DownloadOption[]; parentLabel: string }
+  // part: which "Part-01"/"Part-02"/... batch the picked quality option
+  // belonged to, if any - carried through so pickDirect can tag the actual
+  // download with it (the file-host options here have no part of their own).
+  | { kind: "direct"; options: DownloadOption[]; parentLabel: string; part?: string | null }
   | { kind: "error"; message: string };
 
 export function DownloadModal({
@@ -195,7 +198,7 @@ export function DownloadModal({
       .then((data) =>
         setStage(
           data.options.length
-            ? { kind: "direct", options: data.options, parentLabel: option.label }
+            ? { kind: "direct", options: data.options, parentLabel: option.label, part: option.part ?? null }
             : { kind: "error", message: "No direct download links found." }
         )
       )
@@ -211,6 +214,7 @@ export function DownloadModal({
       movieTitle,
       tmdbId,
       season: mainSourceSeason ?? undefined,
+      part: (stage.kind === "direct" ? stage.part : null) ?? undefined,
     })
       .then((job) => {
         setJobStatus((prev) => ({ ...prev, [option.href]: "Queued…" }));

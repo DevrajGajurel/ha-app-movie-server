@@ -6,9 +6,10 @@ import {
   getDownloadedEpisodes,
   getEpisodeFileToken,
   getSeriesResume,
-  getSeasonPackToken,
+  getSeasonPackParts,
   type EpisodeDetail,
   type SeriesResumePoint,
+  type SeasonPackPart,
 } from "./api";
 import { DeleteConfirm } from "./DeleteConfirm";
 import { Trailer } from "./Trailer";
@@ -50,11 +51,14 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   const [episodes, setEpisodes] = useState<EpisodeDetail[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [downloadedEpisodeNumbers, setDownloadedEpisodeNumbers] = useState<Set<number>>(new Set());
-  // Only set when this season has one whole-season file rather than
-  // per-episode ones (main-source TV downloads - see v1.7.20) - lets the
-  // season offer a "Play all episodes" option, but only when that file
-  // genuinely exists in the library, never as a guess.
-  const [seasonPackToken, setSeasonPackToken] = useState<string | null>(null);
+  // Only populated when this season has one or more whole-season files
+  // rather than per-episode ones (main-source TV downloads - see v1.7.20),
+  // possibly one per "Part-01"/"Part-02"/... batch (see v1.7.23/v1.7.24) -
+  // lets the season offer a "Play all episodes" (or one "Play Part-NN" per
+  // part) option, but only when those files genuinely exist in the
+  // library, never as a guess.
+  const [seasonPackParts, setSeasonPackParts] = useState<SeasonPackPart[]>([]);
+  const [seasonPackFocusIdx, setSeasonPackFocusIdx] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -140,7 +144,8 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     let cancelled = false;
     setEpisodesLoading(true);
     setDownloadedEpisodeNumbers(new Set());
-    setSeasonPackToken(null);
+    setSeasonPackParts([]);
+    setSeasonPackFocusIdx(0);
     getSeasonEpisodeDetails(String(t.tmdbId), currentSeason.seasonNumber).then((eps) => {
       if (cancelled) return;
       setEpisodes(eps);
@@ -150,8 +155,8 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     getDownloadedEpisodes(tmdbId, title, currentSeason.seasonNumber).then((nums) => {
       if (!cancelled) setDownloadedEpisodeNumbers(nums);
     });
-    getSeasonPackToken(tmdbId, title, currentSeason.seasonNumber).then((tok) => {
-      if (!cancelled) setSeasonPackToken(tok);
+    getSeasonPackParts(tmdbId, title, currentSeason.seasonNumber).then((parts) => {
+      if (!cancelled) setSeasonPackParts(parts);
     });
     return () => {
       cancelled = true;
@@ -180,7 +185,8 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   // downloaded to play.
   function playFocused() {
     if (focusRegion === "seasonPack") {
-      if (seasonPackToken) onPlay(seasonPackToken);
+      const token = seasonPackParts[seasonPackFocusIdx]?.token;
+      if (token) onPlay(token);
       return;
     }
     if (focusRegion === "episodes") {
@@ -225,7 +231,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
       if (focusRegion === "seasons") {
         if (e.keyCode === 38) setFocusRegion("actions");
         else if (e.keyCode === 40) {
-          if (seasonPackToken) setFocusRegion("seasonPack");
+          if (seasonPackParts.length) setFocusRegion("seasonPack");
           else if (episodes.length) setFocusRegion("episodes");
         } else if (e.keyCode === 37) setSeasonIdx((i) => Math.max(0, i - 1));
         else if (e.keyCode === 39) setSeasonIdx((i) => Math.min(seasons.length - 1, i + 1));
@@ -235,8 +241,11 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
       if (focusRegion === "seasonPack") {
         if (e.keyCode === 38) setFocusRegion("seasons");
         else if (e.keyCode === 40 && episodes.length) setFocusRegion("episodes");
+        else if (e.keyCode === 37) setSeasonPackFocusIdx((i) => Math.max(0, i - 1));
+        else if (e.keyCode === 39) setSeasonPackFocusIdx((i) => Math.min(seasonPackParts.length - 1, i + 1));
         else if (e.keyCode === 13) {
-          if (seasonPackToken) onPlay(seasonPackToken);
+          const token = seasonPackParts[seasonPackFocusIdx]?.token;
+          if (token) onPlay(token);
         }
         return;
       }
@@ -244,7 +253,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
       // focusRegion === "episodes"
       if (e.keyCode === 38) {
         const row = Math.floor(episodeFocusIdx / EPISODE_GRID_COLUMNS);
-        if (row === 0) setFocusRegion(seasonPackToken ? "seasonPack" : "seasons");
+        if (row === 0) setFocusRegion(seasonPackParts.length ? "seasonPack" : "seasons");
         else setEpisodeFocusIdx((i) => Math.max(0, i - EPISODE_GRID_COLUMNS));
       } else if (e.keyCode === 40) {
         setEpisodeFocusIdx((i) => Math.min(episodes.length - 1, i + EPISODE_GRID_COLUMNS));
@@ -276,7 +285,8 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     isTv,
     onClose,
     downloadedEpisodeNumbers,
-    seasonPackToken,
+    seasonPackParts,
+    seasonPackFocusIdx,
     seriesResume,
     firstEpisodeToken,
     downloaded,
@@ -362,14 +372,21 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
               ))}
             </div>
           )}
-          {seasonPackToken && (
-            <button
-              type="button"
-              className={"season-pack-btn" + (focusRegion === "seasonPack" ? " focused" : "")}
-              onClick={() => onPlay(seasonPackToken)}
-            >
-              ▶ Play All Episodes ({currentSeason?.name || "This Season"})
-            </button>
+          {seasonPackParts.length > 0 && (
+            <div className="season-pack-row">
+              {seasonPackParts.map((p, i) => (
+                <button
+                  key={p.token}
+                  type="button"
+                  className={"season-pack-btn" + (focusRegion === "seasonPack" && i === seasonPackFocusIdx ? " focused" : "")}
+                  onClick={() => onPlay(p.token)}
+                >
+                  {p.part
+                    ? `▶ Play ${p.part}`
+                    : `▶ Play All Episodes (${currentSeason?.name || "This Season"})`}
+                </button>
+              ))}
+            </div>
           )}
           {episodesLoading ? (
             <p className="status" style={{ paddingLeft: 0 }}>Loading episodes…</p>

@@ -190,6 +190,17 @@ function withEpisodeTag(filename, season, episode) {
   return filename.toUpperCase().includes(tag) ? filename : `${tag} - ${filename}`;
 }
 
+// Tags a season-pack filename with its "Part-01"/"Part-02"/... batch (see
+// findPartLabel in main.js) so findSeasonPackFiles can tell the parts of a
+// split season apart - the source's own filename doesn't reliably carry
+// this, and without it every part would look like the same untagged pack.
+function withPartTag(filename, part) {
+  const match = part ? /Part[-\s]?(\d+)/i.exec(part) : null;
+  if (!match) return filename;
+  const tag = `PART-${match[1].padStart(2, "0")}`;
+  return filename.toUpperCase().includes(tag) ? filename : `${tag} - ${filename}`;
+}
+
 function writeMarker(dir, data) {
   try {
     fs.writeFileSync(path.join(dir, MARKER_FILE), JSON.stringify(data, null, 2));
@@ -325,10 +336,13 @@ async function downloadFileWithFetch(job, dir) {
     throw new Error(`Download failed: ${response.status}`);
   }
 
-  const filename = withEpisodeTag(
-    pickFilename(response.headers.get("content-disposition"), response.url, job.label),
-    job.season,
-    job.episode
+  const filename = withPartTag(
+    withEpisodeTag(
+      pickFilename(response.headers.get("content-disposition"), response.url, job.label),
+      job.season,
+      job.episode
+    ),
+    job.part
   );
   const filePath = uniquePath(dir, filename);
 
@@ -404,7 +418,7 @@ function parseAria2Progress(text) {
 // process dependency.
 function downloadFileWithAria2(job, dir) {
   return resolveAria2Filename(job).then((filename) => {
-    const filePath = uniquePath(dir, withEpisodeTag(filename, job.season, job.episode));
+    const filePath = uniquePath(dir, withPartTag(withEpisodeTag(filename, job.season, job.episode), job.part));
     job.totalBytes = 0;
     job.receivedBytes = 0;
 
@@ -612,6 +626,7 @@ function startDownload({
   parentId = null,
   season = null,
   episode = null,
+  part = null,
 }) {
   const normalizedCandidates =
     Array.isArray(candidates) && candidates.length
@@ -630,6 +645,7 @@ function startDownload({
     tmdbId: tmdbId ? String(tmdbId) : null,
     season: Number.isInteger(season) ? season : null,
     episode: Number.isInteger(episode) ? episode : null,
+    part: part || null,
     status: "queued",
     receivedBytes: 0,
     totalBytes: 0,
@@ -930,23 +946,34 @@ function findDownloadedEpisodeNumbers({ tmdbId, title, season }) {
   return [...found];
 }
 
-// A single file covering the whole season rather than one episode - main-
-// source TV downloads publish exactly this (one file per quality tier for
-// the whole season, no per-episode links; see the v1.7.20 change), so it
-// has no SxxEyy tag at all. Distinguished from an episode file by that
-// absence, scoped to this season's own folder so a same-named pack sitting
-// in a different season isn't matched.
-function findSeasonPackFile({ tmdbId, title, season }) {
+// A file covering a whole season (or a "Part-01"/"Part-02"/... batch of one,
+// when the source splits the season that way - see v1.7.23) rather than one
+// episode - main-source TV downloads publish exactly this, so it has no
+// SxxEyy tag at all. Distinguished from an episode file by that absence,
+// scoped to this season's own folder so a same-named pack sitting in a
+// different season isn't matched. Returns every matching file (there can be
+// more than one when the season was downloaded as multiple parts), sorted
+// by part number so a "Play Part-01/02/03" row lists them in order.
+function findSeasonPackFiles({ tmdbId, title, season }) {
   const seasonFolder = seasonFolderName(season);
   const episodeTagPattern = /S\d{2}E\d{2}/i;
-  return (
-    findMediaFiles({ tmdbId, title }).find((f) => {
-      const segments = f.token.split("/");
-      const parentDir = segments[segments.length - 2];
-      if (parentDir !== seasonFolder) return false;
-      return !episodeTagPattern.test(f.filename.toUpperCase());
-    }) || null
-  );
+  const partTagPattern = /PART-(\d+)/i;
+  const files = findMediaFiles({ tmdbId, title }).filter((f) => {
+    const segments = f.token.split("/");
+    const parentDir = segments[segments.length - 2];
+    if (parentDir !== seasonFolder) return false;
+    return !episodeTagPattern.test(f.filename.toUpperCase());
+  });
+  return files
+    .map((f) => {
+      const m = partTagPattern.exec(f.filename.toUpperCase());
+      return { token: f.token, part: m ? `Part-${m[1].padStart(2, "0")}` : null };
+    })
+    .sort((a, b) => {
+      const an = a.part ? Number.parseInt(a.part.slice(5), 10) : 0;
+      const bn = b.part ? Number.parseInt(b.part.slice(5), 10) : 0;
+      return an - bn;
+    });
 }
 
 // Removes every downloaded folder matching a movie (all versions, plus the
@@ -1623,7 +1650,7 @@ module.exports = {
   findMediaFiles,
   findEpisodeFile,
   findDownloadedEpisodeNumbers,
-  findSeasonPackFile,
+  findSeasonPackFiles,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,

@@ -452,6 +452,7 @@ export async function startDownload(args: {
   tmdbId: string | null;
   season?: number;
   episode?: number;
+  part?: string | null;
 }): Promise<DownloadJob> {
   const res = await fetch(apiUrl("downloads/save"), {
     method: "POST",
@@ -593,21 +594,30 @@ export async function getDownloadedEpisodes(tmdbId: string | null, title: string
   }
 }
 
-// Whether this season has a single whole-season file on disk (main-source
-// TV downloads publish exactly this - one file per season, no per-episode
-// links) - lets the season view offer a "Play all episodes" option only
-// when that file actually exists, rather than assuming every season works
-// like a shegu-downloaded one where the episodes are separate files.
-export async function getSeasonPackToken(tmdbId: string | null, title: string, season: number): Promise<string | null> {
+export interface SeasonPackPart {
+  token: string;
+  // null when the season was downloaded as one single whole-season file
+  // rather than split into "Part-01"/"Part-02"/... batches.
+  part: string | null;
+}
+
+// Whether this season has one or more whole-season files on disk (main-
+// source TV downloads publish exactly this - one file per season, no per-
+// episode links, possibly split into parts - see v1.7.23/v1.7.24) - lets the
+// season view offer a "Play all episodes" (or one "Play Part-NN" per part)
+// option only when those files actually exist, rather than assuming every
+// season works like a shegu-downloaded one where the episodes are separate
+// files.
+export async function getSeasonPackParts(tmdbId: string | null, title: string, season: number): Promise<SeasonPackPart[]> {
   try {
     const params = new URLSearchParams({ title, season: String(season) });
     if (tmdbId) params.set("tmdbId", tmdbId);
     const res = await fetch(apiUrl(`downloads/season-pack?${params.toString()}`));
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = await res.json();
-    return data.token || null;
+    return data.parts || [];
   } catch {
-    return null;
+    return [];
   }
 }
 

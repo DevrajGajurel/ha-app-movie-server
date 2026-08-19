@@ -40,7 +40,7 @@ const {
   findMediaFiles,
   findEpisodeFile,
   findDownloadedEpisodeNumbers,
-  findSeasonPackFile,
+  findSeasonPackFiles,
   deleteMedia,
   resolveMediaToken,
   probeMediaFile,
@@ -1363,6 +1363,10 @@ const server = http.createServer(async (req, res) => {
       // episode (the pre-1.7.3 layout).
       const season = Number.isInteger(body.season) ? body.season : Number.parseInt(body.season, 10);
       const episode = Number.isInteger(body.episode) ? body.episode : Number.parseInt(body.episode, 10);
+      // Optional: which "Part-01"/"Part-02"/... batch this is, when the
+      // source split the season that way (see findPartLabel) - tagged onto
+      // the saved filename so findSeasonPackFiles can tell the parts apart.
+      const part = body.part ? String(body.part).trim() : null;
 
       if (!downloadUrl && !(candidates && candidates.length)) {
         sendJson(res, 400, { error: "url is required" });
@@ -1378,6 +1382,7 @@ const server = http.createServer(async (req, res) => {
         candidates,
         season: Number.isFinite(season) ? season : null,
         episode: Number.isFinite(episode) ? episode : null,
+        part,
       });
       sendJson(res, 202, { message: "Download started", job: getJob(job.id) });
     } catch (err) {
@@ -1685,9 +1690,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Whether this season has a single whole-season file (main-source TV
-  // downloads publish exactly this) - used for a "Play all episodes"
-  // option on the season, shown only when that file actually exists.
+  // Whether this season has one or more whole-season files (main-source TV
+  // downloads publish exactly this, possibly split into "Part-01"/"Part-02"/
+  // ... batches - see v1.7.23/v1.7.24) - used for a "Play all episodes" (or
+  // one "Play Part-NN" per part) option on the season, shown only when that
+  // file actually exists.
   if (url === "/api/downloads/season-pack" && req.method === "GET") {
     try {
       const searchParams = new URL(req.url, "http://localhost").searchParams;
@@ -1698,8 +1705,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "tmdbId or title, plus season, are required" });
         return;
       }
-      const file = findSeasonPackFile({ tmdbId, title, season: Number(season) });
-      sendJson(res, 200, { token: file?.token || null });
+      const parts = findSeasonPackFiles({ tmdbId, title, season: Number(season) });
+      sendJson(res, 200, { parts });
     } catch (err) {
       sendJson(res, 500, { error: err.message });
     }
