@@ -1705,7 +1705,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "tmdbId or title, plus season, are required" });
         return;
       }
-      const parts = findSeasonPackFiles({ tmdbId, title, season: Number(season) });
+      const parts = await findSeasonPackFiles({ tmdbId, title, season: Number(season) });
       sendJson(res, 200, { parts });
     } catch (err) {
       sendJson(res, 500, { error: err.message });

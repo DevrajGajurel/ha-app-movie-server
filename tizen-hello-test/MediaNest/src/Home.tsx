@@ -27,7 +27,7 @@ import { ExitConfirm } from "./ExitConfirm";
 type View = SidebarView;
 
 interface HomeProps {
-  onPlay: (movie: Movie, fileToken?: string) => void;
+  onPlay: (movie: Movie, fileToken?: string, startAtSeconds?: number) => void;
   // True while Player is showing on top - Home stays mounted underneath
   // (see App.tsx) rather than unmounting, so its own keydown handling and
   // the hero rotation timer must stand down instead of running alongside
@@ -259,12 +259,12 @@ export function Home({ onPlay, suspended }: HomeProps) {
     setOpenDetail(movie);
   }
 
-  function handlePlayFromDetail(movie: Movie, fileToken?: string) {
+  function handlePlayFromDetail(movie: Movie, fileToken?: string, startAtSeconds?: number) {
     // Detail stays open (just hidden along with the rest of Home while
     // Player is showing - see App.tsx) instead of closing here, so Back
     // from the player returns to this same Detail page rather than Home's
     // browse view.
-    onPlay(movie, fileToken);
+    onPlay(movie, fileToken, startAtSeconds);
   }
 
   function handleDownloadFromDetail(movie: Movie, episode?: { seasonNumber: number; episodeNumber: number }) {
@@ -421,7 +421,7 @@ export function Home({ onPlay, suspended }: HomeProps) {
           key={openDetail.link}
           movie={openDetail}
           downloaded={isDownloaded(openDetail, downloaded)}
-          onPlay={(fileToken) => handlePlayFromDetail(openDetail, fileToken)}
+          onPlay={(fileToken, startAtSeconds) => handlePlayFromDetail(openDetail, fileToken, startAtSeconds)}
           onDownload={(episode) => handleDownloadFromDetail(openDetail, episode)}
           onDeleted={() => {
             setOpenDetail(null);

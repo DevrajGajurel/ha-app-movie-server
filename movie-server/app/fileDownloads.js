@@ -194,11 +194,19 @@ function withEpisodeTag(filename, season, episode) {
 // findPartLabel in main.js) so findSeasonPackFiles can tell the parts of a
 // split season apart - the source's own filename doesn't reliably carry
 // this, and without it every part would look like the same untagged pack.
+// Also carries the batch's episode range (e.g. "Ep.01-06"), when the source
+// listed one, so findSeasonPackFiles can later estimate where each episode
+// starts within the part (proportionally by TMDB runtime - see
+// estimateEpisodeOffsetSeconds on the frontend) without ever having to
+// re-scrape the original listing.
 function withPartTag(filename, part) {
-  const match = part ? /Part[-\s]?(\d+)/i.exec(part) : null;
-  if (!match) return filename;
-  const tag = `PART-${match[1].padStart(2, "0")}`;
-  return filename.toUpperCase().includes(tag) ? filename : `${tag} - ${filename}`;
+  const partMatch = part ? /Part[-\s]?(\d+)/i.exec(part) : null;
+  if (!partMatch) return filename;
+  const partNum = partMatch[1].padStart(2, "0");
+  const epMatch = /Ep\.?\s*(\d+)\s*-\s*(\d+)/i.exec(part);
+  const epTag = epMatch ? ` EP${epMatch[1].padStart(2, "0")}-${epMatch[2].padStart(2, "0")}` : "";
+  const tag = `PART-${partNum}${epTag}`;
+  return filename.toUpperCase().includes(`PART-${partNum}`) ? filename : `${tag} - ${filename}`;
 }
 
 function writeMarker(dir, data) {
@@ -953,27 +961,44 @@ function findDownloadedEpisodeNumbers({ tmdbId, title, season }) {
 // scoped to this season's own folder so a same-named pack sitting in a
 // different season isn't matched. Returns every matching file (there can be
 // more than one when the season was downloaded as multiple parts), sorted
-// by part number so a "Play Part-01/02/03" row lists them in order.
-function findSeasonPackFiles({ tmdbId, title, season }) {
+// by part number so a "Play Part-01/02/03" row lists them in order. Each
+// entry also carries its actual duration (probed once, then cached - see
+// probeMediaFile) plus the episode range tagged on it at download time
+// (withPartTag), if any, so the frontend can estimate per-episode start
+// offsets proportionally by TMDB runtime without decoding the file itself.
+async function findSeasonPackFiles({ tmdbId, title, season }) {
   const seasonFolder = seasonFolderName(season);
   const episodeTagPattern = /S\d{2}E\d{2}/i;
   const partTagPattern = /PART-(\d+)/i;
+  const epRangeTagPattern = /EP(\d+)-(\d+)/i;
   const files = findMediaFiles({ tmdbId, title }).filter((f) => {
     const segments = f.token.split("/");
     const parentDir = segments[segments.length - 2];
     if (parentDir !== seasonFolder) return false;
     return !episodeTagPattern.test(f.filename.toUpperCase());
   });
-  return files
-    .map((f) => {
-      const m = partTagPattern.exec(f.filename.toUpperCase());
-      return { token: f.token, part: m ? `Part-${m[1].padStart(2, "0")}` : null };
+
+  const entries = await Promise.all(
+    files.map(async (f) => {
+      const upper = f.filename.toUpperCase();
+      const partMatch = partTagPattern.exec(upper);
+      const epMatch = epRangeTagPattern.exec(upper);
+      const probe = await probeMediaFile(f.path);
+      return {
+        token: f.token,
+        part: partMatch ? `Part-${partMatch[1].padStart(2, "0")}` : null,
+        episodeFrom: epMatch ? Number.parseInt(epMatch[1], 10) : null,
+        episodeTo: epMatch ? Number.parseInt(epMatch[2], 10) : null,
+        durationSeconds: probe?.durationSeconds || null,
+      };
     })
-    .sort((a, b) => {
-      const an = a.part ? Number.parseInt(a.part.slice(5), 10) : 0;
-      const bn = b.part ? Number.parseInt(b.part.slice(5), 10) : 0;
-      return an - bn;
-    });
+  );
+
+  return entries.sort((a, b) => {
+    const an = a.part ? Number.parseInt(a.part.slice(5), 10) : 0;
+    const bn = b.part ? Number.parseInt(b.part.slice(5), 10) : 0;
+    return an - bn;
+  });
 }
 
 // Removes every downloaded folder matching a movie (all versions, plus the

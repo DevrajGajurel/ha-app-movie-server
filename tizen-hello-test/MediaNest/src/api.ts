@@ -491,6 +491,10 @@ export interface EpisodeDetail {
   still: string | null;
   airDate: string | null;
   rating: number | null;
+  // Minutes, from TMDB - null when TMDB has no runtime for this episode.
+  // Used to estimate where this episode starts inside a season-pack part
+  // (see estimateEpisodeOffsets in Detail.tsx).
+  runtimeMinutes: number | null;
 }
 
 // Per-episode name/overview/still for the Detail page's episode grid -
@@ -599,6 +603,14 @@ export interface SeasonPackPart {
   // null when the season was downloaded as one single whole-season file
   // rather than split into "Part-01"/"Part-02"/... batches.
   part: string | null;
+  // The episode range this part covers (e.g. 1-6), when the source listed
+  // one at download time - null if unknown, in which case per-episode
+  // seeking within this part isn't possible (only "Play <part>" as a whole).
+  episodeFrom: number | null;
+  episodeTo: number | null;
+  // The part file's actual runtime, probed once server-side - used with
+  // each covered episode's TMDB runtime to estimate where it starts.
+  durationSeconds: number | null;
 }
 
 // Whether this season has one or more whole-season files on disk (main-

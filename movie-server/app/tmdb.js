@@ -674,6 +674,7 @@ async function getSeasonEpisodes(apiKey, tmdbId, seasonNumber) {
         overview: ep.overview || null,
         still: ep.still_path ? `${STILL_BASE}${ep.still_path}` : null,
         airDate: ep.air_date || null,
+        runtimeMinutes: ep.runtime || null,
         rating: ep.vote_average ? Number(ep.vote_average.toFixed(1)) : null,
       }))
     : [];

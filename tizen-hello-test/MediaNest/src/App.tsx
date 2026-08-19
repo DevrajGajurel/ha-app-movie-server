@@ -6,6 +6,7 @@ import type { Movie } from "./api";
 interface PlayingState {
   movie: Movie;
   fileToken?: string;
+  startAtSeconds?: number;
 }
 
 export function App() {
@@ -19,13 +20,17 @@ export function App() {
   return (
     <div className={"app" + (playing ? " playing" : "")}>
       <div style={playing ? { display: "none" } : undefined}>
-        <Home onPlay={(movie, fileToken) => setPlaying({ movie, fileToken })} suspended={!!playing} />
+        <Home
+          onPlay={(movie, fileToken, startAtSeconds) => setPlaying({ movie, fileToken, startAtSeconds })}
+          suspended={!!playing}
+        />
       </div>
       {playing && (
         <Player
           tmdbId={playing.movie.tmdb?.tmdbId ? String(playing.movie.tmdb.tmdbId) : null}
           title={playing.movie.tmdb?.tmdbTitle || playing.movie.title}
           fileToken={playing.fileToken}
+          startAtSeconds={playing.startAtSeconds}
           onClose={() => setPlaying(null)}
         />
       )}

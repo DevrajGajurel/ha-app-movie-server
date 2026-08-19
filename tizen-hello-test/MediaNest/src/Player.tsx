@@ -6,6 +6,10 @@ interface PlayerProps {
   tmdbId?: string | null;
   title: string;
   fileToken?: string | null;
+  // Seeks here once the player is ready, instead of resuming from saved
+  // progress - used when jumping straight to a specific episode's estimated
+  // start time inside a season-pack file (see Detail.tsx's episode grid).
+  startAtSeconds?: number;
   onClose: () => void;
 }
 
@@ -33,7 +37,7 @@ function trackLabel(t: { language: string | null; title: string | null; index: n
   return t.title || (t.language ? t.language.toUpperCase() : `Track ${t.index + 1}`);
 }
 
-export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps) {
+export function Player({ tmdbId = null, title, fileToken, startAtSeconds, onClose }: PlayerProps) {
   const player = usePlayer();
   const lastSaveAtRef = useRef(0);
   const rememberedAppliedRef = useRef(false);
@@ -124,8 +128,13 @@ export function Player({ tmdbId = null, title, fileToken, onClose }: PlayerProps
   useEffect(() => {
     if (!player.isReady || rememberedAppliedRef.current) return;
     rememberedAppliedRef.current = true;
+    // An explicit start point (a specific episode picked out of a season-
+    // pack file) always wins over resuming wherever this file was last left
+    // off - the user just chose exactly where to start.
+    const hasExplicitStart = Number.isFinite(startAtSeconds) && (startAtSeconds as number) > 0;
+    if (hasExplicitStart) player.seekToSeconds(startAtSeconds as number);
     getProgress(tmdbId, title, fileToken).then((progress) => {
-      if (progress && progress.positionSeconds >= RESUME_MIN_SECONDS) {
+      if (!hasExplicitStart && progress && progress.positionSeconds >= RESUME_MIN_SECONDS) {
         player.seekToSeconds(progress.positionSeconds);
       }
       if (progress && Number.isInteger(progress.audioTrack) && progress.audioTrack !== 0) {

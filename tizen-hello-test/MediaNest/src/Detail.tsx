@@ -17,7 +17,10 @@ import { Trailer } from "./Trailer";
 interface DetailProps {
   movie: Movie;
   downloaded: boolean;
-  onPlay: (fileToken?: string) => void;
+  // startAtSeconds: set when playing a single episode from within a
+  // season-pack file (see episodePlayback below) - seeks there once
+  // playback opens instead of resuming from whatever was last watched.
+  onPlay: (fileToken?: string, startAtSeconds?: number) => void;
   onDownload: (episode?: { seasonNumber: number; episodeNumber: number }) => void;
   onDeleted: () => void;
   onClose: () => void;
@@ -35,6 +38,30 @@ const EPISODE_GRID_COLUMNS = 6;
 
 function formatEpisodeYear(airDate: string | null): string {
   return airDate ? airDate.slice(0, 4) : "";
+}
+
+// Estimates where each episode a season-pack part covers starts within it,
+// proportionally by TMDB runtime - real episodes have variable intro/recap/
+// credits length so this is approximate, not a frame-accurate seek point,
+// but it's the only cheap option when the file has no chapter markers of
+// its own (confirmed absent on real downloaded packs). Returns nothing for
+// a part with no episode range tagged on it, or no TMDB runtime data to
+// divide by - callers fall back to the "Play <part>" button in that case.
+function estimateEpisodeOffsets(part: SeasonPackPart, episodes: EpisodeDetail[]): Map<number, number> {
+  const offsets = new Map<number, number>();
+  if (part.episodeFrom == null || part.episodeTo == null || !part.durationSeconds) return offsets;
+  const covered = episodes
+    .filter((e) => e.episodeNumber >= part.episodeFrom! && e.episodeNumber <= part.episodeTo!)
+    .sort((a, b) => a.episodeNumber - b.episodeNumber);
+  const totalRuntime = covered.reduce((sum, e) => sum + (e.runtimeMinutes || 0), 0);
+  if (!covered.length || totalRuntime <= 0) return offsets;
+
+  let cumulativeMinutes = 0;
+  for (const ep of covered) {
+    offsets.set(ep.episodeNumber, Math.round((cumulativeMinutes / totalRuntime) * part.durationSeconds));
+    cumulativeMinutes += ep.runtimeMinutes || 0;
+  }
+  return offsets;
 }
 
 export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClose, paused }: DetailProps) {
@@ -59,6 +86,20 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
   // library, never as a guess.
   const [seasonPackParts, setSeasonPackParts] = useState<SeasonPackPart[]>([]);
   const [seasonPackFocusIdx, setSeasonPackFocusIdx] = useState(0);
+
+  // Per-episode {token, startAtSeconds} for episodes covered by a season-
+  // pack part rather than their own file - lets the episode grid play a
+  // single episode directly (seeking into the part) alongside the "Play
+  // <part>" buttons above, instead of only offering the whole part.
+  const episodePlayback = useMemo(() => {
+    const map = new Map<number, { token: string; startAtSeconds: number }>();
+    for (const part of seasonPackParts) {
+      for (const [episodeNumber, startAtSeconds] of estimateEpisodeOffsets(part, episodes)) {
+        map.set(episodeNumber, { token: part.token, startAtSeconds });
+      }
+    }
+    return map;
+  }, [seasonPackParts, episodes]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -169,13 +210,22 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     episodeRefs.current[episodeFocusIdx]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focusRegion, episodeFocusIdx]);
 
-  // Selecting an episode card always opens the download popup - same as a
-  // poster in the main grid always opening Detail regardless of whether
-  // it's downloaded. The popup itself offers "Play" when it detects this
-  // episode is already downloaded; the "downloaded" badge on the card
-  // (mirroring PosterCard's play icon) is a visual indicator only.
+  // Selecting an episode card opens the download popup, same as a poster in
+  // the main grid always opening Detail regardless of whether it's
+  // downloaded - the popup itself offers "Play" when it detects this
+  // episode is already downloaded on its own (shegu per-episode) file.
+  // A season-pack-covered episode has no such per-episode file for the
+  // popup to find, so it's handled here instead: play straight into the
+  // part at its estimated start offset rather than opening the popup at all.
   function selectEpisode(ep: EpisodeDetail) {
     if (!currentSeason) return;
+    if (!downloadedEpisodeNumbers.has(ep.episodeNumber)) {
+      const pack = episodePlayback.get(ep.episodeNumber);
+      if (pack) {
+        onPlay(pack.token, pack.startAtSeconds);
+        return;
+      }
+    }
     onDownload({ seasonNumber: currentSeason.seasonNumber, episodeNumber: ep.episodeNumber });
   }
 
@@ -191,10 +241,14 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     }
     if (focusRegion === "episodes") {
       const ep = episodes[episodeFocusIdx];
-      if (ep && currentSeason && downloadedEpisodeNumbers.has(ep.episodeNumber)) {
+      if (!ep || !currentSeason) return;
+      if (downloadedEpisodeNumbers.has(ep.episodeNumber)) {
         getEpisodeFileToken(tmdbId, title, currentSeason.seasonNumber, ep.episodeNumber).then((tok) => {
           if (tok) onPlay(tok);
         });
+      } else {
+        const pack = episodePlayback.get(ep.episodeNumber);
+        if (pack) onPlay(pack.token, pack.startAtSeconds);
       }
       return;
     }
@@ -285,6 +339,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
     isTv,
     onClose,
     downloadedEpisodeNumbers,
+    episodePlayback,
     seasonPackParts,
     seasonPackFocusIdx,
     seriesResume,
@@ -407,7 +462,7 @@ export function Detail({ movie, downloaded, onPlay, onDownload, onDeleted, onClo
                     ) : (
                       <div className="episode-card-thumb" />
                     )}
-                    {downloadedEpisodeNumbers.has(ep.episodeNumber) ? (
+                    {downloadedEpisodeNumbers.has(ep.episodeNumber) || episodePlayback.has(ep.episodeNumber) ? (
                       <div className="poster-play-icon episode-play-icon">▶</div>
                     ) : null}
                   </div>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.26 / MediaNest 1.0.14
+
+- Added per-episode playback inside a season-pack part, alongside (not instead of) the "Play Part-NN" buttons from v1.7.25. Checked a real downloaded pack with ffprobe first: it has zero chapter markers (`-show_chapters` returns an empty list), so there's no exact metadata to read an episode's start time from - the only cheap option is estimating it, by dividing the part's actual runtime proportionally across its episodes' TMDB runtimes. This is approximate (real intro/recap/credits length varies per episode, so a seek point can drift by roughly a minute), not frame-accurate, but is the only option that doesn't require decoding the whole file.
+- The episode range a part covers (e.g. "Ep.01-06") was already scraped at download time (`findPartLabel`, v1.7.23) - it's now tagged onto the saved filename alongside the existing `PART-01` tag (`withPartTag`, fileDownloads.js: `PART-01 EP01-06 - filename.mkv`) so it survives without needing to re-scrape anything. `findSeasonPackFiles` parses both tags back out and now also probes each part's actual duration (`probeMediaFile`, already cached from prior scans).
+- TMDB's per-episode `runtime` field is now included in `/api/tmdb/season` (`EpisodeDetail.runtimeMinutes`).
+- MediaNest's Detail page: an episode covered by a season-pack part (and not otherwise individually downloaded) now shows the same "downloaded" ▶ badge the per-episode-file case already had, and selecting it (or the dedicated remote Play key) jumps straight into that part, seeking to the estimated start - instead of opening the download popup for something that's already there. Player accepts a new `startAtSeconds`, which takes priority over resuming from previously-saved progress since picking a specific episode is an explicit choice of where to start.
+- Backwards compatible: parts downloaded before this change have no episode-range tag, so they keep offering only the "Play Part-NN" button, exactly as before - no backfilling needed or attempted.
+
 ## 1.7.25 / MediaNest 1.0.13
 
 - "Play All Episodes" now offers one button per part when a season was downloaded as split "Part-01"/"Part-02"/... batches, instead of a single button that could only ever point at one of them. Previously `findSeasonPackFile` (fileDownloads.js) picked whichever season-pack file it found first via `.find()`, so a season split into 3 parts silently lost 2/3 of the library to the UI.
