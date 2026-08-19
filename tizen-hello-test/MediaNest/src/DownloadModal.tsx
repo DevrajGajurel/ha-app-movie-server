@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   getDownloadOptions,
   getEpisodeDownloadOptions,
@@ -11,9 +11,32 @@ import {
   type SeasonInfo,
 } from "./api";
 
+// Mirrors the dashboard's own parseSeasonHint (public/index.html) - a
+// season range like "S1-S3" covering one file has no single correct
+// season folder, so only an unambiguous single-season match is used.
+function parseSeasonHint(text: string): { from: number; to: number } | null {
+  const range = text.match(/S(\d{1,2})\s*-\s*S(\d{1,2})/i);
+  if (range) return { from: Number.parseInt(range[1], 10), to: Number.parseInt(range[2], 10) };
+  const single = text.match(/S(\d{1,2})/i);
+  if (single) {
+    const n = Number.parseInt(single[1], 10);
+    return { from: n, to: n };
+  }
+  return null;
+}
+
 interface DownloadModalProps {
   pageUrl: string;
   movieTitle: string;
+  // The raw scraped listing title (e.g. "Breaking Bad S05 (2012)..."),
+  // distinct from movieTitle which prefers TMDB's clean title - only used
+  // to guess a main-source TV listing's season when nothing more precise
+  // (initialEpisode, from Detail's own episode grid) is available.
+  scrapedTitle?: string;
+  // Which listing site this came from - shegu's per-episode resolution
+  // only applies to "secondary"; everything else (including undefined,
+  // i.e. the main source) downloads a TV show the same way as a movie.
+  source?: string;
   tmdbId: string | null;
   mediaType: "movie" | "tv";
   seasons?: SeasonInfo[];
@@ -36,6 +59,8 @@ type Stage =
 export function DownloadModal({
   pageUrl,
   movieTitle,
+  scrapedTitle,
+  source,
   tmdbId,
   mediaType,
   seasons,
@@ -45,6 +70,28 @@ export function DownloadModal({
   onDownloadStarted,
 }: DownloadModalProps) {
   const isTv = mediaType === "tv" && Boolean(seasons && seasons.length);
+  const isSecondary = source === "secondary";
+  // Only secondary-sourced TV gets shegu's per-episode picker - main-source
+  // TV downloads the same whole-season file a movie's own page would give
+  // it, just tagged with a season number (see mainSourceSeason below).
+  const useShegu = isTv && isSecondary;
+
+  // initialEpisode (set when opened from Detail's episode grid) reflects
+  // the season the user actually navigated to there via TMDB-driven season
+  // pills, which is authoritative over whatever season a scraped listing's
+  // own title happens to mention - falls back to guessing from the raw
+  // scraped title only when opened via the plain "Download" action
+  // instead. A range like "S1-S3" covering one file has no single correct
+  // season folder, so it's left untagged rather than guessed at.
+  const mainSourceSeason = useMemo(() => {
+    if (isTv && !isSecondary) {
+      if (initialEpisode) return initialEpisode.seasonNumber;
+      const hint = parseSeasonHint(scrapedTitle || "");
+      if (hint && hint.from === hint.to) return hint.from;
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- Movie flow state (unused when isTv) ----
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
@@ -76,7 +123,7 @@ export function DownloadModal({
   // appears above the season/episode picker instead of jumping straight to
   // quality options for something that's already here.
   const [existingToken, setExistingToken] = useState<string | null>(null);
-  const [checkingExisting, setCheckingExisting] = useState(Boolean(isTv && initialEpisode));
+  const [checkingExisting, setCheckingExisting] = useState(Boolean(useShegu && initialEpisode));
 
   const seasonList = seasons || [];
   const currentSeason = seasonList[seasonIdx];
@@ -93,12 +140,12 @@ export function DownloadModal({
   const ROW_LOAD_EPISODE = rowOffset + 3;
 
   useEffect(() => {
-    if (isTv) return; // TV never scrapes a listing page - seasons come from TMDB already
+    if (useShegu) return; // shegu resolves by tmdbId/season/episode, not a scraped page
     getDownloadOptions(pageUrl)
       .then((data) => setStage(data.options.length ? { kind: "quality", options: data.options } : { kind: "error", message: "No download links found on this page." }))
       .catch((err) => setStage({ kind: "error", message: err.message }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageUrl, isTv]);
+  }, [pageUrl, useShegu]);
 
   useEffect(() => {
     return () => {
@@ -111,18 +158,18 @@ export function DownloadModal({
   // first render, which would otherwise immediately wipe out an
   // initialEpisode's episode number before the user ever touched anything.
   useEffect(() => {
-    if (!isTv || lastSeasonIdxRef.current === seasonIdx) return;
+    if (!useShegu || lastSeasonIdxRef.current === seasonIdx) return;
     lastSeasonIdxRef.current = seasonIdx;
     setEpisodeNum(1);
     setEpisodeOptions(null);
-  }, [isTv, seasonIdx]);
+  }, [useShegu, seasonIdx]);
 
   // Opened from the Detail page's episode grid: check whether this exact
   // episode is already downloaded first. If so, show the "Play" row instead
   // of jumping straight to quality options for something that's already
   // here; if not, jump straight to quality options as before.
   useEffect(() => {
-    if (!isTv || !initialEpisode || !tmdbId) {
+    if (!useShegu || !initialEpisode || !tmdbId) {
       setCheckingExisting(false);
       return;
     }
@@ -158,7 +205,13 @@ export function DownloadModal({
 
   function pickDirect(option: DownloadOption) {
     setJobStatus((prev) => ({ ...prev, [option.href]: "Starting…" }));
-    startDownload({ url: option.href, label: option.label, movieTitle, tmdbId })
+    startDownload({
+      url: option.href,
+      label: option.label,
+      movieTitle,
+      tmdbId,
+      season: mainSourceSeason ?? undefined,
+    })
       .then((job) => {
         setJobStatus((prev) => ({ ...prev, [option.href]: "Queued…" }));
         pollJob(job.id, (status) => setJobStatus((prev) => ({ ...prev, [option.href]: status })));
@@ -246,9 +299,9 @@ export function DownloadModal({
 
   const options = stage.kind === "quality" ? stage.options : stage.kind === "direct" ? stage.options : [];
 
-  // ---- Movie-flow keyboard nav ----
+  // ---- Movie-flow keyboard nav (also main-source TV) ----
   useEffect(() => {
-    if (isTv) return;
+    if (useShegu) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.keyCode === 10009 || e.keyCode === 27) {
         if (stage.kind === "direct") {
@@ -273,11 +326,11 @@ export function DownloadModal({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTv, stage, focusedIndex, options.length, pageUrl]);
+  }, [useShegu, stage, focusedIndex, options.length, pageUrl]);
 
-  // ---- TV-flow keyboard nav ----
+  // ---- TV-flow keyboard nav (shegu only) ----
   useEffect(() => {
-    if (!isTv) return;
+    if (!useShegu) return;
     const episodeRowCount = episodeOptions ? episodeOptions.length : 0;
     const maxRow = ROW_LOAD_EPISODE + episodeRowCount;
 
@@ -316,9 +369,9 @@ export function DownloadModal({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTv, tvRow, seasonIdx, episodeNum, currentSeason, episodeOptions, seasonList.length, existingToken]);
+  }, [useShegu, tvRow, seasonIdx, episodeNum, currentSeason, episodeOptions, seasonList.length, existingToken]);
 
-  if (isTv) {
+  if (useShegu) {
     return (
       <div className="download-popup-backdrop">
         <div className="download-popup" role="dialog" aria-labelledby="download-popup-title">
@@ -389,6 +442,13 @@ export function DownloadModal({
     );
   }
 
+  // Some seasons are split into "Part-01 (Ep.01-06)"/"Part-02"/... batches
+  // rather than one file per quality tier (see findPartLabel in main.js) -
+  // the backend already groups options by part in page order, so this just
+  // watches for the part value changing between consecutive options to
+  // know where to insert a header.
+  let lastPart: string | null | undefined;
+
   return (
     <div className="download-popup-backdrop">
       <div className="download-popup" role="dialog" aria-labelledby="download-popup-title">
@@ -398,12 +458,24 @@ export function DownloadModal({
         {(stage.kind === "quality" || stage.kind === "direct") && (
           <ul className="download-popup-list">
             {stage.kind === "direct" && <p className="download-popup-hint">{stage.parentLabel}</p>}
-            {options.map((option, i) => (
-              <li key={option.href} className={"download-popup-option" + (i === focusedIndex ? " focused" : "")}>
-                {option.label}
-                {jobStatus[option.href] ? <span className="download-popup-status"> — {jobStatus[option.href]}</span> : null}
-              </li>
-            ))}
+            {options.flatMap((option, i) => {
+              const nodes: ReactNode[] = [];
+              if (option.part && option.part !== lastPart) {
+                nodes.push(
+                  <li key={`part-${option.part}`} className="download-popup-part-header">
+                    {option.part}
+                  </li>
+                );
+              }
+              lastPart = option.part ?? null;
+              nodes.push(
+                <li key={option.href} className={"download-popup-option" + (i === focusedIndex ? " focused" : "")}>
+                  {option.label}
+                  {jobStatus[option.href] ? <span className="download-popup-status"> — {jobStatus[option.href]}</span> : null}
+                </li>
+              );
+              return nodes;
+            })}
           </ul>
         )}
       </div>

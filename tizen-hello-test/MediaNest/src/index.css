@@ -879,6 +879,23 @@ img {
   margin: 0;
 }
 
+.download-popup-part-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 10px 4px 4px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.download-popup-part-header:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .download-popup-option {
   padding: 14px 20px;
   margin-bottom: 8px;

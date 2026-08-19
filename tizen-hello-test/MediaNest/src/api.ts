@@ -225,6 +225,11 @@ export interface Movie {
   title: string;
   link: string;
   sourceOrder?: number;
+  // Which listing site this was scraped from - undefined/absent means the
+  // main source, "secondary" means the 4khdhub/shegu-backed one. TV
+  // downloads only use shegu's per-episode resolution for secondary-
+  // sourced shows; main-source TV downloads the same way a movie does.
+  source?: string;
   tmdb?: TmdbInfo;
 }
 
@@ -408,6 +413,9 @@ export function saveProgress(args: {
 export interface DownloadOption {
   label: string;
   href: string;
+  // Set when a season is split into "Part-01 (Ep.01-06)"/"Part-02"/... batches
+  // rather than one file per quality tier - see findPartLabel in main.js.
+  part?: string | null;
 }
 
 export interface SelectorDebug {

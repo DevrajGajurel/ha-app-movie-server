@@ -769,6 +769,48 @@ function selectorDiagnostics(document, selectors) {
   }));
 }
 
+// Some seasons are split into "Part-01 (Ep.01-06)"/"Part-02 (Ep.07-12)"/...
+// batches, each with its own quality tier of buttons - confirmed on real
+// pages (e.g. Breaking Bad S05) the split is marked by a plain text node
+// sitting as a sibling of the .dlink.dl divs, not a wrapping element, so
+// there's nothing to select - only page order to walk. Finds the closest
+// preceding text sibling (within the anchor's shared container) that looks
+// like a part marker, returning null when a page has no such split at all.
+const PART_LABEL_PATTERN = /Part[-\s]?\d+/i;
+
+function findPartLabel(anchor) {
+  const container = anchor.closest(".dlink.dl")?.parentElement || anchor.parentElement?.parentElement;
+  const ownDiv = anchor.closest(".dlink.dl") || anchor.parentElement;
+  if (!container || !ownDiv) return null;
+
+  let currentPart = null;
+  for (const node of container.childNodes) {
+    if (node === ownDiv) break;
+    if (node.nodeType === 3 /* TEXT_NODE */) {
+      const text = String(node.textContent || "").trim();
+      if (PART_LABEL_PATTERN.test(text)) {
+        currentPart = text.replace(/^[<~\s]+|[~>\s]+$/g, "").replace(/[{}]/g, "").trim();
+      }
+    }
+  }
+  return currentPart;
+}
+
+// Groups already-mapped {label, href, part} options by their part label
+// (Map preserves first-seen order, i.e. page order - Part-01 before
+// Part-02 before Part-03), sorting only within each group so the parts
+// themselves are never interleaved by size. A page with no part markers
+// at all collapses to one group keyed "", identical to the old flat sort.
+function sortDownloadOptionsGroupedByPart(options) {
+  const groups = new Map();
+  for (const opt of options) {
+    const key = opt.part || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(opt);
+  }
+  return [...groups.values()].flatMap((group) => sortDownloadOptions(group));
+}
+
 function collectAnchors(document, selectors) {
   const seen = new Set();
   const anchors = [];
@@ -803,9 +845,10 @@ async function fetchDownloadOptions(pageUrl, source = null) {
   }
 
   const baseUrl = resolvedUrl || pageUrl;
-  const options = sortDownloadOptions(anchors.map((anchor) => ({
+  const options = sortDownloadOptionsGroupedByPart(anchors.map((anchor) => ({
     label: (anchor.querySelector(".dll")?.textContent || anchor.textContent || "Download").trim(),
     href: new URL(anchor.getAttribute("href"), baseUrl).href,
+    part: findPartLabel(anchor),
   })));
 
   // Each option.href is itself a page (e.g. linkmake.in) that has to be

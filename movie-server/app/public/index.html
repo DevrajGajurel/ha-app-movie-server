@@ -633,6 +633,23 @@
       cursor: pointer;
     }
 
+    .download-part-header {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      padding: 0.5rem 0.1rem 0.1rem;
+      margin-top: 0.25rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .download-part-header:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+
     button.download-option {
       font-family: inherit;
     }
@@ -2073,17 +2090,27 @@
       });
     }
 
+    // Some seasons are split into "Part-01 (Ep.01-06)"/"Part-02"/... batches
+    // (see findPartLabel in main.js) - the backend already groups options by
+    // part in page order, so this just watches for the part value changing
+    // between consecutive options to know where to insert a header.
     function renderQualityOptions(options) {
+      let lastPart;
       return `
         <ul class="download-list">
-          ${options.map((option) => `
+          ${options.map((option) => {
+            const showHeader = option.part && option.part !== lastPart;
+            lastPart = option.part;
+            return `
+            ${showHeader ? `<li class="download-part-header">${escapeHtml(option.part)}</li>` : ""}
             <li>
-              <button type="button" class="download-option download-picker" data-url="${escapeAttr(option.href)}" data-label="${escapeAttr(option.label)}">
+              <button type="button" class="download-option download-picker" data-url="${escapeAttr(option.href)}" data-label="${escapeAttr(option.part ? `[${option.part}] ${option.label}` : option.label)}">
                 ${escapeHtml(option.label)}
                 <span>${escapeHtml(option.href)}</span>
               </button>
             </li>
-          `).join("")}
+          `;
+          }).join("")}
         </ul>
       `;
     }

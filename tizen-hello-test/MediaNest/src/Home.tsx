@@ -435,6 +435,8 @@ export function Home({ onPlay, suspended }: HomeProps) {
         <DownloadModal
           pageUrl={getMoviePageLink(openDownload)}
           movieTitle={openDownload.tmdb?.tmdbTitle || openDownload.title}
+          scrapedTitle={openDownload.title}
+          source={openDownload.source}
           tmdbId={openDownload.tmdb?.tmdbId ? String(openDownload.tmdb.tmdbId) : null}
           mediaType={openDownload.tmdb?.type === "tv" ? "tv" : "movie"}
           seasons={openDownload.tmdb?.seasons}

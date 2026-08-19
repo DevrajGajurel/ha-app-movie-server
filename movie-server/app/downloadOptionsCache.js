@@ -42,18 +42,31 @@ function keyFor(pageUrl, source) {
   return `${CACHE_PREFIX}${source || "primary"}:${pageUrl}`;
 }
 
+// A result with zero options is never trustworthy to reuse - it's
+// indistinguishable from a transient failure (a moved page, a Cloudflare
+// challenge that didn't clear, a selector miss) rather than the page
+// genuinely having nothing, and caching it for the full multi-hour TTL
+// meant one bad resolution stuck around blocking every real attempt after
+// it (confirmed: exactly this happened on a real page - "0 matches"
+// served back repeatedly instead of ever retrying live).
+function hasUsableOptions(result) {
+  return Boolean(result?.options?.length);
+}
+
 async function getCachedDirectOptions(pageUrl, source) {
   if (!client?.isReady) return null;
   try {
     const raw = await client.get(keyFor(pageUrl, source));
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return hasUsableOptions(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
 async function setCachedDirectOptions(pageUrl, source, result) {
-  if (!client?.isReady) return;
+  if (!client?.isReady || !hasUsableOptions(result)) return;
   try {
     await client.set(keyFor(pageUrl, source), JSON.stringify(result), { EX: CACHE_TTL_SEC });
   } catch (err) {
