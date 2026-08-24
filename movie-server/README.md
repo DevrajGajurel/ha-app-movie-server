@@ -11,7 +11,7 @@ Run the Movie Server dashboard inside Home Assistant with Ingress (sidebar panel
 - `tmdb_api_key` — [TMDB API key](https://www.themoviedb.org/settings/api) for posters, genres, and filters
 - `download_dir` — defaults to `/media` (e.g. `/media/Plex_Media` for Plex)
 - `max_pages` — defaults to `5`
-- `emby_url` — Emby server URL (optional, e.g. `http://192.168.1.10:8096`)
+- `emby_url` — Emby server URL 
 - `emby_api_key` — Emby API key from Dashboard → Advanced → API Keys
 
 ## Advanced options (hidden by default)
