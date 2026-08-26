@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.35
+
+- Fixed "Watch Trailer" never working, in MediaNest or the dashboard: `trailer.js`'s `/api/trailer` route (`streamYoutubeTrailer`) has always shelled out to `yt-dlp` to resolve a direct stream URL, but the Dockerfile never actually installed it - every attempt failed with a plain "command not found", surfaced to the user as a generic "Could not resolve trailer" with no clue why. Confirmed the actual resolution logic itself is fine: ran the exact same `yt-dlp -f "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<=1080]/best" -g` command trailer.js uses against a real YouTube video and it correctly returned two direct googlevideo.com stream URLs - this was purely a missing dependency.
+- `yt-dlp` is now installed via pip (`python3`/`python3-pip` + `pip install yt-dlp`) rather than yt-dlp's own standalone binary release, since that release is amd64-only and this add-on also ships aarch64/armv7 (config.yaml's `arch` list) - the pure-Python pip package works identically on all three.
+- Startup log now reports `Trailers: enabled (yt-dlp found)` or a clear "not found on PATH" warning, instead of this only ever surfacing when a user actually clicks Trailer.
+- **Deployment note**: this is a Dockerfile change - Home Assistant Supervisor rebuilds the add-on's image from source on update, so no extra step beyond the usual update is needed, but it does mean this update will take longer than a code-only release while the image rebuilds.
+
 ## 1.7.34
 
 - `linkmake.in` pages now bypass FlareSolverr and fetch directly - verified live (a real "The Last Sunrise" linkmake.in page, HTTP 200 via plain fetch, no JS challenge) that this host serves its `class="dlink dl"` quality-tier links as static HTML, same as any normal page. Since this hop sat in the same "every download-page fetch goes through FlareSolverr" path as the genuinely-protected file-host pages (see v1.7.29), it was paying several-to-tens-of-seconds of unnecessary FlareSolverr cost on every popup open. Every other domain still requires FlareSolverr as before - this is a single, verified, named exception (`fetchPageHtml`'s new `PLAIN_FETCH_HOSTNAME_PATTERN`), not a general fallback.

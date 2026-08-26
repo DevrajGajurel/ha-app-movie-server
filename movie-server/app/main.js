@@ -23,7 +23,7 @@ const { parseHTML } = require("linkedom");
 const { enrichMovies, getTmdbById, suggestTitles, getSeasonEpisodes } = require("./tmdb");
 const { initTmdbCache } = require("./tmdbCache");
 const { parseKeywordList, tagQuality } = require("./quality");
-const { streamYoutubeTrailer } = require("./trailer");
+const { streamYoutubeTrailer, checkYtDlpAvailable } = require("./trailer");
 const {
   startDownload,
   hasEpisodeFile,
@@ -2248,6 +2248,9 @@ async function startServer() {
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`Job history: ${jobHistoryEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    checkYtDlpAvailable().then((available) => {
+      console.log(`Trailers:  ${available ? "enabled (yt-dlp found)" : "disabled - yt-dlp not found on PATH, trailer playback will fail"}`);
+    });
   });
 
   runSubtitlePrefetchSweep();

@@ -106,4 +106,13 @@ async function streamYoutubeTrailer(req, res, youtubeKey) {
   res.on("close", cleanup);
 }
 
-module.exports = { isValidYoutubeKey, streamYoutubeTrailer };
+// Startup-time sanity check (see main.js's boot log) - a missing yt-dlp
+// binary otherwise only ever surfaces when a user actually clicks Trailer,
+// as an opaque "Could not resolve trailer" with no clue why.
+function checkYtDlpAvailable() {
+  return new Promise((resolve) => {
+    execFile("yt-dlp", ["--version"], { timeout: 5000 }, (err) => resolve(!err));
+  });
+}
+
+module.exports = { isValidYoutubeKey, streamYoutubeTrailer, checkYtDlpAvailable };
