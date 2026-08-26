@@ -353,7 +353,15 @@ async function fetchPageViaFlareSolverr(targetUrl) {
     if (err.name === "AbortError") {
       throw new Error(`flaresolverr timed out after ${FLARESOLVERR_TIMEOUT_MS}ms`);
     }
-    throw new Error(`flaresolverr unreachable: ${err.message}`);
+    // Node's fetch wraps the real cause (DNS failure, connection refused,
+    // etc.) in err.cause rather than err.message, which is otherwise just
+    // the unhelpful generic "fetch failed" - surfacing it here is the
+    // difference between "flaresolverr unreachable: fetch failed" (nothing
+    // to act on) and "...: getaddrinfo ENOTFOUND homeassistant.local"
+    // (a DNS problem, likely a .local mDNS hostname that doesn't resolve
+    // from inside this container - use the raw IP instead).
+    const causeDetail = err.cause?.code || err.cause?.message;
+    throw new Error(`flaresolverr unreachable: ${err.message}${causeDetail ? ` (${causeDetail})` : ""}`);
   } finally {
     clearTimeout(timer);
   }

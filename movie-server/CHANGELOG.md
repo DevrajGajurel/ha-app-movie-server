@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.30
+
+- Fixed "flaresolverr unreachable: fetch failed" - root cause confirmed: `.local` mDNS hostnames (e.g. `homeassistant.local`) don't resolve reliably (or at all) from inside the add-on's container, since it has no mDNS resolver (`avahi`/`nss-mdns`) - even from a machine where mDNS partially works, `homeassistant.local` was seen resolving to a dead IPv6 link-local address that then failed to connect, and the add-on's container has neither that partial support nor a route to that address. `fetchPageViaFlareSolverr`'s error now surfaces the real underlying cause (`err.cause.code`, e.g. `ENOTFOUND`/`UND_ERR_SOCKET`) instead of just the generic, unhelpful "fetch failed", so this class of problem is self-diagnosing from the logs next time.
+- README: `flaresolverr_url` should be set to FlareSolverr's **IP address**, not a `.local` hostname, for the reason above.
+
 ## 1.7.29
 
 - `flaresolverr_url` is now a **required** add-on option, not optional. Every download-page fetch (both the quality-tier list and the direct/file-host resolution) now goes through FlareSolverr unconditionally instead of trying a plain `fetch()` first and only falling back on a detected challenge - this session alone turned up three distinct anti-bot fronts on these source sites (403 Cloudflare interstitials, HTTP 202 "vDDoS" JS challenges, signed click APIs), and chasing each with its own detection rule was a losing, ever-growing game. A real browser (via FlareSolverr) handles all of them the same way.
