@@ -1,19 +1,19 @@
 const { createClient } = require("redis");
 
-// The "direct" hop (fetchDirectDownloadOptions in main.js) resolves a
-// quality page (e.g. linkmake.in) into the actual file-host buttons - and
-// that inner page is exactly the one that sits behind a Cloudflare
-// Turnstile challenge (new1.filesdl.in -> new6.filesdl.top), so resolving
-// it costs anywhere from a few seconds to the full cf-clearance/browser
-// fallback timeout (tens of seconds). Same shape as streamResolve.js's
-// resolveInflight/Redis pair: an in-memory Map de-dupes concurrent callers
-// (the background prefetch and a real click landing on the same URL should
-// share one resolution, not spawn two browser sessions), and Redis persists
-// the result past a restart.
-const CACHE_PREFIX = "movieserver:v1:downloads:direct:";
+// Both hops of download-link resolution ("quality" - the source's own
+// listing page, and "direct" - the file-host page each quality option leads
+// to) now go through FlareSolverr unconditionally (v1.7.29), so a single
+// live resolution costs anywhere from a few seconds to FLARESOLVERR's full
+// challenge-solve timeout - tens of seconds - regardless of which hop it is.
+// Caching both the same way (same shape, same TTL, same in-flight dedup)
+// means re-opening the same title's download popup, or a background
+// prefetch racing a real click, only pays that cost once. Same shape as
+// streamResolve.js's resolveInflight/Redis pair: an in-memory Map de-dupes
+// concurrent callers, and Redis persists the result past a restart.
+const CACHE_PREFIX = "movieserver:v1:downloads:";
 const CACHE_TTL_SEC = Math.max(
   300,
-  Math.round((Number.parseFloat(process.env.DOWNLOAD_DIRECT_CACHE_HOURS) || 6) * 3600)
+  Math.round((Number.parseFloat(process.env.DOWNLOAD_OPTIONS_CACHE_HOURS) || 6) * 3600)
 );
 
 let client = null;
@@ -33,30 +33,30 @@ async function initDownloadOptionsCache(redisUrl) {
   }
 }
 
-// Keyed on (source, pageUrl) rather than pageUrl alone: the same page URL
-// can resolve differently depending on which site's flow led there (the
-// primary/secondary source sites don't necessarily serve identical content
-// for what looks like the same intermediate hop) - caching by URL only
-// risked serving one source's resolved links back for the other's request.
-function keyFor(pageUrl, source) {
-  return `${CACHE_PREFIX}${source || "primary"}:${pageUrl}`;
+// Keyed on (kind, source, pageUrl) rather than pageUrl alone: kind keeps the
+// "quality" and "direct" hops from colliding on a URL that happens to
+// appear in both (unlikely but free to rule out), and source keeps the
+// primary/secondary sites from serving one another's cached result for what
+// looks like the same intermediate hop.
+function keyFor(kind, pageUrl, source) {
+  return `${CACHE_PREFIX}${kind}:${source || "primary"}:${pageUrl}`;
 }
 
 // A result with zero options is never trustworthy to reuse - it's
-// indistinguishable from a transient failure (a moved page, a Cloudflare
-// challenge that didn't clear, a selector miss) rather than the page
-// genuinely having nothing, and caching it for the full multi-hour TTL
-// meant one bad resolution stuck around blocking every real attempt after
-// it (confirmed: exactly this happened on a real page - "0 matches"
-// served back repeatedly instead of ever retrying live).
+// indistinguishable from a transient failure (a moved page, a challenge
+// that didn't clear, a selector miss) rather than the page genuinely having
+// nothing, and caching it for the full multi-hour TTL meant one bad
+// resolution stuck around blocking every real attempt after it (confirmed:
+// exactly this happened on a real page - "0 matches" served back repeatedly
+// instead of ever retrying live).
 function hasUsableOptions(result) {
   return Boolean(result?.options?.length);
 }
 
-async function getCachedDirectOptions(pageUrl, source) {
+async function getCachedOptions(kind, pageUrl, source) {
   if (!client?.isReady) return null;
   try {
-    const raw = await client.get(keyFor(pageUrl, source));
+    const raw = await client.get(keyFor(kind, pageUrl, source));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return hasUsableOptions(parsed) ? parsed : null;
@@ -65,22 +65,22 @@ async function getCachedDirectOptions(pageUrl, source) {
   }
 }
 
-async function setCachedDirectOptions(pageUrl, source, result) {
+async function setCachedOptions(kind, pageUrl, source, result) {
   if (!client?.isReady || !hasUsableOptions(result)) return;
   try {
-    await client.set(keyFor(pageUrl, source), JSON.stringify(result), { EX: CACHE_TTL_SEC });
+    await client.set(keyFor(kind, pageUrl, source), JSON.stringify(result), { EX: CACHE_TTL_SEC });
   } catch (err) {
     console.warn("[downloads-cache] write failed:", err.message);
   }
 }
 
-// Cache-then-in-flight-then-live: repeat requests for the same (source,
-// URL) pair (a background prefetch racing a real click, or the user
-// reopening the same quality's direct list) share one resolution instead
-// of each paying the Cloudflare cost separately.
-async function resolveDirectOptionsCached(pageUrl, source, resolveLive) {
-  const inflightKey = keyFor(pageUrl, source);
-  const cached = await getCachedDirectOptions(pageUrl, source);
+// Cache-then-in-flight-then-live: repeat requests for the same (kind,
+// source, URL) tuple (a background prefetch racing a real click, or the
+// user reopening the same title/quality) share one resolution instead of
+// each paying the FlareSolverr cost separately.
+async function resolveOptionsCached(kind, pageUrl, source, resolveLive) {
+  const inflightKey = keyFor(kind, pageUrl, source);
+  const cached = await getCachedOptions(kind, pageUrl, source);
   if (cached) return { ...cached, cached: true };
 
   if (inflight.has(inflightKey)) {
@@ -89,7 +89,7 @@ async function resolveDirectOptionsCached(pageUrl, source, resolveLive) {
   }
 
   const pending = resolveLive()
-    .then((result) => setCachedDirectOptions(pageUrl, source, result).then(() => result))
+    .then((result) => setCachedOptions(kind, pageUrl, source, result).then(() => result))
     .finally(() => {
       inflight.delete(inflightKey);
     });
@@ -99,21 +99,20 @@ async function resolveDirectOptionsCached(pageUrl, source, resolveLive) {
   return { ...result, cached: false };
 }
 
-// Fire-and-forget: warms the cache for a batch of inner URLs (the quality
-// page's own "direct" hrefs, inheriting that page's own source) without
-// blocking whatever caller discovered them. Skips anything already cached
-// or already resolving so this can be called every time the quality list
-// loads without piling up duplicate browser/cf-clearance sessions for the
-// same (source, URL) pair.
-function prefetchDirectOptionsInBackground(pageUrls, source, resolveLive) {
+// Fire-and-forget: warms the cache for a batch of URLs of the given kind
+// without blocking whatever caller discovered them. Skips anything already
+// cached or already resolving so this can be called every time a listing
+// loads without piling up duplicate FlareSolverr sessions for the same
+// (kind, source, URL) tuple.
+function prefetchOptionsInBackground(kind, pageUrls, source, resolveLive) {
   for (const pageUrl of pageUrls) {
     if (!pageUrl) continue;
-    const inflightKey = keyFor(pageUrl, source);
+    const inflightKey = keyFor(kind, pageUrl, source);
     if (inflight.has(inflightKey)) continue;
-    getCachedDirectOptions(pageUrl, source).then((cached) => {
+    getCachedOptions(kind, pageUrl, source).then((cached) => {
       if (cached || inflight.has(inflightKey)) return;
-      console.log(`[downloads-cache] background prefetch (${source || "primary"}): ${pageUrl}`);
-      resolveDirectOptionsCached(pageUrl, source, () => resolveLive(pageUrl)).catch((err) => {
+      console.log(`[downloads-cache] background prefetch ${kind} (${source || "primary"}): ${pageUrl}`);
+      resolveOptionsCached(kind, pageUrl, source, () => resolveLive(pageUrl)).catch((err) => {
         console.warn(`[downloads-cache] background prefetch failed for ${pageUrl}:`, err.message);
       });
     });
@@ -122,6 +121,6 @@ function prefetchDirectOptionsInBackground(pageUrls, source, resolveLive) {
 
 module.exports = {
   initDownloadOptionsCache,
-  resolveDirectOptionsCached,
-  prefetchDirectOptionsInBackground,
+  resolveOptionsCached,
+  prefetchOptionsInBackground,
 };

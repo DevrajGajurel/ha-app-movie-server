@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.31
+
+- The quality-tier list stage of download resolution (the popup's first "Loading..." step) had no caching at all, unlike the direct/file-host stage - meaning every single popup open paid the full FlareSolverr cost (several seconds to tens of seconds, now that every page fetch goes through it - see v1.7.29) even for a title just opened seconds ago. `downloadOptionsCache.js` is now generalized (`resolveOptionsCached`/`prefetchOptionsInBackground`, both keyed by `(kind, source, pageUrl)` where `kind` is `"quality"` or `"direct"`) so the quality stage is cached in Redis exactly the same way the direct stage already was - same TTL, same in-flight de-dupe, same "never cache a zero-option result" rule.
+- The existing background prefetch (warms the "direct" cache for every quality option as soon as the quality list itself resolves, so a real click usually finds it already cached) is unaffected in behavior, just re-pointed at the generalized cache functions - and now also fires on a quality-list *cache hit*, not just a live resolution, so it keeps the direct cache warm across repeat visits too.
+
 ## 1.7.30
 
 - Fixed "flaresolverr unreachable: fetch failed" - root cause confirmed: `.local` mDNS hostnames (e.g. `homeassistant.local`) don't resolve reliably (or at all) from inside the add-on's container, since it has no mDNS resolver (`avahi`/`nss-mdns`) - even from a machine where mDNS partially works, `homeassistant.local` was seen resolving to a dead IPv6 link-local address that then failed to connect, and the add-on's container has neither that partial support nor a route to that address. `fetchPageViaFlareSolverr`'s error now surfaces the real underlying cause (`err.cause.code`, e.g. `ENOTFOUND`/`UND_ERR_SOCKET`) instead of just the generic, unhelpful "fetch failed", so this class of problem is self-diagnosing from the logs next time.

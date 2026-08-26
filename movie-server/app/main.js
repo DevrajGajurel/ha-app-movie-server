@@ -59,7 +59,7 @@ const { isEmbyConfigured, refreshLibrary, refreshAfterDownload, notifyAfterDelet
 const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
-const { initDownloadOptionsCache, resolveDirectOptionsCached, prefetchDirectOptionsInBackground } = require("./downloadOptionsCache");
+const { initDownloadOptionsCache, resolveOptionsCached, prefetchOptionsInBackground } = require("./downloadOptionsCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -828,7 +828,7 @@ function collectAnchors(document, selectors) {
   return anchors;
 }
 
-async function fetchDownloadOptions(pageUrl, source = null) {
+async function fetchDownloadOptionsLive(pageUrl) {
   let { document, url: resolvedUrl } = await fetchDownloadPageDocument(pageUrl);
   const selectors = DOWNLOAD_SELECTORS.quality;
   let anchors = collectAnchors(document, selectors);
@@ -852,19 +852,31 @@ async function fetchDownloadOptions(pageUrl, source = null) {
     part: findPartLabel(anchor),
   })));
 
-  // Each option.href is itself a page (e.g. linkmake.in) that has to be
-  // resolved one level deeper to find the actual file-host buttons - and
-  // that inner resolution is the one likely to hit a Cloudflare Turnstile
-  // challenge (new1.filesdl.in -> new6.filesdl.top). Warm the cache for all
-  // of them now, in the background, so that by the time the user actually
-  // clicks a quality the "direct" list is already resolved instead of
-  // paying the Cloudflare cost inside that click's own request.
-  prefetchDirectOptionsInBackground(options.map((o) => o.href), source, fetchDirectDownloadOptionsLive);
-
   return {
     options,
     selectors: selectorDiagnostics(document, selectors),
   };
+}
+
+// Cache-checked wrapper around fetchDownloadOptionsLive - see
+// downloadOptionsCache.js. FlareSolverr resolves every page fetch now
+// (v1.7.29), so a live quality-list resolution alone costs several seconds
+// to tens of seconds; caching this hop the same way the "direct" hop
+// already was means reopening the same title's download popup is instant
+// instead of paying that cost again every time.
+async function fetchDownloadOptions(pageUrl, source = null) {
+  const result = await resolveOptionsCached("quality", pageUrl, source, () => fetchDownloadOptionsLive(pageUrl));
+
+  // Each option.href is itself a page (e.g. linkmake.in) that has to be
+  // resolved one level deeper to find the actual file-host buttons - and
+  // that inner resolution is the one likely to hit a challenge of its own.
+  // Warm the cache for all of them now, in the background (skips anything
+  // already cached/inflight, so this is cheap to call on a cache hit too),
+  // so that by the time the user actually clicks a quality the "direct"
+  // list is already resolved instead of paying that cost inside the click.
+  prefetchOptionsInBackground("direct", result.options.map((o) => o.href), source, fetchDirectDownloadOptionsLive);
+
+  return result;
 }
 
 // Some file-host pages (new6.filesdl.top, confirmed live) replaced plain
@@ -976,7 +988,7 @@ async function fetchDirectDownloadOptionsLive(pageUrl) {
 // one that lands while it's still running joins the same in-flight
 // resolution instead of starting a second one.
 async function fetchDirectDownloadOptions(pageUrl, source = null) {
-  return resolveDirectOptionsCached(pageUrl, source, () => fetchDirectDownloadOptionsLive(pageUrl));
+  return resolveOptionsCached("direct", pageUrl, source, () => fetchDirectDownloadOptionsLive(pageUrl));
 }
 
 async function resolveDownloadLink(detailUrl) {
