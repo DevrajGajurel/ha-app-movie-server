@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.27
+
+- Dashboard: the quality-options popup now resolves each option's link through `/api/redirect` as soon as it's shown, and displays + uses the resolved URL instead of the raw one. Some source links (e.g. `new1.filesdl.in`) are themselves just a domain-alias redirect to a different domain (`new8.filesdl.top`) with the same path - clicking through with the raw alias URL sent the next scrape step at the wrong domain, which is one of the ways a "No direct download links found" could happen even though the real page works fine. Best-effort and non-blocking: each option still shows/uses its raw href immediately, and only updates once (if) the redirect check resolves.
+- `openapi.json`: removed the orphaned "Proxy" tag (declared but unused by any documented endpoint) and added the missing `GET /api/redirect` entry - it's existed in the server since the v1.7.24 secure-download-button work but was never added to the Swagger spec.
+
 ## 1.7.26 / MediaNest 1.0.14
 
 - Added per-episode playback inside a season-pack part, alongside (not instead of) the "Play Part-NN" buttons from v1.7.25. Checked a real downloaded pack with ffprobe first: it has zero chapter markers (`-show_chapters` returns an empty list), so there's no exact metadata to read an episode's start time from - the only cheap option is estimating it, by dividing the part's actual runtime proportionally across its episodes' TMDB runtimes. This is approximate (real intro/recap/credits length varies per episode, so a seek point can drift by roughly a minute), not frame-accurate, but is the only option that doesn't require decoding the whole file.

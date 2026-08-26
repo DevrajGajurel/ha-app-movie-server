@@ -2106,13 +2106,41 @@
             <li>
               <button type="button" class="download-option download-picker" data-url="${escapeAttr(option.href)}" data-label="${escapeAttr(option.part ? `[${option.part}] ${option.label}` : option.label)}">
                 ${escapeHtml(option.label)}
-                <span>${escapeHtml(option.href)}</span>
+                <span class="download-option-url">${escapeHtml(option.href)}</span>
               </button>
             </li>
           `;
           }).join("")}
         </ul>
       `;
+    }
+
+    // Some source links are themselves just a domain-alias redirect (e.g.
+    // new1.filesdl.in -> new8.filesdl.top, same path) rather than the actual
+    // page to scrape for the real file host - resolving each one upfront via
+    // the server's own redirect-check (/api/redirect, HEAD-only so it never
+    // downloads a file body) shows the real target and makes the next
+    // click-through scrape that page instead of the alias domain. Best-
+    // effort and non-blocking: the raw href already sits in data-url/the
+    // visible span, so a failed or slow resolution just leaves it as-is.
+    async function resolveQualityOptionRedirects(container, options) {
+      const buttons = container.querySelectorAll(".download-picker");
+      await Promise.all(
+        options.map(async (option, i) => {
+          const btn = buttons[i];
+          if (!btn) return;
+          try {
+            const res = await fetch(apiUrl(`redirect?url=${encodeURIComponent(option.href)}`));
+            const data = await res.json();
+            if (!res.ok || !data.url || data.url === option.href) return;
+            btn.dataset.url = data.url;
+            const span = btn.querySelector(".download-option-url");
+            if (span) span.textContent = data.url;
+          } catch {
+            // best-effort - raw href stays in place
+          }
+        })
+      );
     }
 
     function renderSelectorDebug(selectors) {
@@ -2503,6 +2531,7 @@
           season: mainSourceSeason,
         };
         downloadModalContent.innerHTML = renderQualityOptions(data.options);
+        resolveQualityOptionRedirects(downloadModalContent, data.options);
       } catch (err) {
         downloadModalContent.className = "download-state";
         downloadModalContent.textContent = err.message;
@@ -2924,6 +2953,7 @@
       if (backBtn) {
         e.preventDefault();
         downloadModalContent.innerHTML = renderQualityOptions(downloadModalState.options);
+        resolveQualityOptionRedirects(downloadModalContent, downloadModalState.options);
       }
     });
 

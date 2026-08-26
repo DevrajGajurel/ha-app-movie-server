@@ -15,7 +15,6 @@
     { "name": "Config" },
     { "name": "Movies" },
     { "name": "Downloads" },
-    { "name": "Proxy" },
     { "name": "Emby" }
   ],
   "paths": {
@@ -154,6 +153,37 @@
         ],
         "responses": {
           "200": { "description": "Download options" }
+        }
+      }
+    },
+    "/api/redirect": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "Resolve a URL's final redirect target",
+        "description": "Follows redirects (HEAD-first, GET fallback on 405/501) without downloading the response body - used to reveal the real file-host URL behind a source link before downloading it.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "URL to resolve."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved URL (same as the input if it wasn't redirected)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "url": { "type": "string", "format": "uri" } }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing or invalid url parameter" },
+          "500": { "description": "Resolution failed" }
         }
       }
     },
