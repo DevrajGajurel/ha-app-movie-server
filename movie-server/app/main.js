@@ -323,7 +323,14 @@ function classifyFetchFailure(response, body) {
 }
 
 const FLARESOLVERR_URL = cleanEnvValue(process.env.FLARESOLVERR_URL).replace(/\/$/, "");
-const FLARESOLVERR_TIMEOUT_MS = Number(process.env.FLARESOLVERR_TIMEOUT_MS || 60000);
+// Kept comfortably under common reverse-proxy default read-timeouts (often
+// 60s) - HA's own ingress sits in front of this add-on, and a FlareSolverr
+// solve slow enough to run past that would otherwise let the proxy hand the
+// browser its own short, non-JSON response before this server's clean
+// timeout error (which is always valid JSON, even on failure) gets a
+// chance to. Still generous for a real solve - the confirmed real-world
+// case this was built around solved in a couple of seconds.
+const FLARESOLVERR_TIMEOUT_MS = Number(process.env.FLARESOLVERR_TIMEOUT_MS || 45000);
 
 // Required, self-hosted, external to this container: https://github.com/FlareSolverr/FlareSolverr
 // POST {FLARESOLVERR_URL} { cmd: "request.get", url, maxTimeout } -> { status: "ok"|"error", solution: { response: "<html>", url } }
@@ -374,7 +381,14 @@ async function fetchPageViaFlareSolverr(targetUrl) {
   }
 
   if (!response.ok || data?.status !== "ok" || !data?.solution?.response) {
-    throw new Error(data?.message || `flaresolverr failed (HTTP ${response.status}, status ${data?.status})`);
+    // data.message is FlareSolverr's own diagnostic text - sometimes a
+    // clear sentence, sometimes a raw error from whatever it hit trying to
+    // load the target page (confirmed: seen JSON-parse-error-shaped text
+    // here, from FlareSolverr's own handling of an odd response upstream).
+    // Prefixing with the target URL turns either case into something
+    // actionable instead of a bare, context-free string.
+    const reason = data?.message || `HTTP ${response.status}, status ${data?.status}`;
+    throw new Error(`flaresolverr failed to solve ${targetUrl}: ${reason}`);
   }
 
   const html = String(data.solution.response);

@@ -1480,6 +1480,29 @@
       return `${base}api/${path.replace(/^\//, "")}`;
     }
 
+    // Download-link resolution now waits on FlareSolverr for every page
+    // (v1.7.29), which can run tens of seconds - long enough that a
+    // reverse proxy sitting in front of this server (e.g. Home Assistant's
+    // ingress) can time the request out and hand back its own short,
+    // non-JSON response before this server's own real (valid-JSON, even on
+    // failure) response gets through. A bare res.json() on that surfaces as
+    // a raw "Unexpected non-whitespace character..." parse error instead of
+    // something a user can act on - this always throws a clean message
+    // instead, whether the body was valid JSON or not.
+    async function parseJsonResponse(res) {
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        console.warn("[downloads] non-JSON response", res.status, text.slice(0, 200));
+        throw new Error(
+          res.ok
+            ? "Server sent back something unexpected (likely a proxy timeout) - try again."
+            : `Request failed (HTTP ${res.status}) - try again.`
+        );
+      }
+    }
+
     function normalizeTitle(value) {
       return String(value || "")
         .toLowerCase()
@@ -2190,7 +2213,7 @@
           `downloads?url=${encodeURIComponent(pageUrl)}&type=direct&source=${encodeURIComponent(downloadModalState.source || "primary")}`
         )
       );
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || res.statusText);
 
       if (!data.options?.length) {
@@ -2482,7 +2505,7 @@
           const res = await fetch(
             apiUrl(`downloads?source=secondary&tmdbId=${encodeURIComponent(tmdbId)}&mediaType=movie`)
           );
-          const data = await res.json();
+          const data = await parseJsonResponse(res);
           if (!res.ok) throw new Error(data.error || res.statusText);
 
           downloadModalState.options = data.options || [];
@@ -2509,7 +2532,7 @@
         const res = await fetch(
           apiUrl(`downloads?url=${encodeURIComponent(pageUrl)}&source=${encodeURIComponent(source || "primary")}`)
         );
-        const data = await res.json();
+        const data = await parseJsonResponse(res);
         if (!res.ok) throw new Error(data.error || res.statusText);
 
         if (!data.options?.length) {

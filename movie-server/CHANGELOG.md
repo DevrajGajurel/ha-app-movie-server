@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.33
+
+- Investigated the raw "Unexpected non-whitespace character after JSON at position 3 (line 1 column 4)" error reported on "The Last Sunrise": checked Redis directly and the cached entry for that exact page was valid (6 real download links, correctly cached) - nothing corrupted was stuck there, and by design a failed resolution is never written to cache (only a `.then()` on a successful live resolution ever calls `setCachedOptions`, so a rejected/thrown resolution skips it entirely). The cryptic text itself is most likely FlareSolverr's own diagnostic message about whatever it hit resolving the target page, previously thrown to the user completely without context.
+- `fetchPageViaFlareSolverr`'s failure message is now prefixed with the URL it was trying to solve ("flaresolverr failed to solve <url>: <reason>") instead of a bare, context-free string.
+- Dashboard: quality-list and direct-link fetches (the two stages that wait on FlareSolverr) now parse their response defensively (`parseJsonResponse`) - a genuinely non-JSON response (e.g. a reverse-proxy timeout page cutting in front of this server's own always-valid-JSON response) now shows a clean, actionable message instead of the raw parser error.
+- Reduced FlareSolverr's default timeout from 60s to 45s (still overridable via `FLARESOLVERR_TIMEOUT_MS`) - comfortably under common reverse-proxy default read-timeouts (Home Assistant's own ingress sits in front of this add-on), so this server's own clean timeout error has a chance to win the race and reach the browser as valid JSON, rather than risking the proxy cutting the connection first.
+
 ## 1.7.32
 
 - Added `GET /api/flaresolverr/test?url=...` - a debug endpoint that fetches any URL through FlareSolverr exactly the way the real download-resolution flow does (`fetchPageHtml`), and returns the solved page's raw HTML directly (not wrapped in JSON), with the actually-resolved URL echoed in an `X-Flaresolverr-Resolved-Url` header. Lets a suspected anti-bot page - or a `flaresolverr_url` connectivity problem - be checked straight from Swagger instead of needing to reproduce it through a real download popup and read server logs. Documented in `openapi.json`.
