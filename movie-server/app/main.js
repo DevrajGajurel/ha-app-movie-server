@@ -2016,6 +2016,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Debug/test endpoint: fetch any URL through FlareSolverr and return the
+  // solved page's raw HTML, exactly as fetchPageHtml would see it - lets a
+  // suspected anti-bot page (or a flaresolverr_url/connectivity problem) be
+  // checked directly from Swagger instead of needing a real download popup
+  // and log-reading to reproduce.
+  if (url === "/api/flaresolverr/test" && req.method === "GET") {
+    try {
+      const targetUrl = new URL(req.url, "http://localhost").searchParams.get("url");
+      if (!targetUrl) {
+        sendJson(res, 400, { error: "url query parameter is required" });
+        return;
+      }
+      new URL(targetUrl);
+
+      if (!FLARESOLVERR_URL) {
+        sendJson(res, 400, { error: "FLARESOLVERR_URL is not configured - set flaresolverr_url in the add-on config" });
+        return;
+      }
+
+      const { html, url: finalUrl } = await fetchPageViaFlareSolverr(targetUrl);
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Flaresolverr-Resolved-Url": finalUrl,
+      });
+      res.end(html);
+    } catch (err) {
+      const message = err instanceof TypeError ? "Invalid URL" : err.message;
+      sendJson(res, 500, { error: message });
+    }
+    return;
+  }
+
   if (url === "/api/downloads" && req.method === "GET") {
     try {
       const searchParams = new URL(req.url, "http://localhost").searchParams;

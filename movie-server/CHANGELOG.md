@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.32
+
+- Added `GET /api/flaresolverr/test?url=...` - a debug endpoint that fetches any URL through FlareSolverr exactly the way the real download-resolution flow does (`fetchPageHtml`), and returns the solved page's raw HTML directly (not wrapped in JSON), with the actually-resolved URL echoed in an `X-Flaresolverr-Resolved-Url` header. Lets a suspected anti-bot page - or a `flaresolverr_url` connectivity problem - be checked straight from Swagger instead of needing to reproduce it through a real download popup and read server logs. Documented in `openapi.json`.
+
 ## 1.7.31
 
 - The quality-tier list stage of download resolution (the popup's first "Loading..." step) had no caching at all, unlike the direct/file-host stage - meaning every single popup open paid the full FlareSolverr cost (several seconds to tens of seconds, now that every page fetch goes through it - see v1.7.29) even for a title just opened seconds ago. `downloadOptionsCache.js` is now generalized (`resolveOptionsCached`/`prefetchOptionsInBackground`, both keyed by `(kind, source, pageUrl)` where `kind` is `"quality"` or `"direct"`) so the quality stage is cached in Redis exactly the same way the direct stage already was - same TTL, same in-flight de-dupe, same "never cache a zero-option result" rule.

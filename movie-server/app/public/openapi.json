@@ -187,6 +187,34 @@
         }
       }
     },
+    "/api/flaresolverr/test": {
+      "get": {
+        "tags": ["Downloads"],
+        "summary": "Fetch a URL through FlareSolverr and return the solved page's raw HTML",
+        "description": "Debug/test endpoint - resolves the given URL exactly the way fetchPageHtml would (used by the quality-list and direct/file-host download resolution), and returns the solved page's HTML directly rather than as JSON. Use this to check whether a suspected anti-bot page can be solved, or to verify flaresolverr_url is configured and reachable, without going through a real download popup.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "URL to fetch through FlareSolverr."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The solved page's raw HTML (the actually-resolved URL, after any redirects, is echoed back in the X-Flaresolverr-Resolved-Url response header)",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "description": "Missing/invalid url parameter, or FLARESOLVERR_URL is not configured" },
+          "500": { "description": "FlareSolverr unreachable, timed out, or failed to solve the page" }
+        }
+      }
+    },
     "/api/downloads/save": {
       "post": {
         "tags": ["Downloads"],
