@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.34
+
+- `linkmake.in` pages now bypass FlareSolverr and fetch directly - verified live (a real "The Last Sunrise" linkmake.in page, HTTP 200 via plain fetch, no JS challenge) that this host serves its `class="dlink dl"` quality-tier links as static HTML, same as any normal page. Since this hop sat in the same "every download-page fetch goes through FlareSolverr" path as the genuinely-protected file-host pages (see v1.7.29), it was paying several-to-tens-of-seconds of unnecessary FlareSolverr cost on every popup open. Every other domain still requires FlareSolverr as before - this is a single, verified, named exception (`fetchPageHtml`'s new `PLAIN_FETCH_HOSTNAME_PATTERN`), not a general fallback.
+
 ## 1.7.33
 
 - Investigated the raw "Unexpected non-whitespace character after JSON at position 3 (line 1 column 4)" error reported on "The Last Sunrise": checked Redis directly and the cached entry for that exact page was valid (6 real download links, correctly cached) - nothing corrupted was stuck there, and by design a failed resolution is never written to cache (only a `.then()` on a successful live resolution ever calls `setCachedOptions`, so a rejected/thrown resolution skips it entirely). The cryptic text itself is most likely FlareSolverr's own diagnostic message about whatever it hit resolving the target page, previously thrown to the user completely without context.

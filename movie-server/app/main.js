@@ -730,16 +730,18 @@ const DOWNLOAD_SELECTORS = {
 // losing, ever-growing game of whack-a-mole. A real browser handles all of
 // those the same way, so flaresolverr_url is now a required add-on option
 // rather than an optional fallback - see config.yaml.
-async function fetchPageHtml(pageUrl) {
-  if (!FLARESOLVERR_URL) {
-    throw new Error("FLARESOLVERR_URL is not configured - set flaresolverr_url in the add-on config");
-  }
+//
+// linkmake.in is the one confirmed exception: it's a plain page with no
+// anti-bot front, so paying FlareSolverr's several-seconds-to-tens-of-
+// seconds cost there is pure waste - it's fetched directly instead.
+const PLAIN_FETCH_HOSTNAME_PATTERN = /(^|\.)linkmake\.in$/i;
 
+async function fetchPageHtml(pageUrl) {
   // Same resolver as GET /api/redirect — download hosts (e.g. new1.filesdl.in)
   // 302 across domains before the real page is available. Resolving first
-  // sends FlareSolverr straight at the final host (new6.filesdl.top) instead
-  // of spending a browser launch just to follow a redirect it could do
-  // itself just as well.
+  // sends the eventual fetch (FlareSolverr or plain) straight at the final
+  // host (new6.filesdl.top) instead of spending a request just to follow a
+  // redirect it could do itself just as well.
   let targetUrl = pageUrl;
   try {
     const resolved = await resolveRedirectUrl(pageUrl);
@@ -749,6 +751,29 @@ async function fetchPageHtml(pageUrl) {
     }
   } catch (err) {
     console.warn(`[downloads] resolveRedirectUrl failed, using original: ${err.message}`);
+  }
+
+  let hostname = "";
+  try {
+    hostname = new URL(targetUrl).hostname;
+  } catch {
+    // Invalid URL - let the fetch below surface the real error.
+  }
+
+  if (PLAIN_FETCH_HOSTNAME_PATTERN.test(hostname)) {
+    console.log(`[downloads] fetching page via plain fetch (linkmake.in): ${targetUrl}`);
+    const response = await scrapeFetch(targetUrl, { label: "downloads" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch download page: ${response.status}`);
+    }
+    const html = await response.text();
+    const finalUrl = response.url || targetUrl;
+    console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${html.length} bytes)`);
+    return { html, url: finalUrl };
+  }
+
+  if (!FLARESOLVERR_URL) {
+    throw new Error("FLARESOLVERR_URL is not configured - set flaresolverr_url in the add-on config");
   }
 
   console.log(`[downloads] fetching page via flaresolverr: ${targetUrl}`);
