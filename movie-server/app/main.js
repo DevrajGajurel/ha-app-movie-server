@@ -294,27 +294,27 @@ function logHostHop(label, requestedUrl, response) {
 }
 
 // A Cloudflare JS/Turnstile interstitial answers with 403 + `cf-mitigated:
-// challenge` and a "Just a moment..." body. No combination of request headers
-// passes it - it needs a real browser, which this server no longer bundles -
-// so name it explicitly in the failure message rather than letting it
-// surface as an unexplained 403.
-async function classifyFetchFailure(response) {
+// challenge` and a "Just a moment..." body - no combination of request
+// headers passes it, it needs a real browser. Some fronts (confirmed on a
+// real filesdl.top page: a custom "vDDoS" challenge that computes a cookie
+// via slowAES.decrypt() then self-redirects) instead answer with a 2xx
+// status and a JS-only body, so response.ok alone can't be trusted to mean
+// "this is the real page" - callers must check both.
+const CHALLENGE_BODY_PATTERN =
+  /Just a moment|challenges\.cloudflare\.com|cf-turnstile|slowAES\.decrypt|Please turn JavaScript on and reload the page/i;
+
+function classifyFetchFailure(response, body) {
   const mitigated = response.headers.get("cf-mitigated");
   const ray = response.headers.get("cf-ray");
   let challenge = mitigated === "challenge";
 
-  if (!challenge && response.headers.get("server") === "cloudflare") {
-    try {
-      const body = await response.text();
-      challenge = /Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(body);
-    } catch {
-      // Body unreadable - the header signals above still stand on their own.
-    }
+  if (!challenge && response.headers.get("server") === "cloudflare" && body) {
+    challenge = CHALLENGE_BODY_PATTERN.test(body);
   }
 
   const parts = [];
   if (challenge) {
-    parts.push("Cloudflare browser challenge - headers alone cannot pass it");
+    parts.push("Cloudflare/anti-bot browser challenge - headers alone cannot pass it");
   } else if (mitigated) {
     parts.push(`Cloudflare mitigation: ${mitigated}`);
   }
@@ -368,8 +368,8 @@ async function fetchPageViaFlareSolverr(targetUrl) {
   }
 
   const html = String(data.solution.response);
-  if (/Just a moment|challenges\.cloudflare\.com|cf-turnstile/i.test(html)) {
-    throw new Error("flaresolverr returned a Cloudflare challenge page");
+  if (CHALLENGE_BODY_PATTERN.test(html)) {
+    throw new Error("flaresolverr returned a challenge page");
   }
 
   return { html, url: data.solution.url || targetUrl };
@@ -687,7 +687,13 @@ function sortDownloadOptions(options) {
 
 const DOWNLOAD_SELECTORS = {
   quality: [".dlink.dl a", ".dlbtn a", ".dlbtn a.bg2", "a.bg2"],
-  direct: ['a[class*="button"]'],
+  // a[class*="button"] first (the common case - an <a> styled as a button),
+  // then a catch-all for any element with "button" in its class - some file
+  // hosts render the download control as a plain <button> instead of an
+  // anchor (see resolveSecureDownloadButtons's ".secure-download-button"
+  // case), so this last entry exists purely as a wider diagnostic net when
+  // the anchor-specific selector comes back empty.
+  direct: ['a[class*="button"]', '[class*="button"]:not(a)'],
   resolvedListing: [".dlbtn a"],
 };
 
@@ -709,9 +715,14 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
 
   console.log(`[downloads] fetching page: ${targetUrl}`);
   const response = await scrapeFetch(targetUrl, { referer, label: "downloads" });
+  // Read the body up front and unconditionally - some anti-bot fronts
+  // (confirmed: new8.filesdl.top's "vDDoS" challenge) answer with a 2xx
+  // status and a pure-JS body, so response.ok alone would have let this
+  // silently fall through as a "successful" scrape with 0 real anchors.
+  const body = await response.text();
+  const { challenge, detail } = classifyFetchFailure(response, body);
 
-  if (!response.ok) {
-    const { challenge, detail } = await classifyFetchFailure(response);
+  if (!response.ok || challenge) {
     console.warn(
       `[downloads] page fetch failed: ${response.status} ${response.url || targetUrl}` +
         (detail ? ` - ${detail}` : "")
@@ -732,14 +743,15 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
     }
 
     throw new Error(
-      `Failed to fetch download page: ${response.status}` + (detail ? ` - ${detail}` : "")
+      `Failed to fetch download page: ${response.status}` +
+        (detail ? ` - ${detail}` : "") +
+        (challenge && !FLARESOLVERR_URL ? " - configure flaresolverr_url to solve it" : "")
     );
   }
 
-  const html = await response.text();
   const finalUrl = response.url || targetUrl;
-  console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${html.length} bytes)`);
-  return { html, url: finalUrl };
+  console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${body.length} bytes)`);
+  return { html: body, url: finalUrl };
 }
 
 // The source site periodically rotates domains (filmyfly.luxe -> .faith ->
@@ -938,10 +950,19 @@ async function fetchDirectDownloadOptionsLive(pageUrl) {
   }
 
   const baseUrl = resolvedUrl || pageUrl;
-  let options = sortDownloadOptions(anchors.map((anchor) => ({
-    label: (anchor.textContent || "Download").trim(),
-    href: new URL(anchor.getAttribute("href"), baseUrl).href,
-  })));
+  // The catch-all "[class*=button]:not(a)" selector above matches plain
+  // <button> elements too, which typically drive a click via JS (data-*
+  // attributes, onclick) rather than an href - see resolveSecureDownloadButtons
+  // for that case. Without this filter, an href-less match would build a
+  // bogus "baseUrl/null"-style URL here instead of just being skipped.
+  let options = sortDownloadOptions(
+    anchors
+      .filter((anchor) => anchor.getAttribute("href"))
+      .map((anchor) => ({
+        label: (anchor.textContent || "Download").trim(),
+        href: new URL(anchor.getAttribute("href"), baseUrl).href,
+      }))
+  );
 
   // Only attempted when the classic anchor selectors found nothing - it
   // costs 2 extra requests per button, so it's a fallback, not the default.
@@ -972,8 +993,9 @@ async function fetchDirectDownloadOptions(pageUrl, source = null) {
 async function resolveDownloadLink(detailUrl) {
   try {
     const response = await scrapeFetch(detailUrl, { label: "resolve" });
+    const html = await response.text();
     if (!response.ok) {
-      const { detail } = await classifyFetchFailure(response);
+      const { detail } = classifyFetchFailure(response, html);
       console.warn(
         `[resolve] ${response.status} for ${response.url || detailUrl}` +
           (detail ? ` - ${detail}` : "") +
@@ -982,7 +1004,6 @@ async function resolveDownloadLink(detailUrl) {
       return detailUrl;
     }
 
-    const html = await response.text();
     const { document } = parseHTML(html);
     const anchor = document.querySelector(".dlbtn a");
     const href = anchor?.getAttribute("href");

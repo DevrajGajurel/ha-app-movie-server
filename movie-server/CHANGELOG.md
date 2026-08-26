@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.28
+
+- Fixed a silent false-negative on "No direct download links found": confirmed on a real file-host page (`new8.filesdl.top/drive/...`) that some anti-bot fronts answer with a 2xx status (202, in this case) and a pure-JS challenge body (a custom "vDDoS" challenge - computes a cookie via `slowAES.decrypt()`, then self-redirects) instead of the 403/503 the existing Cloudflare-challenge detection was built around. Since `response.ok` was true, `fetchPageHtml`'s challenge check never ran at all, so the page was treated as a normal-but-empty scrape (0 anchor matches) rather than a blocked one - `classifyFetchFailure` now runs unconditionally (not just on non-2xx) and recognizes this body pattern alongside the existing Cloudflare ones. When FlareSolverr is configured it's now tried for this case too; when it isn't, the error now says so explicitly ("configure flaresolverr_url to solve it") instead of surfacing as an unexplained empty result.
+- Broadened the "direct" download-link selector to also catch a plain `<button class="...button...">` (not just `<a class="...button...">`), guarded so an href-less match (a JS-driven button, not a real link) is filtered out rather than turned into a bogus URL.
+
 ## 1.7.27
 
 - Dashboard: the quality-options popup now resolves each option's link through `/api/redirect` as soon as it's shown, and displays + uses the resolved URL instead of the raw one. Some source links (e.g. `new1.filesdl.in`) are themselves just a domain-alias redirect to a different domain (`new8.filesdl.top`) with the same path - clicking through with the raw alias URL sent the next scrape step at the wrong domain, which is one of the ways a "No direct download links found" could happen even though the real page works fine. Best-effort and non-blocking: each option still shows/uses its raw href immediately, and only updates once (if) the redirect check resolves.
