@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.29
+
+- `flaresolverr_url` is now a **required** add-on option, not optional. Every download-page fetch (both the quality-tier list and the direct/file-host resolution) now goes through FlareSolverr unconditionally instead of trying a plain `fetch()` first and only falling back on a detected challenge - this session alone turned up three distinct anti-bot fronts on these source sites (403 Cloudflare interstitials, HTTP 202 "vDDoS" JS challenges, signed click APIs), and chasing each with its own detection rule was a losing, ever-growing game. A real browser (via FlareSolverr) handles all of them the same way.
+- Verified against the real `new8.filesdl.top/drive/...` page that triggered the v1.7.28 fix: posted directly to FlareSolverr's `/v1` endpoint, got back `"message": "Challenge not detected!"` (i.e. it solved the vDDoS challenge cleanly), and the resolved HTML had 7 real `a[class*="button"]` download links (HubCloud, GDFlix, gofile, fuckingfast.net, and others) - exactly what the existing selector already expects, no further changes needed there.
+- **Deployment note**: because this is now required, the add-on will refuse to start after upgrading until `flaresolverr_url` is set in its configuration (point it at FlareSolverr's `/v1` endpoint, e.g. `http://homeassistant.local:8191/v1` - the `/v1` suffix matters, the bare host/port alone won't work).
+
 ## 1.7.28
 
 - Fixed a silent false-negative on "No direct download links found": confirmed on a real file-host page (`new8.filesdl.top/drive/...`) that some anti-bot fronts answer with a 2xx status (202, in this case) and a pure-JS challenge body (a custom "vDDoS" challenge - computes a cookie via `slowAES.decrypt()`, then self-redirects) instead of the 403/503 the existing Cloudflare-challenge detection was built around. Since `response.ok` was true, `fetchPageHtml`'s challenge check never ran at all, so the page was treated as a normal-but-empty scrape (0 anchor matches) rather than a blocked one - `classifyFetchFailure` now runs unconditionally (not just on non-2xx) and recognizes this body pattern alongside the existing Cloudflare ones. When FlareSolverr is configured it's now tried for this case too; when it isn't, the error now says so explicitly ("configure flaresolverr_url to solve it") instead of surfacing as an unexplained empty result.

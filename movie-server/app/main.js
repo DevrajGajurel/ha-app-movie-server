@@ -325,11 +325,13 @@ function classifyFetchFailure(response, body) {
 const FLARESOLVERR_URL = cleanEnvValue(process.env.FLARESOLVERR_URL).replace(/\/$/, "");
 const FLARESOLVERR_TIMEOUT_MS = Number(process.env.FLARESOLVERR_TIMEOUT_MS || 60000);
 
-// Optional, self-hosted, external to this container: https://github.com/FlareSolverr/FlareSolverr
+// Required, self-hosted, external to this container: https://github.com/FlareSolverr/FlareSolverr
 // POST {FLARESOLVERR_URL} { cmd: "request.get", url, maxTimeout } -> { status: "ok"|"error", solution: { response: "<html>", url } }
 // Unlike the removed cf-clearance sidecar, this never bundles a browser
 // inside this image - it's just an HTTP client pointed at a FlareSolverr
-// instance the user runs themselves (their own machine/container).
+// instance the user runs themselves (their own machine/container). See
+// fetchPageHtml - every download-page fetch goes through this now, not
+// just as a fallback, so flaresolverr_url is a required add-on option.
 async function fetchPageViaFlareSolverr(targetUrl) {
   if (!FLARESOLVERR_URL) {
     throw new Error("FLARESOLVERR_URL is not configured");
@@ -697,11 +699,25 @@ const DOWNLOAD_SELECTORS = {
   resolvedListing: [".dlbtn a"],
 };
 
-async function fetchPageHtml(pageUrl, { referer } = {}) {
+// Every download-page fetch (quality list and direct/file-host resolution)
+// goes through FlareSolverr unconditionally now, not just as a fallback
+// after a plain fetch's challenge is detected - these source sites have
+// cycled through enough distinct anti-bot fronts this session (403
+// Cloudflare interstitials, 202 "vDDoS" JS challenges, signed click APIs)
+// that "try plain fetch, then guess whether it needs a real browser" was a
+// losing, ever-growing game of whack-a-mole. A real browser handles all of
+// those the same way, so flaresolverr_url is now a required add-on option
+// rather than an optional fallback - see config.yaml.
+async function fetchPageHtml(pageUrl) {
+  if (!FLARESOLVERR_URL) {
+    throw new Error("FLARESOLVERR_URL is not configured - set flaresolverr_url in the add-on config");
+  }
+
   // Same resolver as GET /api/redirect — download hosts (e.g. new1.filesdl.in)
-  // 302 across domains before the real page is available. Fetching the
-  // original URL as Node often gets 403 on the hop; resolving first lands us
-  // on the final host (new6.filesdl.top) the way a browser click would.
+  // 302 across domains before the real page is available. Resolving first
+  // sends FlareSolverr straight at the final host (new6.filesdl.top) instead
+  // of spending a browser launch just to follow a redirect it could do
+  // itself just as well.
   let targetUrl = pageUrl;
   try {
     const resolved = await resolveRedirectUrl(pageUrl);
@@ -713,45 +729,10 @@ async function fetchPageHtml(pageUrl, { referer } = {}) {
     console.warn(`[downloads] resolveRedirectUrl failed, using original: ${err.message}`);
   }
 
-  console.log(`[downloads] fetching page: ${targetUrl}`);
-  const response = await scrapeFetch(targetUrl, { referer, label: "downloads" });
-  // Read the body up front and unconditionally - some anti-bot fronts
-  // (confirmed: new8.filesdl.top's "vDDoS" challenge) answer with a 2xx
-  // status and a pure-JS body, so response.ok alone would have let this
-  // silently fall through as a "successful" scrape with 0 real anchors.
-  const body = await response.text();
-  const { challenge, detail } = classifyFetchFailure(response, body);
-
-  if (!response.ok || challenge) {
-    console.warn(
-      `[downloads] page fetch failed: ${response.status} ${response.url || targetUrl}` +
-        (detail ? ` - ${detail}` : "")
-    );
-
-    if (challenge && FLARESOLVERR_URL) {
-      const browserUrl = response.url || targetUrl;
-      try {
-        const { html, url: finalUrl } = await fetchPageViaFlareSolverr(browserUrl);
-        console.log(`[downloads] flaresolverr ok: ${finalUrl} (${html.length} bytes)`);
-        return { html, url: finalUrl };
-      } catch (err) {
-        console.warn(`[downloads] flaresolverr failed: ${err.message}`);
-        throw new Error(
-          `Failed to fetch download page: ${response.status} - ${detail} - flaresolverr also failed: ${err.message}`
-        );
-      }
-    }
-
-    throw new Error(
-      `Failed to fetch download page: ${response.status}` +
-        (detail ? ` - ${detail}` : "") +
-        (challenge && !FLARESOLVERR_URL ? " - configure flaresolverr_url to solve it" : "")
-    );
-  }
-
-  const finalUrl = response.url || targetUrl;
-  console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${body.length} bytes)`);
-  return { html: body, url: finalUrl };
+  console.log(`[downloads] fetching page via flaresolverr: ${targetUrl}`);
+  const { html, url: finalUrl } = await fetchPageViaFlareSolverr(targetUrl);
+  console.log(`[downloads] flaresolverr ok: ${finalUrl} (${html.length} bytes)`);
+  return { html, url: finalUrl };
 }
 
 // The source site periodically rotates domains (filmyfly.luxe -> .faith ->

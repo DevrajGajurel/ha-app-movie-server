@@ -1,5 +1,5 @@
 name: Movie Server
-version: "1.7.28"
+version: "1.7.29"
 slug: movie_server
 description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
 url: https://github.com/DevrajGajurel/ha-app-movie-server
@@ -28,6 +28,7 @@ options:
   tmdb_api_key: ""
   download_dir: "/media/Plex_Media"
   use_aria2: false
+  flaresolverr_url: ""
 schema:
   main_url: url
   max_pages: int(1,100)
@@ -42,4 +43,7 @@ schema:
   redis_url: password?
   use_aria2: bool?
   secondary_url: url?
-  flaresolverr_url: url?
+  # Required, not optional: every download-page fetch (quality list and
+  # direct/file-host resolution) now goes through FlareSolverr unconditionally
+  # rather than a plain-fetch-with-fallback - see fetchPageHtml in main.js.
+  flaresolverr_url: url
