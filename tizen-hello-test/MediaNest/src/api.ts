@@ -99,7 +99,18 @@ export function libraryItemToMovie(item: DownloadedMovie, movies: Movie[]): Movi
 export function getLibraryMovies(downloaded: DownloadedMovie[], movies: Movie[]): Movie[] {
   const seen = new Set<string>();
   const result: Movie[] = [];
-  const sorted = [...downloaded].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  // Most recently downloaded first, matching Home's own "Recently
+  // Downloaded" row - previously sorted alphabetically, which buried a
+  // just-downloaded title wherever its letter happened to fall instead of
+  // showing it up front. Falls back to title for items missing a
+  // downloadedAt (shouldn't normally happen - scanLibrary always sets it -
+  // but keeps the order stable rather than clustering unknowns randomly).
+  const sorted = [...downloaded].sort((a, b) => {
+    const timeA = a.downloadedAt ? Date.parse(a.downloadedAt) : 0;
+    const timeB = b.downloadedAt ? Date.parse(b.downloadedAt) : 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return (a.title || "").localeCompare(b.title || "");
+  });
   for (const item of sorted) {
     const movie = libraryItemToMovie(item, movies);
     const id = movie.tmdb?.tmdbId ? `tmdb:${movie.tmdb.tmdbId}` : movie.link;
@@ -333,8 +344,16 @@ export async function getAllMovies(): Promise<Movie[]> {
   const seen = new Set<string>();
   const result: Movie[] = [];
   for (const movie of firstPage) {
-    if (seen.has(movie.link)) continue;
-    seen.add(movie.link);
+    // Keyed by TMDB identity when there is one, not just the scraped page
+    // URL - the same title is often re-listed multiple times at different
+    // quality tiers (confirmed real bug: "The Last Sunrise" appearing
+    // twice in Top 10 Movies), each with its own distinct .link but
+    // matching the same TMDB entry, so deduping by .link alone let both
+    // through. Falls back to .link for anything without a TMDB match,
+    // since there's no better identity signal for those.
+    const key = movie.tmdb?.tmdbId ? `tmdb:${movie.tmdb.tmdbId}` : movie.link;
+    if (seen.has(key)) continue;
+    seen.add(key);
     result.push(movie);
   }
   return result;

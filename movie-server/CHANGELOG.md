@@ -1,5 +1,11 @@
 # Changelog
 
+## MediaNest 1.0.16
+
+- Library now sorts by most recently downloaded first, matching Home's own "Recently Downloaded" row - it was sorting alphabetically by title before, burying a just-downloaded title wherever its first letter happened to fall instead of showing it up front.
+- Fixed a real, confirmed duplicate: "The Last Sunrise" was appearing twice in "Top 10 Movies" (and, by the same root cause, potentially in every other Home row). Root cause: `getAllMovies()` deduplicated by the scraped page URL (`.link`), not by TMDB identity - the same movie is often re-listed on the source site multiple times at different quality tiers, each with its own distinct URL but matching the same TMDB entry, so the old dedup let every one of them through. Now deduped by TMDB id when there is one (falling back to `.link` for anything without a TMDB match).
+- Verified live against the real backend: confirmed "The Last Sunrise" appeared at both position 1 and 3 in Top 10 before the fix, and only once (position 1) after; confirmed Library now opens with "The One" first, matching Recently Downloaded's own order exactly.
+
 ## 1.7.38
 
 - Fixed a real, confirmed correctness bug: some file hosts' signed/time-limited links (e.g. "Fast Cloud") redirect to a normal 200 OK HTML page once expired - `response.ok` alone can't tell that apart from the real file, so `downloadFileWithFetch` was silently saving a few KB of error-page HTML as if it were the actual movie and marking the job "completed"/"Saved" (confirmed on a real report: "The One" - Fast Cloud (6.6 GB).mkv saved as 52 KB in a few seconds). The link working fine when opened directly in a browser doesn't mean the same link is still valid by the time the server's own download request lands - it may be queued behind other work, or resolved from an hours-old cache entry.
