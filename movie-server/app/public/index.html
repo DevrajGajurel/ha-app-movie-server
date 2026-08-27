@@ -1255,6 +1255,39 @@
       word-break: break-word;
     }
 
+    .job-previous-attempt {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+      word-break: break-word;
+    }
+
+    .job-attempt-history {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    .job-attempt-history summary {
+      cursor: pointer;
+    }
+
+    .job-attempt-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      padding: 0.35rem 0 0.35rem 0.75rem;
+      border-left: 2px solid var(--border);
+      margin-top: 0.35rem;
+    }
+
+    .job-attempt-error {
+      color: var(--danger);
+      word-break: break-word;
+    }
+
     .job-season-row {
       grid-column: 1 / -1;
       font-size: 0.72rem;
@@ -2794,6 +2827,22 @@
       const errorRow = job.status === "failed" && job.error
         ? `<div class="job-error">${escapeHtml(job.error)}</div>` : "";
 
+      // Kept even once a job eventually succeeds, not just while it's
+      // failed - the whole point is being able to look back later and see
+      // why a title needed retries at all, not just the final outcome.
+      const attemptHistoryRow = job.attemptHistory?.length
+        ? `<details class="job-attempt-history">
+            <summary>${job.attemptHistory.length} earlier attempt${job.attemptHistory.length === 1 ? "" : "s"} failed first</summary>
+            ${job.attemptHistory.map((a) => `
+              <div class="job-attempt-row">
+                <span class="job-attempt-meta">candidate ${a.candidate}/${a.candidatesTotal} · try ${a.try}${a.label ? ` · ${escapeHtml(a.label)}` : ""}</span>
+                <span class="job-attempt-error">${escapeHtml(a.error)}</span>
+              </div>`).join("")}
+          </details>` : "";
+
+      const previousAttemptRow = job.previousAttempt
+        ? `<div class="job-previous-attempt">Redownloaded after job #${job.previousAttempt.jobId} failed: ${escapeHtml(job.previousAttempt.error || "unknown reason")}</div>` : "";
+
       const redownloadRow = (job.status === "completed" || job.status === "failed")
         ? `<div class="job-actions"><button type="button" class="job-redownload-btn" data-redownload-job="${job.id}">Redownload</button></div>` : "";
 
@@ -2819,6 +2868,8 @@
           ${seasonRow}
           ${progressBar}
           ${errorRow}
+          ${previousAttemptRow}
+          ${attemptHistoryRow}
           ${redownloadRow}
           ${cancelRow}
         </div>`;

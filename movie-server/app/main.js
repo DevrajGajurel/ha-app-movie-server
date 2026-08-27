@@ -33,6 +33,7 @@ const {
   getJob,
   listJobs,
   initJobHistory,
+  persistJob,
   initDownloadDir,
   getDownloadDir,
   scanLibrary,
@@ -1607,6 +1608,20 @@ const server = http.createServer(async (req, res) => {
           candidates,
         });
       }
+
+      // Links the new job back to why the one it's replacing didn't work -
+      // a Redownload gets a fresh job id (a clean slate to retry with), but
+      // without this, whatever the previous attempt actually failed on
+      // (including any attemptHistory from mid-job retries) would just be
+      // gone from view once superseded, with no way to look back later and
+      // see why a title needed redownloading in the first place.
+      job.previousAttempt = {
+        jobId: source.id,
+        error: source.error || null,
+        attemptHistory: source.attemptHistory || null,
+        finishedAt: source.finishedAt || null,
+      };
+      persistJob(job);
 
       sendJson(res, 202, { message: "Redownload started", job: getJob(job.id) });
     } catch (err) {

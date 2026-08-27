@@ -565,6 +565,15 @@ async function runDownload(job) {
       : [{ url: job.url, label: job.label }];
 
   let lastError = null;
+  // Every failed attempt's reason, kept even once the job eventually
+  // succeeds - confirmed real need: a download that hits 100%, gets
+  // rejected (an expired link's HTML page, a corrupted segment, whatever),
+  // and retries used to lose that reason entirely once a later attempt
+  // succeeded - there was no way to look back afterward and see why a
+  // download needed retries at all, only console logs nobody has easy
+  // access to. serializeJob() persists whatever's on the job object as-is,
+  // so this rides along with the existing job-history mechanism for free.
+  job.attemptHistory = [];
 
   outer: for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i];
@@ -623,6 +632,15 @@ async function runDownload(job) {
         console.warn(
           `[download] job #${job.id} candidate ${i + 1}/${candidates.length} try ${retry + 1}/${SAME_CANDIDATE_RETRIES} failed (${candidate.label || candidate.url}): ${err.message}`
         );
+        job.attemptHistory.push({
+          candidate: i + 1,
+          candidatesTotal: candidates.length,
+          try: retry + 1,
+          label: candidate.label || null,
+          error: err.message,
+          at: new Date().toISOString(),
+        });
+        persistJob(job);
         // A cancelled job shouldn't retry or fall through to the next
         // fallback link - the user asked for this to stop, not to keep
         // trying alternates.
@@ -1709,6 +1727,7 @@ module.exports = {
   getJob,
   listJobs,
   initJobHistory,
+  persistJob,
   initDownloadDir,
   scanLibrary,
   listProgress,

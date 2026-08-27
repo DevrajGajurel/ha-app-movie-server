@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.43
+
+- Failed download attempts are no longer silently discarded once a retry succeeds or a redownload replaces the job - previously, only the final error survived (or nothing at all, if a later attempt eventually worked), so there was no way to look back and see why a title needed retries in the first place, even though this is exactly the kind of data needed to keep improving download reliability over time.
+- Every failed attempt within a job's own retry loop (candidate fallback, same-candidate retry) is now recorded on the job (`attemptHistory`: which candidate/try, the label, the error, when) and persisted alongside it - visible on the dashboard's job card as a collapsed "N earlier attempts failed first" detail, even on a job that ultimately completed successfully.
+- A "Redownload" now also links back to why the job it's replacing failed (`previousAttempt`: the old job id + its error), shown on the new job's card, so the failure trail isn't lost just because it got a new job id.
+
 ## 1.7.42
 
 - Fixed "Play on TV" still not launching MediaNest when the app wasn't already open, even after the pairing prompt was approved. The WebSocket remote-control approach (needing a paired token, an on-screen approval, and up to 60s to connect) had too many places to silently fail. Found a much simpler, standard Samsung mechanism instead - a plain REST call (`POST /api/v2/applications/<appId>`, no pairing, no token, no prompt) - and confirmed live against the real TV that it reliably brings MediaNest to the foreground on its own, instantly.
