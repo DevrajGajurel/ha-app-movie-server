@@ -15,7 +15,18 @@ const { WebSocketServer } = require("ws");
 // way to foreground after samsungTv.js's launch call) is held here and
 // delivered the moment a socket connects - not lost just because nothing
 // was listening at the exact instant it was requested.
-const PENDING_TTL_MS = 2 * 60 * 1000;
+//
+// This clock starts the instant the dashboard's request lands, not once
+// MediaNest is actually ready - on a first-time Samsung TV pairing, the
+// on-screen "Allow connection?" prompt alone can eat 30-90+ seconds of
+// real human reaction time (notice the prompt, find the remote, approve
+// it) before the launch even reaches MediaNest, which then still has to
+// cold-boot and open its own WebSocket - confirmed too short at 2 minutes
+// in real testing (approved the prompt, then nothing happened - the
+// pending request had already expired by the time MediaNest connected).
+// Every launch after the first pairing is near-instant (stored token, no
+// prompt), so this long a ceiling only ever matters once.
+const PENDING_TTL_MS = 5 * 60 * 1000;
 
 const sockets = new Set();
 let pending = null; // { payload, expiresAt }

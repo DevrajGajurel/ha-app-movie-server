@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.40
+
+- Fixed "Play on TV" doing nothing after approving the TV's first-time pairing prompt (real report: prompt shown, approved, then nothing happened). Root cause: the pending-play request's 2-minute TTL starts the instant the dashboard's request lands, not once MediaNest is actually ready to receive it - on a first-time Samsung TV pairing, the on-screen "Allow connection?" prompt alone can eat 30-90+ seconds of real human reaction time (notice the prompt, find the remote, approve it) before the launch even reaches MediaNest, which then still has to cold-boot and open its own WebSocket connection. That easily used up the whole 2-minute window, so by the time MediaNest connected, the request it was supposed to pick up had already expired.
+- Raised the TTL to 5 minutes. Every launch after the first pairing is near-instant (stored token, no prompt), so this longer ceiling only ever matters on that first approval.
+
 ## 1.7.39 / MediaNest 1.0.17
 
 - New dashboard sidebar section, "Downloaded Library" - a browser for titles already downloaded (distinct from "Library", the full scraped catalog most of which isn't downloaded, and "Downloads", the job queue) - sorted most-recent-first, each card offering "▶ Play on TV" instead of Download. Scoped to movies for now (a TV show has no single file to play - which episode?).
