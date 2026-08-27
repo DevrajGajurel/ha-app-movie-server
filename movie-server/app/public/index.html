@@ -848,6 +848,18 @@
       text-decoration: none;
     }
 
+    button.card-action-btn {
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .play-on-tv-status {
+      margin-top: 0.4rem;
+      font-size: 0.85rem;
+      color: var(--muted, #9aa0b4);
+      min-height: 1.2rem;
+    }
+
     @media (max-width: 768px) {
       .app-shell {
         flex-direction: column;
@@ -1311,6 +1323,13 @@
           </svg>
           Library
         </button>
+        <button type="button" class="nav-item" data-view="downloaded-library">
+          <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 3v10M8 9l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="4" y="15" width="16" height="6" rx="1.5"/>
+          </svg>
+          Downloaded Library
+        </button>
         <button type="button" class="nav-item" data-view="downloads">
           <svg class="nav-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M12 3v13M7 11l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1412,6 +1431,10 @@
           </div>
           <div id="downloads-content" class="downloads-empty">Loading…</div>
         </section>
+      </div>
+
+      <div class="view" id="view-downloaded-library" hidden>
+        <div id="downloaded-library-content" class="state">Loading…</div>
       </div>
 
     </div>
@@ -1522,6 +1545,121 @@
         // Ignore transient failures; downloads still work.
       }
     }
+
+    // ── Downloaded Library view ─────────────────────────────────────────
+    // A separate "already downloaded, ready to play" browser - distinct
+    // from "Library" (the full scraped catalog, most of which isn't
+    // downloaded yet) and "Downloads" (the job queue/history, not a media
+    // browser at all). scanLibrary() only reports folder/tmdbId/title/
+    // downloadedAt/type, not poster art, so items are matched against the
+    // already-loaded catalog (allMovies) for a poster/rating when
+    // possible - a title downloaded a while ago and since rotated off the
+    // scraped listing pages just shows without one, same as any other
+    // posterless fallback elsewhere in this app.
+    const downloadedLibraryContentEl = document.getElementById("downloaded-library-content");
+
+    function findCatalogMatch(item) {
+      if (item.tmdbId) {
+        const byId = allMovies.find((m) => m.tmdb?.tmdbId && String(m.tmdb.tmdbId) === String(item.tmdbId));
+        if (byId) return byId;
+      }
+      const norm = normalizeTitle(item.title);
+      if (!norm) return null;
+      return allMovies.find((m) => normalizeTitle(m.tmdb?.tmdbTitle || m.title) === norm) || null;
+    }
+
+    async function loadDownloadedLibraryView() {
+      downloadedLibraryContentEl.className = "state";
+      downloadedLibraryContentEl.textContent = "Loading…";
+      try {
+        const res = await fetch(apiUrl("downloads/library"));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        // TV shows have no single "the file" to play (which episode?) -
+        // scoped to movies for now, same as the request that asked for this.
+        const items = (data.items || [])
+          .filter((item) => item.type === "movie")
+          .sort((a, b) => new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime());
+
+        if (!items.length) {
+          downloadedLibraryContentEl.className = "state empty";
+          downloadedLibraryContentEl.textContent = "No downloaded movies yet.";
+          return;
+        }
+
+        downloadedLibraryContentEl.className = "grid";
+        downloadedLibraryContentEl.innerHTML = items.map((item, i) => {
+          const match = findCatalogMatch(item);
+          const t = match?.tmdb;
+          const displayTitle = t?.tmdbTitle || item.title;
+          const poster = t?.poster
+            ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
+            : "No poster";
+
+          return `
+          <article class="card">
+            <div class="poster">${poster}</div>
+            <div class="card-body">
+              <h2>${escapeHtml(displayTitle)}</h2>
+              ${t ? `
+                <div class="meta-row">
+                  ${t.year ? `<span>${escapeHtml(t.year)}</span>` : ""}
+                  ${t.rating ? `<span class="rating">★ ${t.rating}</span>` : ""}
+                </div>
+                ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
+              ` : ""}
+              <div class="links">
+                <button type="button" class="card-action-btn play-on-tv-btn" data-index="${i}">▶ Play on TV</button>
+              </div>
+              <div class="play-on-tv-status" id="play-on-tv-status-${i}"></div>
+            </div>
+          </article>`;
+        }).join("");
+
+        downloadedLibraryItems = items;
+      } catch (err) {
+        downloadedLibraryContentEl.className = "state error";
+        downloadedLibraryContentEl.textContent = err.message;
+      }
+    }
+
+    let downloadedLibraryItems = [];
+
+    async function playOnTv(item, statusEl) {
+      statusEl.textContent = "Finding file…";
+      try {
+        const params = new URLSearchParams({ title: item.title });
+        if (item.tmdbId) params.set("tmdbId", item.tmdbId);
+        const versionsRes = await fetch(apiUrl(`downloads/versions?${params.toString()}`));
+        const versionsData = await versionsRes.json();
+        if (!versionsRes.ok) throw new Error(versionsData.error || versionsRes.statusText);
+        const version = (versionsData.versions || [])[0];
+        if (!version) throw new Error("No playable file found for this title");
+
+        statusEl.textContent = "Sending to TV…";
+        const res = await fetch(apiUrl("tv/play"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileToken: version.token, title: item.title, tmdbId: item.tmdbId || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        statusEl.textContent = "Sent to TV";
+        setTimeout(() => { statusEl.textContent = ""; }, 4000);
+      } catch (err) {
+        statusEl.textContent = `Failed: ${err.message}`;
+      }
+    }
+
+    downloadedLibraryContentEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".play-on-tv-btn");
+      if (!btn) return;
+      const item = downloadedLibraryItems[Number(btn.dataset.index)];
+      if (!item) return;
+      const statusEl = document.getElementById(`play-on-tv-status-${btn.dataset.index}`);
+      playOnTv(item, statusEl);
+    });
 
     function isAlreadyDownloaded(movie) {
       const t = movie?.tmdb;
@@ -2573,13 +2711,15 @@
     }
 
     const viewDownloadsEl = document.getElementById("view-downloads");
+    const viewDownloadedLibraryEl = document.getElementById("view-downloaded-library");
 
-    const VALID_VIEWS = ["library", "downloads"];
+    const VALID_VIEWS = ["library", "downloaded-library", "downloads"];
 
     function setView(view, { updateHash = true } = {}) {
       const next = VALID_VIEWS.includes(view) ? view : "library";
       activeView = next;
       viewLibraryEl.hidden   = next !== "library";
+      viewDownloadedLibraryEl.hidden = next !== "downloaded-library";
       viewDownloadsEl.hidden = next !== "downloads";
       navItems.forEach((item) => {
         const on = item.dataset.view === next;
@@ -2592,6 +2732,7 @@
         if (location.hash !== hash) history.replaceState(null, "", hash);
       }
       if (next === "downloads") loadDownloadsView();
+      if (next === "downloaded-library") loadDownloadedLibraryView();
     }
 
     function viewFromHash() {

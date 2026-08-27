@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.39 / MediaNest 1.0.17
+
+- New dashboard sidebar section, "Downloaded Library" - a browser for titles already downloaded (distinct from "Library", the full scraped catalog most of which isn't downloaded, and "Downloads", the job queue) - sorted most-recent-first, each card offering "▶ Play on TV" instead of Download. Scoped to movies for now (a TV show has no single file to play - which episode?).
+- "Play on TV" pushes playback to MediaNest over a persistent WebSocket (`tvSocket.js`'s `/api/tv/socket`) rather than polling - MediaNest opens one connection on startup and just listens, and the backend delivers the play request the instant it's made. If MediaNest isn't connected yet, the request is held (2 min) and delivered the moment it connects. A best-effort Samsung TV remote-launch (`samsungTv.js`) also fires alongside the push, to bring MediaNest to the foreground if the TV is idle or on another app - this uses Samsung's local WebSocket remote-control protocol (the same one Smart View uses), needs a one-time on-screen "Allow connection?" approval the first time, and requires the new `tv_ip` add-on option to be set (optional - "Play on TV" still works whenever MediaNest is already open, even without it).
+- Verified end-to-end against real hardware and a real backend instance, not just code review: confirmed TV pairing + remote launch against the physical TV (needed a longer approval window than first assumed - bumped the connect timeout from 15s to 60s after a real approval didn't complete in time); confirmed one dashboard click produces exactly one WebSocket push with the correct file token/title/tmdbId, delivered to a live-connected listener.
+- `flaresolverr_url`-style required-config precedent was deliberately not repeated here: `tv_ip` is optional, since the WebSocket push path works on its own whenever MediaNest is already running - only the "bring it to the foreground" behavior needs it.
+
 ## MediaNest 1.0.16
 
 - Library now sorts by most recently downloaded first, matching Home's own "Recently Downloaded" row - it was sorting alphabetically by title before, burying a just-downloaded title wherever its first letter happened to fall instead of showing it up front.

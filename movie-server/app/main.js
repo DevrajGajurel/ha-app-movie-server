@@ -65,6 +65,9 @@ const {
   getClearance: getCfClearance,
   invalidateClearance: invalidateCfClearance,
 } = require("./cfClearanceCache");
+const { attachTvSocket } = require("./tvSocket");
+const { initSamsungTv, launchMediaNest } = require("./samsungTv");
+const TV_IP = cleanEnvValue(process.env.TV_IP);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -2206,9 +2209,51 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Dashboard's "Play on TV" action. notifyTvPendingPlay (the reliable
+  // path - see tvSocket.js) always fires; launchMediaNest (bringing the TV
+  // to the foreground if it's idle/on another app - see samsungTv.js) is
+  // best-effort and never blocks the response on its own success/failure,
+  // since it can legitimately take several seconds and the push already
+  // covers actually starting playback once MediaNest is up.
+  if (url === "/api/tv/play" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const fileToken = String(body.fileToken || "").trim();
+      const title = String(body.title || "").trim();
+      if (!fileToken || !title) {
+        sendJson(res, 400, { error: "fileToken and title are required" });
+        return;
+      }
+      const payload = {
+        fileToken,
+        title,
+        tmdbId: body.tmdbId ? String(body.tmdbId) : null,
+        season: Number.isInteger(body.season) ? body.season : null,
+        episode: Number.isInteger(body.episode) ? body.episode : null,
+      };
+      notifyTvPendingPlay(payload);
+      launchMediaNest(TV_IP, fileToken).catch((err) => {
+        console.warn("[api/tv/play] launch failed:", err.message);
+      });
+      sendJson(res, 202, { message: "Play request sent" });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
 
   sendJson(res, 404, { error: "Not found" });
 });
+
+// Registering the WebSocket upgrade handler doesn't need to wait for
+// server.listen() - Node's http.Server accepts listeners in either order -
+// so this lives at module scope rather than inside startServer(). The
+// /api/tv/play route (inside the http.createServer callback above) closes
+// over notifyTvPendingPlay; that callback only ever runs once a real
+// request arrives, well after this const has been assigned, so the
+// declaration order here is fine despite the route being defined first in
+// the file.
+const { notifyPendingPlay: notifyTvPendingPlay } = attachTvSocket(server);
 
 const CACHE_REFRESH_MS =
   (Number.parseFloat(process.env.CACHE_REFRESH_HOURS) || 4) * 60 * 60 * 1000;
@@ -2269,6 +2314,13 @@ async function startServer() {
     console.warn("Job history Redis init failed, continuing without it:", err.message);
   }
 
+  let tvTokenPersists = false;
+  try {
+    tvTokenPersists = await initSamsungTv(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("Samsung TV Redis init failed, continuing without it:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
@@ -2287,6 +2339,9 @@ async function startServer() {
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`Job history: ${jobHistoryEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    console.log(
+      `Play on TV: ${TV_IP ? `${TV_IP} (pairing token ${tvTokenPersists ? "persists" : "in-memory only, no REDIS_URL"})` : "launch disabled (set tv_ip) - push-only still works if MediaNest is already open"}`
+    );
     checkYtDlpAvailable().then((available) => {
       console.log(`Trailers:  ${available ? "enabled (yt-dlp found)" : "disabled - yt-dlp not found on PATH, trailer playback will fail"}`);
     });

@@ -61,6 +61,10 @@ FLARESOLVERR_URL="$(bashio_config 'flaresolverr_url')"
 FLARESOLVERR_URL="${FLARESOLVERR_URL#"${FLARESOLVERR_URL%%[![:space:]]*}"}"
 FLARESOLVERR_URL="${FLARESOLVERR_URL%"${FLARESOLVERR_URL##*[![:space:]]}"}"
 
+TV_IP="$(bashio_config 'tv_ip')"
+TV_IP="${TV_IP#"${TV_IP%%[![:space:]]*}"}"
+TV_IP="${TV_IP%"${TV_IP##*[![:space:]]}"}"
+
 cat > /app/.env <<EOF
 HOME_ASSISTANT_ADDON=true
 MAIN_URL=${MAIN_URL}
@@ -79,6 +83,7 @@ REDIS_URL=${REDIS_URL}
 CACHE_REFRESH_HOURS=4
 USE_ARIA2=${USE_ARIA2}
 FLARESOLVERR_URL=${FLARESOLVERR_URL}
+TV_IP=${TV_IP}
 EOF
 
 cd /app || exit 1

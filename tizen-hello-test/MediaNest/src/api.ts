@@ -7,6 +7,13 @@ function apiUrl(path: string): string {
   return `${API_BASE}api/${path.replace(/^\//, "")}`;
 }
 
+// The backend's "Play on TV" push channel (see tvSocket.js) - one
+// persistent connection, not polling, since MediaNest is meant to just sit
+// there listening while otherwise idle.
+export function getTvSocketUrl(): string {
+  return `${API_BASE.replace(/^http/, "ws")}api/tv/socket`;
+}
+
 export interface DownloadLibraryItem {
   folder: string;
   tmdbId: string | null;
