@@ -196,6 +196,32 @@ export async function getTmdbById(tmdbId: string, type?: "movie" | "tv"): Promis
   }
 }
 
+export interface TmdbSuggestion {
+  tmdbId: number;
+  type: "movie" | "tv";
+  title: string;
+  year: string | null;
+  poster: string | null;
+}
+
+// Live type-ahead suggestions for the search box - same TMDB-backed
+// endpoint the dashboard's search box already uses (/api/tmdb/suggest),
+// so MediaNest's search can help correct/refine a query the same way
+// instead of only ever matching the locally scraped catalog's own titles
+// verbatim. Selecting a suggestion fills in its title rather than jumping
+// straight to a TMDB-only result - a title only found via TMDB has no
+// scraped source page to download from, so there's nothing to open yet.
+export async function getTmdbSuggestions(query: string): Promise<TmdbSuggestion[]> {
+  try {
+    const res = await fetch(apiUrl(`tmdb/suggest?q=${encodeURIComponent(query)}`));
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
+  } catch {
+    return [];
+  }
+}
+
 export interface SeasonInfo {
   seasonNumber: number;
   episodeCount: number;

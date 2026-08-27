@@ -1,5 +1,11 @@
 # Changelog
 
+## MediaNest 1.0.15
+
+- Search now shows live TMDB-backed suggestions as you type, matching the dashboard's search box (`/api/tmdb/suggest`, already existed server-side - just never wired up in MediaNest). Previously MediaNest's search only ever matched titles already in the locally scraped catalog by plain substring, so a query that didn't exactly match the catalog's own title formatting (a misspelling, different punctuation) came back "No matches" even when the title genuinely existed. Selecting a suggestion fills in its title rather than jumping straight to a TMDB-only result - a title only found via TMDB has no scraped source page to download from, so there's nothing to open yet; this just helps get the search text right, same as the dashboard.
+- New `Search`/`suggestions` focus region, navigable the same way as everywhere else in the app (Down from the input into the list, Up back out, Enter to select, Back/Escape to dismiss).
+- Verified live against the real backend in the dev preview: typing "sunrise" correctly returned 8 TMDB suggestions (The Last Sunrise, Before Sunrise, Sunrise Earth, etc.) alongside the 2 local catalog matches, and selecting a suggestion filled the search box and closed the list.
+
 ## 1.7.35
 
 - Fixed "Watch Trailer" never working, in MediaNest or the dashboard: `trailer.js`'s `/api/trailer` route (`streamYoutubeTrailer`) has always shelled out to `yt-dlp` to resolve a direct stream URL, but the Dockerfile never actually installed it - every attempt failed with a plain "command not found", surfaced to the user as a generic "Could not resolve trailer" with no clue why. Confirmed the actual resolution logic itself is fine: ran the exact same `yt-dlp -f "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<=1080]/best" -g` command trailer.js uses against a real YouTube video and it correctly returned two direct googlevideo.com stream URLs - this was purely a missing dependency.

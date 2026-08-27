@@ -965,3 +965,62 @@ img {
   border-color: var(--focus-ring);
   background: var(--bg-elevated);
 }
+
+.search-suggestions {
+  width: 600px;
+  margin-bottom: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.search-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.search-suggestion.focused {
+  border-color: var(--focus-ring);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.search-suggestion-poster {
+  width: 40px;
+  height: 60px;
+  border-radius: 4px;
+  background: #1a1a20;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.search-suggestion-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-suggestion-title {
+  font-weight: 600;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-suggestion-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.search-suggestion-type {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
