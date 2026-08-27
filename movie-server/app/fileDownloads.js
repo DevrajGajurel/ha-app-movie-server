@@ -315,7 +315,23 @@ function ffmpegWindowHasCorruption(filePath, startSeconds, windowSeconds) {
 async function verifyDownloadedFile(filePath) {
   if (!VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return true;
 
-  const probe = await probeMediaFile(filePath);
+  let probe = await probeMediaFile(filePath);
+  // Confirmed real regression from the fix below: a genuinely good 5GB
+  // download got rejected and silently restarted from scratch right after
+  // hitting 100%. ffprobe can transiently fail on a file that's completely
+  // fine immediately after the write stream closes - a network-mounted
+  // media directory not yet flushed, antivirus scanning the fresh file,
+  // Windows not having released the handle yet - and probeMediaFile never
+  // caches a null result, so a couple of short, cheap retries cost nothing
+  // when the file really is bad (ffprobe will just fail the same way
+  // again) but rule out a transient hiccup before condemning a whole
+  // multi-GB file to a wasted re-download over what turned out to be a
+  // few seconds of filesystem lag.
+  for (const delayMs of [2000, 5000]) {
+    if (probe) break;
+    await sleep(delayMs);
+    probe = await probeMediaFile(filePath);
+  }
   // ffprobe returning nothing at all (not just a missing duration) means it
   // couldn't recognize this as a media file in any format, not that it
   // found a valid-but-corrupted one - the ONLY case ffmpegWindowHasCorruption

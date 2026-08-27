@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.41
+
+- Fixed a regression from v1.7.38's fix: a real, genuinely good 5GB download ("The Great Grand Superhero") hit 100% and then silently restarted from scratch instead of completing. Root cause: v1.7.38 made `verifyDownloadedFile` hard-fail whenever ffprobe couldn't recognize the file as media at all (fixing the expired-link-saved-as-garbage bug), but ffprobe can transiently fail on a file that's completely fine immediately after the write stream closes - a network-mounted media directory not yet flushed, antivirus scanning the fresh multi-GB file, Windows not having released the file handle yet - and that transient failure was being treated exactly the same as "this genuinely isn't a video," triggering a full wasted re-download.
+- Now retries the probe (2s, then 5s) before concluding the file is actually bad. Costs nothing when the file really is bad (ffprobe fails the same way every time), but rules out a filesystem timing hiccup before condemning a whole multi-GB download to a redo over what turned out to be a few seconds of lag.
+- If you hit this again on an in-progress job, it's the older code still running (HA add-on updates lag behind a push, same as always) - it should resolve once this version is deployed. Sorry about the wasted bandwidth in the meantime.
+
 ## 1.7.40
 
 - Fixed "Play on TV" doing nothing after approving the TV's first-time pairing prompt (real report: prompt shown, approved, then nothing happened). Root cause: the pending-play request's 2-minute TTL starts the instant the dashboard's request lands, not once MediaNest is actually ready to receive it - on a first-time Samsung TV pairing, the on-screen "Allow connection?" prompt alone can eat 30-90+ seconds of real human reaction time (notice the prompt, find the remote, approve it) before the launch even reaches MediaNest, which then still has to cold-boot and open its own WebSocket connection. That easily used up the whole 2-minute window, so by the time MediaNest connected, the request it was supposed to pick up had already expired.
