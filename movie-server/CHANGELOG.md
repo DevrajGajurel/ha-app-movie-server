@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.37
+
+- Every FlareSolverr solve now caches the `cf_clearance` cookie (and User-Agent) it earns per domain (`cfClearanceCache.js`, in-memory), and `fetchPageHtml` tries a plain fetch replaying that cookie/UA before paying FlareSolverr's cost again on the next request to the same domain - only falling back to FlareSolverr if the site still challenges the replayed request. The cookie's own `expiry` is trusted as its TTL rather than a fixed guess (confirmed live: filesdl.top issued one valid a full year out).
+- Tested this against the real site rather than assuming it works: an immediate fresh-solve-then-replay succeeded (200, real content, no FlareSolverr needed) - but a stale ~1-2h-old cookie replay on the same URL still got re-challenged. This site's protection appears to have some session/timing-dependent behavior beyond plain cf_clearance validity, so this **won't skip FlareSolverr on every request** - but it will skip it whenever the cached clearance is still accepted, at the cost of one extra fast plain-fetch attempt when it isn't. Net effect: fewer FlareSolverr calls on average, never more.
+
 ## 1.7.36
 
 - Fixed a real, confirmed TMDB mismatch: "Toxic V2 (2026) South Hindi Dubbed Movie" (Yash's Kannada blockbuster "Toxic: A Fairy Tale for Grown-ups", TMDB popularity ~90) was matching to `tmdbId 1315091` - an unrelated 2025 Lithuanian arthouse film literally titled "Toxic" (popularity ~3, about teens at a modeling school). Root cause: `scoreCandidate`'s exact-title-match bonus (+0.2, on top of an already-maxed similarity=1) let any coincidentally short exact-titled candidate beat a correct match whose real title carries an official subtitle the cleaned query doesn't have (similarity capped at 0.92 for a "contains" match) - popularity barely factored into the score before (max +0.04), even though it's a strong, cheap signal for "which same-titled entry is the one a piracy site is actually distributing" (virtually always the mainstream one, not an obscure festival film).

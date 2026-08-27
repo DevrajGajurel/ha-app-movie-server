@@ -60,6 +60,11 @@ const { resolveRedirectUrl, BROWSER_HEADERS } = require("./urlUtils");
 const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { initDownloadOptionsCache, resolveOptionsCached, prefetchOptionsInBackground } = require("./downloadOptionsCache");
+const {
+  storeClearance: storeCfClearance,
+  getClearance: getCfClearance,
+  invalidateClearance: invalidateCfClearance,
+} = require("./cfClearanceCache");
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const PORT = Number(process.env.PORT) || 3001;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -252,7 +257,7 @@ function parseSecondaryMeta(text) {
 // and answers with 403 - while resolveRedirectUrl() against the same origin
 // succeeds because urlUtils sends a real browser identity. Every outbound
 // scrape goes through here so the two code paths look alike on the wire.
-async function scrapeFetch(targetUrl, { referer, label = "scrape" } = {}) {
+async function scrapeFetch(targetUrl, { referer, label = "scrape", headers: overrideHeaders } = {}) {
   let refererValue = referer;
   if (!refererValue) {
     try {
@@ -268,6 +273,12 @@ async function scrapeFetch(targetUrl, { referer, label = "scrape" } = {}) {
       ...BROWSER_HEADERS,
       "Upgrade-Insecure-Requests": "1",
       ...(refererValue ? { Referer: refererValue } : {}),
+      // Used to replay a cached cf_clearance cookie under the exact
+      // User-Agent it was issued to (see cfClearanceCache.js) - Cloudflare
+      // ties the clearance to that fingerprint, so overriding it here
+      // rather than just adding a Cookie header on top of the default UA
+      // is load-bearing, not cosmetic.
+      ...overrideHeaders,
     },
   });
 
@@ -396,7 +407,12 @@ async function fetchPageViaFlareSolverr(targetUrl) {
     throw new Error("flaresolverr returned a challenge page");
   }
 
-  return { html, url: data.solution.url || targetUrl };
+  return {
+    html,
+    url: data.solution.url || targetUrl,
+    cookies: data.solution.cookies || [],
+    userAgent: data.solution.userAgent || null,
+  };
 }
 
 function scrapeSecondaryPage(pageUrl) {
@@ -772,13 +788,36 @@ async function fetchPageHtml(pageUrl) {
     return { html, url: finalUrl };
   }
 
+  // A prior FlareSolverr solve on this domain may have earned a
+  // cf_clearance cookie that's still good (see cfClearanceCache.js) - a
+  // plain fetch replaying it under the same User-Agent it was issued to
+  // skips the real-browser cost entirely when it still works, falling
+  // through to FlareSolverr below only if the site no longer accepts it.
+  const clearance = getCfClearance(hostname);
+  if (clearance) {
+    console.log(`[downloads] trying cached cf clearance for ${hostname}`);
+    const response = await scrapeFetch(targetUrl, {
+      label: "downloads-clearance",
+      headers: { "User-Agent": clearance.userAgent, Cookie: clearance.cookieHeader },
+    });
+    const body = await response.text();
+    const { challenge } = classifyFetchFailure(response, body);
+    if (response.ok && !challenge) {
+      console.log(`[downloads] cf clearance ok: ${response.url || targetUrl} (${body.length} bytes)`);
+      return { html: body, url: response.url || targetUrl };
+    }
+    console.warn(`[downloads] cached cf clearance no longer valid for ${hostname}, falling back to flaresolverr`);
+    invalidateCfClearance(hostname);
+  }
+
   if (!FLARESOLVERR_URL) {
     throw new Error("FLARESOLVERR_URL is not configured - set flaresolverr_url in the add-on config");
   }
 
   console.log(`[downloads] fetching page via flaresolverr: ${targetUrl}`);
-  const { html, url: finalUrl } = await fetchPageViaFlareSolverr(targetUrl);
+  const { html, url: finalUrl, cookies, userAgent } = await fetchPageViaFlareSolverr(targetUrl);
   console.log(`[downloads] flaresolverr ok: ${finalUrl} (${html.length} bytes)`);
+  storeCfClearance(cookies, userAgent);
   return { html, url: finalUrl };
 }
 
