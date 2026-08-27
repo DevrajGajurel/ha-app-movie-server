@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.42
+
+- Fixed "Play on TV" still not launching MediaNest when the app wasn't already open, even after the pairing prompt was approved. The WebSocket remote-control approach (needing a paired token, an on-screen approval, and up to 60s to connect) had too many places to silently fail. Found a much simpler, standard Samsung mechanism instead - a plain REST call (`POST /api/v2/applications/<appId>`, no pairing, no token, no prompt) - and confirmed live against the real TV that it reliably brings MediaNest to the foreground on its own, instantly.
+- `samsungTv.js` now tries this REST launch first, falling back to the old WebSocket approach only if it fails (kept for TVs/firmware where the plain REST call might not be accepted the same way). The WebSocket path's pairing/timeout complexity is now a fallback, not the primary mechanism most launches will ever hit.
+- Verified: real end-to-end call to `launchMediaNest` against the physical TV succeeded via the REST path alone, no approval prompt needed.
+
 ## 1.7.41
 
 - Fixed a regression from v1.7.38's fix: a real, genuinely good 5GB download ("The Great Grand Superhero") hit 100% and then silently restarted from scratch instead of completing. Root cause: v1.7.38 made `verifyDownloadedFile` hard-fail whenever ffprobe couldn't recognize the file as media at all (fixing the expired-link-saved-as-garbage bug), but ffprobe can transiently fail on a file that's completely fine immediately after the write stream closes - a network-mounted media directory not yet flushed, antivirus scanning the fresh multi-GB file, Windows not having released the file handle yet - and that transient failure was being treated exactly the same as "this genuinely isn't a video," triggering a full wasted re-download.

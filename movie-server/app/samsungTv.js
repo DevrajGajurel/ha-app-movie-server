@@ -8,16 +8,24 @@ const { createClient } = require("redis");
 // already sitting on MediaNest, this is redundant (and if it fails, the
 // push has already been sent regardless - see main.js's /api/tv/play).
 //
-// Protocol: Samsung's local (LAN-only) remote-control WebSocket API, the
-// same one Smart View/SmartThings use internally - undocumented by Samsung
-// but stable and well-covered by community reference implementations
-// (xchwarze/samsung-tv-ws-api, Toxblh/samsung-tv-control). First connection
-// to a given TV shows an on-screen "Allow [app] to connect?" prompt; once
-// approved, the TV hands back a token that's reused on every future
-// connection so that prompt never appears again. Passing a `metaTag` on
-// launch (the ed.apps.launch event below) is NOT reliably delivered to the
-// app across firmware versions per community reports - treated here purely
-// as a bonus, not depended on for actually starting playback.
+// Two mechanisms, tried in order:
+// 1. Samsung's plain REST app-launch endpoint (POST /api/v2/applications/
+//    <appId>, no auth, no pairing) - confirmed live against the real TV
+//    that this alone reliably brings MediaNest to the foreground. Tried
+//    first since it's far simpler and has none of the WebSocket flow's
+//    failure modes.
+// 2. The WebSocket remote-control protocol (the same one Smart View/
+//    SmartThings use, undocumented by Samsung but stable and well-covered
+//    by community reference implementations - xchwarze/samsung-tv-ws-api,
+//    Toxblh/samsung-tv-control) as a fallback, kept in case a different
+//    TV/firmware combination doesn't accept the plain REST call the way
+//    this one does. First connection to a given TV shows an on-screen
+//    "Allow [app] to connect?" prompt; once approved, the TV hands back a
+//    token reused on every future connection so the prompt never
+//    reappears. Passing a `metaTag` on launch (the ed.apps.launch event)
+//    is NOT reliably delivered to the app across firmware versions per
+//    community reports - treated here purely as a bonus, never depended
+//    on for actually starting playback.
 const CACHE_PREFIX = "movieserver:v1:samsungtv:token";
 const APP_NAME = "MovieServer";
 const MEDIANEST_APP_ID = "avplaypoc1.AVPlayPOC";
@@ -105,6 +113,27 @@ function connect(tvIp, token) {
   });
 }
 
+const REST_LAUNCH_TIMEOUT_MS = 8000;
+
+// Plain, undocumented-but-standard Samsung REST launch - no pairing, no
+// token, no on-screen prompt. Confirmed live: POSTing here brings an
+// already-installed app to the foreground even when the TV was on
+// something else. Throws on any failure; the caller decides what to do
+// next (fall back to the WebSocket path).
+async function launchViaRest(tvIp) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REST_LAUNCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`http://${tvIp}:8001/api/v2/applications/${MEDIANEST_APP_ID}`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // metaTag: best-effort hint only (see file header) - pass the file token so
 // MediaNest *could* pick it up directly if a given firmware happens to
 // deliver it, but never rely on this alone.
@@ -112,6 +141,14 @@ async function launchMediaNest(tvIp, metaTag) {
   if (!tvIp) {
     console.warn("[samsung-tv] launch skipped: no tv_ip configured");
     return false;
+  }
+
+  try {
+    await launchViaRest(tvIp);
+    console.log(`[samsung-tv] launched via REST: ${tvIp}`);
+    return true;
+  } catch (err) {
+    console.warn(`[samsung-tv] REST launch failed (${err.message}), falling back to WebSocket remote-control`);
   }
 
   let ws;
@@ -128,11 +165,11 @@ async function launchMediaNest(tvIp, metaTag) {
         },
       })
     );
-    console.log(`[samsung-tv] launch sent to ${tvIp}`);
+    console.log(`[samsung-tv] launched via WebSocket: ${tvIp}`);
     setTimeout(() => ws.close(), 1000);
     return true;
   } catch (err) {
-    console.warn(`[samsung-tv] launch failed: ${err.message}`);
+    console.warn(`[samsung-tv] WebSocket launch also failed: ${err.message}`);
     try {
       ws?.terminate();
     } catch {
