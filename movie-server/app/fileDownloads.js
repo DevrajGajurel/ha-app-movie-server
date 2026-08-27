@@ -316,7 +316,18 @@ async function verifyDownloadedFile(filePath) {
   if (!VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return true;
 
   const probe = await probeMediaFile(filePath);
-  const duration = probe?.durationSeconds;
+  // ffprobe returning nothing at all (not just a missing duration) means it
+  // couldn't recognize this as a media file in any format, not that it
+  // found a valid-but-corrupted one - the ONLY case ffmpegWindowHasCorruption
+  // below can catch is a specific mid-file EBML parsing error from aria2's
+  // segmented-download corruption (see its own comment), which a file
+  // that's e.g. a few KB of HTML from an expired link would never produce,
+  // letting it through as "not corrupted" even though it's not a video at
+  // all (confirmed real bug: a "Fast Cloud" link that had expired by the
+  // time the download request landed saved a 52KB HTML page as a 6.6GB
+  // .mkv and was marked "Saved").
+  if (!probe) return false;
+  const duration = probe.durationSeconds;
   if (!duration || duration <= VERIFY_SAMPLE_WINDOW_SECONDS) {
     // Too short (or duration unknown) to usefully sample - fall back to a
     // single check of whatever's there.
@@ -342,6 +353,21 @@ async function downloadFileWithFetch(job, dir) {
   const response = await fetch(job.url, { redirect: "follow", signal: controller.signal });
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status}`);
+  }
+
+  // Confirmed real bug: some file hosts' signed/time-limited links (e.g.
+  // "Fast Cloud") redirect to a normal 200 OK HTML page once expired -
+  // response.ok alone can't tell that apart from the real file, and a
+  // fresh link in a browser working fine doesn't mean the SAME link is
+  // still valid by the time this server's own request lands (queued behind
+  // other jobs, or served from an hours-old cached resolution). The real
+  // CDN response for actual media is never text/html, so this fails fast
+  // (letting the candidate-retry loop above try the next mirror) instead
+  // of silently saving a few KB of error-page HTML as if it were the movie
+  // and marking the job "completed".
+  const contentType = response.headers.get("content-type") || "";
+  if (/^text\/html\b/i.test(contentType)) {
+    throw new Error(`Download link returned an HTML page instead of a file, likely expired (content-type: ${contentType})`);
   }
 
   const filename = withPartTag(

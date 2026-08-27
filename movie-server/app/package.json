@@ -1,6 +1,6 @@
 {
   "name": "movie-server",
-  "version": "1.7.37",
+  "version": "1.7.38",
   "description": "Scrape movie listings from a configured URL",
   "main": "main.js",
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "linkedom": "^0.18.9",
-    "redis": "^4.7.0"
+    "redis": "^4.7.0",
+    "ws": "^8.21.3"
   }
 }

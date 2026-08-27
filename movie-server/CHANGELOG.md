@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.38
+
+- Fixed a real, confirmed correctness bug: some file hosts' signed/time-limited links (e.g. "Fast Cloud") redirect to a normal 200 OK HTML page once expired - `response.ok` alone can't tell that apart from the real file, so `downloadFileWithFetch` was silently saving a few KB of error-page HTML as if it were the actual movie and marking the job "completed"/"Saved" (confirmed on a real report: "The One" - Fast Cloud (6.6 GB).mkv saved as 52 KB in a few seconds). The link working fine when opened directly in a browser doesn't mean the same link is still valid by the time the server's own download request lands - it may be queued behind other work, or resolved from an hours-old cache entry.
+- Two fixes, layered: (1) `downloadFileWithFetch` now checks the response's `Content-Type` and fails fast (triggering the existing candidate-retry loop) if it's `text/html` instead of real media, before writing anything to disk. (2) The shared post-download verification step (`verifyDownloadedFile`, used by both the plain-fetch and aria2 download paths) now treats "ffprobe couldn't recognize this as media at all" as an outright failure - previously it only checked for one specific mid-file corruption signature (aria2 segment gaps), which a non-video file would never trigger, letting it through as "not corrupted" even though it wasn't a video at all.
+- If you have any downloads that finished suspiciously fast or small (like the 52 KB example above), use the existing "Redownload" button on that job - it'll now correctly reject an expired link instead of re-saving the same bad content.
+
 ## 1.7.37
 
 - Every FlareSolverr solve now caches the `cf_clearance` cookie (and User-Agent) it earns per domain (`cfClearanceCache.js`, in-memory), and `fetchPageHtml` tries a plain fetch replaying that cookie/UA before paying FlareSolverr's cost again on the next request to the same domain - only falling back to FlareSolverr if the site still challenges the replayed request. The cookie's own `expiry` is trusted as its TTL rather than a fixed guess (confirmed live: filesdl.top issued one valid a full year out).

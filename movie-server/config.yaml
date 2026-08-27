@@ -1,5 +1,5 @@
 name: Movie Server
-version: "1.7.37"
+version: "1.7.38"
 slug: movie_server
 description: Scrape movie listings, enrich with TMDB, and download to PlexMedia
 url: https://github.com/DevrajGajurel/ha-app-movie-server
@@ -29,6 +29,7 @@ options:
   download_dir: "/media/Plex_Media"
   use_aria2: false
   flaresolverr_url: ""
+  tv_ip: ""
 schema:
   main_url: url
   max_pages: int(1,100)
@@ -47,3 +48,8 @@ schema:
   # direct/file-host resolution) now goes through FlareSolverr unconditionally
   # rather than a plain-fetch-with-fallback - see fetchPageHtml in main.js.
   flaresolverr_url: url
+  # Optional: the Samsung TV's LAN IP, used only to bring MediaNest to the
+  # foreground for "Play on TV" (samsungTv.js). Without it, "Play on TV"
+  # still works whenever MediaNest is already open - see tvSocket.js's
+  # WebSocket push, which doesn't depend on this at all.
+  tv_ip: str?
