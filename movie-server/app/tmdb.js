@@ -228,7 +228,19 @@ function scoreCandidate(candidate, parsed, context = {}) {
     score = Math.max(score, 0.56);
   }
 
-  score += Math.min(candidate.popularity || 0, 40) / 1000;
+  // Confirmed real mismatch: "Toxic V2 (2026) South Hindi Dubbed Movie"
+  // (Yash's Kannada blockbuster "Toxic: A Fairy Tale for Grown-ups",
+  // popularity ~90) matched to an unrelated 2025 Lithuanian arthouse film
+  // literally titled "Toxic" (popularity ~3) instead - the exact-title bonus
+  // above (+0.2 on an already-maxed similarity=1) let a coincidentally
+  // short exact-titled candidate beat the correct one, which can only ever
+  // reach similarity=0.92 since its real title carries a subtitle
+  // ("...: A Fairy Tale for Grown-ups") the query doesn't have. Popularity
+  // barely factored in before (max +0.04) - a piracy upload is virtually
+  // always for something mainstream, so how popular a same-named candidate
+  // actually is is a strong, cheap signal for "which same-titled entry is
+  // the real one", not just a tiebreaker.
+  score += Math.min(candidate.popularity || 0, 100) / 250;
   return score;
 }
 
