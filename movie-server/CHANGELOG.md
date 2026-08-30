@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.44
+
+- Fixed the background catalog refresh (main source, every `CACHE_REFRESH_HOURS`, default 4h) being able to get permanently stuck doing nothing after a single bad run, with no error logged anywhere. Root cause: nothing in the scrape chain it calls (page fetches, per-movie download-link resolution, TMDB enrichment) has a timeout, so if any single request in there ever hangs, that refresh's promise never settles - the `refreshInProgress` flag stays `true` forever, and every scheduled refresh after that (every 4h, indefinitely) silently no-ops instead of retrying. A manual `?refresh=true` from the dashboard bypasses this flag entirely (a separate code path), so it could look like refreshing "still works" while the actual background schedule was dead.
+- `refreshAllPages` now tracks how long it's been "in progress" and treats a stuck flag (15+ minutes - many times longer than a real refresh takes) as stale, logging a warning and proceeding anyway instead of blocking every future scheduled refresh forever. This is a circuit-breaker, not a fix for whatever specific request might hang - the underlying scrape chain still has no per-request timeouts, which is worth hardening separately if this keeps recurring.
+
 ## 1.7.43
 
 - Failed download attempts are no longer silently discarded once a retry succeeds or a redownload replaces the job - previously, only the final error survived (or nothing at all, if a later attempt eventually worked), so there was no way to look back and see why a title needed retries in the first place, even though this is exactly the kind of data needed to keep improving download reliability over time.

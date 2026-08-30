@@ -7,8 +7,15 @@ const DEFAULT_REFRESH_MS = 4 * 60 * 60 * 1000;
 let client = null;
 let refreshTimer = null;
 let refreshInProgress = false;
+let refreshStartedAt = null;
 let scrapeFn = null;
 let getListingConfig = null;
+
+// A full refresh (every scraped page, every movie's download link resolved,
+// TMDB enrichment) normally finishes in well under a minute - this is
+// deliberately many times that, not a tight budget, so it only ever kicks
+// in when something is genuinely stuck, not just slow.
+const STALE_REFRESH_MS = 15 * 60 * 1000;
 
 // Deliberately independent of mainUrl and maxPages: the scraped source is a
 // piracy-mirror site that rotates domains constantly, but the underlying
@@ -93,9 +100,26 @@ async function refreshPageRange(from, to, reason) {
 }
 
 async function refreshAllPages(reason) {
-  if (!isReady() || refreshInProgress) return null;
+  if (!isReady()) return null;
+
+  // Confirmed real risk: nothing in the scrape chain this calls into (page
+  // fetches, per-movie download-link resolution, TMDB enrichment) has a
+  // timeout, so a single hung request anywhere in it means this promise
+  // never settles - refreshInProgress would stay true forever, and every
+  // scheduled refresh after that (every refreshMs, indefinitely) would
+  // silently no-op with no error at all. That's a much worse failure mode
+  // than occasionally starting two refreshes at once, so a stuck flag gets
+  // overridden here rather than blocking refreshes for good.
+  if (refreshInProgress) {
+    const stuckMs = refreshStartedAt ? Date.now() - refreshStartedAt : 0;
+    if (stuckMs < STALE_REFRESH_MS) return null;
+    console.warn(
+      `[cache] previous refresh has been "in progress" for ${Math.round(stuckMs / 60000)}min - treating it as stuck and proceeding anyway (${reason})`
+    );
+  }
 
   refreshInProgress = true;
+  refreshStartedAt = Date.now();
   try {
     const config = getListingConfig();
     const meta = await refreshPageRange(1, config.maxPages, reason);
@@ -103,6 +127,7 @@ async function refreshAllPages(reason) {
     return meta;
   } finally {
     refreshInProgress = false;
+    refreshStartedAt = null;
   }
 }
 
