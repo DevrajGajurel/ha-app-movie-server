@@ -10,6 +10,14 @@ let refreshInProgress = false;
 let refreshStartedAt = null;
 let scrapeFn = null;
 let getListingConfig = null;
+// Set at the top of every setInterval tick, unconditionally - the one
+// direct way to answer "is the scheduler actually firing on schedule at
+// all", as opposed to inferring it indirectly from cacheUpdatedAt (which a
+// manual ?refresh=true also updates, via a completely separate code path -
+// see getMovies below - so it can look like refreshing "works" even while
+// the scheduled timer itself is doing nothing).
+let schedulerLastTickAt = null;
+let schedulerTickCount = 0;
 
 // A full refresh (every scraped page, every movie's download link resolved,
 // TMDB enrichment) normally finishes in well under a minute - this is
@@ -96,6 +104,7 @@ async function refreshPageRange(from, to, reason) {
     source: config.mainUrl,
     maxPages: config.maxPages,
     tmdbEnabled: config.tmdbEnabled,
+    reason,
   });
 }
 
@@ -134,6 +143,12 @@ async function refreshAllPages(reason) {
 function scheduleBackgroundRefresh(refreshMs) {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
+    // Recorded unconditionally, before refreshAllPages even runs - this is
+    // proof the timer itself fired, independent of whether the refresh it
+    // triggers actually completes, gets skipped (still in progress), or
+    // fails outright.
+    schedulerLastTickAt = Date.now();
+    schedulerTickCount += 1;
     refreshAllPages("scheduled").catch((err) => {
       console.warn("[cache] scheduled refresh failed:", err.message);
     });
@@ -175,6 +190,20 @@ async function getCacheStatus() {
   return {
     cacheEnabled: true,
     cacheUpdatedAt: meta?.updatedAt || null,
+    // Which of startup/scheduled/manual last actually completed - without
+    // this, a manual ?refresh=true updating cacheUpdatedAt looks identical
+    // to a real scheduled run, which is exactly the ambiguity that made a
+    // dead scheduler hard to tell apart from a working one.
+    lastRefreshReason: meta?.reason || null,
+    // Whether a refresh is running right now, and (if so) whether it's
+    // past the point this module would consider it stale/stuck - see
+    // refreshAllPages's STALE_REFRESH_MS.
+    refreshInProgress,
+    refreshStartedAt: refreshStartedAt ? new Date(refreshStartedAt).toISOString() : null,
+    // Proof the scheduled timer itself is firing, independent of whether
+    // each tick's refresh actually completes.
+    schedulerLastTickAt: schedulerLastTickAt ? new Date(schedulerLastTickAt).toISOString() : null,
+    schedulerTickCount,
   };
 }
 

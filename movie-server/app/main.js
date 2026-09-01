@@ -261,6 +261,16 @@ function parseSecondaryMeta(text) {
 // and answers with 403 - while resolveRedirectUrl() against the same origin
 // succeeds because urlUtils sends a real browser identity. Every outbound
 // scrape goes through here so the two code paths look alike on the wire.
+// Confirmed real bug this was hiding: a bare fetch() has no default
+// timeout, so a single hung request anywhere that calls scrapeFetch (the
+// main listing scrape, the secondary source, redirect/click-API calls) can
+// wait forever - which is exactly how the background catalog refresh's
+// "in progress" flag got stuck permanently (see movieCache.js's
+// STALE_REFRESH_MS circuit-breaker, added as a symptom-fix before this
+// root cause was addressed). Every real response from these sites lands in
+// a few seconds; this is many times that, not a tight budget.
+const SCRAPE_FETCH_TIMEOUT_MS = 30000;
+
 async function scrapeFetch(targetUrl, { referer, label = "scrape", headers: overrideHeaders } = {}) {
   let refererValue = referer;
   if (!refererValue) {
@@ -271,20 +281,33 @@ async function scrapeFetch(targetUrl, { referer, label = "scrape", headers: over
     }
   }
 
-  const response = await fetch(targetUrl, {
-    redirect: "follow",
-    headers: {
-      ...BROWSER_HEADERS,
-      "Upgrade-Insecure-Requests": "1",
-      ...(refererValue ? { Referer: refererValue } : {}),
-      // Used to replay a cached cf_clearance cookie under the exact
-      // User-Agent it was issued to (see cfClearanceCache.js) - Cloudflare
-      // ties the clearance to that fingerprint, so overriding it here
-      // rather than just adding a Cookie header on top of the default UA
-      // is load-bearing, not cosmetic.
-      ...overrideHeaders,
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SCRAPE_FETCH_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(targetUrl, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        ...BROWSER_HEADERS,
+        "Upgrade-Insecure-Requests": "1",
+        ...(refererValue ? { Referer: refererValue } : {}),
+        // Used to replay a cached cf_clearance cookie under the exact
+        // User-Agent it was issued to (see cfClearanceCache.js) - Cloudflare
+        // ties the clearance to that fingerprint, so overriding it here
+        // rather than just adding a Cookie header on top of the default UA
+        // is load-bearing, not cosmetic.
+        ...overrideHeaders,
+      },
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`[${label}] request to ${targetUrl} timed out after ${SCRAPE_FETCH_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   // Host hops are worth surfacing on their own: these sites rotate domains
   // (filmyfly.luxe -> .fail) and hand download links off across hosts

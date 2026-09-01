@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.45
+
+- Addressed the actual root cause behind the background refresh stall (v1.7.44 only added a 15-minute circuit-breaker for it): `scrapeFetch` - the shared primitive behind the main listing scrape, the secondary source, and redirect/click-API calls - used a bare `fetch()` with no timeout at all, so a single hung request anywhere in that chain could block a refresh indefinitely. It now aborts and throws a clear timeout error after 30s (many times longer than a real response ever takes), so a stuck request fails fast and cleanly instead of accumulating toward the stale-lock ceiling.
+- `/api/config` now reports real, direct scheduler diagnostics instead of leaving this guessable from indirect signals: `refreshInProgress`, `refreshStartedAt`, `schedulerLastTickAt`, `schedulerTickCount`, and `lastRefreshReason` (`"startup"`/`"scheduled"`/`"manual"`). Previously `cacheUpdatedAt` was the only signal, and a manual `?refresh=true` updates it through a completely separate code path from the scheduled timer - so it could look like refreshing "works" while the scheduled timer itself had gone silent, with no way to tell the difference from the outside.
+
 ## 1.7.44
 
 - Fixed the background catalog refresh (main source, every `CACHE_REFRESH_HOURS`, default 4h) being able to get permanently stuck doing nothing after a single bad run, with no error logged anywhere. Root cause: nothing in the scrape chain it calls (page fetches, per-movie download-link resolution, TMDB enrichment) has a timeout, so if any single request in there ever hangs, that refresh's promise never settles - the `refreshInProgress` flag stays `true` forever, and every scheduled refresh after that (every 4h, indefinitely) silently no-ops instead of retrying. A manual `?refresh=true` from the dashboard bypasses this flag entirely (a separate code path), so it could look like refreshing "still works" while the actual background schedule was dead.
