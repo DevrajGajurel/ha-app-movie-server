@@ -774,9 +774,16 @@ const DOWNLOAD_SELECTORS = {
 // those the same way, so flaresolverr_url is now a required add-on option
 // rather than an optional fallback - see config.yaml.
 //
-// linkmake.in is the one confirmed exception: it's a plain page with no
-// anti-bot front, so paying FlareSolverr's several-seconds-to-tens-of-
-// seconds cost there is pure waste - it's fetched directly instead.
+// linkmake.in was believed to be a confirmed exception (a plain page with
+// no anti-bot front) - that turned out to be wrong: confirmed live on a
+// real "Gandhari" page that this domain hits the SAME vDDoS challenge
+// (HTTP 202, min.js) as everything else, just not every time - the
+// original bypass only checked response.ok (true for the challenge's own
+// 202), so it silently returned the challenge script as if it were the
+// real page. Kept as an OPTIMISTIC first try (still a real win when it
+// isn't challenged, which still seems to be the common case) but now
+// verified with the same classifyFetchFailure check every other path
+// uses, falling through to FlareSolverr instead of trusting a bare 202.
 const PLAIN_FETCH_HOSTNAME_PATTERN = /(^|\.)linkmake\.in$/i;
 
 async function fetchPageHtml(pageUrl) {
@@ -804,15 +811,21 @@ async function fetchPageHtml(pageUrl) {
   }
 
   if (PLAIN_FETCH_HOSTNAME_PATTERN.test(hostname)) {
-    console.log(`[downloads] fetching page via plain fetch (linkmake.in): ${targetUrl}`);
+    console.log(`[downloads] trying plain fetch (linkmake.in): ${targetUrl}`);
     const response = await scrapeFetch(targetUrl, { label: "downloads" });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch download page: ${response.status}`);
+    const body = await response.text();
+    const { challenge } = classifyFetchFailure(response, body);
+    if (response.ok && !challenge) {
+      const finalUrl = response.url || targetUrl;
+      console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${body.length} bytes)`);
+      return { html: body, url: finalUrl };
     }
-    const html = await response.text();
-    const finalUrl = response.url || targetUrl;
-    console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${html.length} bytes)`);
-    return { html, url: finalUrl };
+    console.warn(
+      `[downloads] linkmake.in plain fetch didn't work (${response.status}${challenge ? ", challenge detected" : ""}), falling back to flaresolverr`
+    );
+    // Falls through to the cf_clearance/FlareSolverr logic below instead
+    // of failing outright - this domain isn't always challenged, but when
+    // it is, it needs the same real-browser handling as everything else.
   }
 
   // A prior FlareSolverr solve on this domain may have earned a

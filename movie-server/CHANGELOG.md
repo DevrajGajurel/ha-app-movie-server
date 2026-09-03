@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.46
+
+- Fixed "No download links found" on `linkmake.in` pages (real report: "Gandhari" - `a[class*="button"]`-style selectors all returned 0 matches). Root cause: v1.7.34 special-cased this domain to skip FlareSolverr entirely as "a plain page with no anti-bot front" - that was based on a single working sample, not a real exemption. Confirmed live that `linkmake.in` is behind Cloudflare the same as everything else, and Cloudflare's own challenge behavior here is inconsistent per-request (a 301 to a regional subdomain that then serves the same "vDDoS" JS challenge found on filesdl.top earlier), not a fixed per-domain rule - so the bypass's `response.ok` check (true for the challenge's own 202/redirect) was trusting a challenge page as if it were the real one.
+- The plain-fetch bypass is still tried first (still a real win on the apparently-common case where this domain isn't challenged), but now verified with the same `classifyFetchFailure` check every other path already uses, falling through to FlareSolverr instead of blindly trusting a non-error status. Verified end-to-end against the real failing page: FlareSolverr solves it cleanly ("Challenge not detected!") and the resolved HTML contains the real `dlink.dl` download links.
+
 ## 1.7.45
 
 - Addressed the actual root cause behind the background refresh stall (v1.7.44 only added a 15-minute circuit-breaker for it): `scrapeFetch` - the shared primitive behind the main listing scrape, the secondary source, and redirect/click-API calls - used a bare `fetch()` with no timeout at all, so a single hung request anywhere in that chain could block a refresh indefinitely. It now aborts and throws a clear timeout error after 30s (many times longer than a real response ever takes), so a stuck request fails fast and cleanly instead of accumulating toward the stale-lock ceiling.
