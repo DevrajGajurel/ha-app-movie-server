@@ -4,7 +4,6 @@ import {
   getDownloadedMovies,
   getContinueWatching,
   progressItemToMovie,
-  matchMovieForDownload,
   getLibraryMovies,
   getMoviePageLink,
   getTmdbById,
@@ -213,18 +212,18 @@ export function Home({ onPlay, suspended }: HomeProps) {
       ? [{ title: "Continue Watching", movies: continueWatchingMovies }]
       : [];
 
-    // Downloaded-library entries only carry tmdbId/title, not full
-    // metadata - match each back to its catalog Movie, then sort by the
-    // backend's downloadedAt (the video file's own creation date, falling
-    // back to folder mtime only if that's unreadable) descending. Every
-    // downloaded title belongs here, not just the most recent N.
-    const recentlyDownloaded = [...downloaded]
-      .sort((a, b) => new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime())
-      .map((item) => matchMovieForDownload(item, movies))
-      .filter((m): m is Movie => !!m)
-      .filter((m, i, arr) => arr.findIndex((other) => other.link === m.link) === i);
-    const recentlyDownloadedRow: RowDef[] = recentlyDownloaded.length
-      ? [{ title: "Recently Downloaded", movies: recentlyDownloaded }]
+    // libraryMovies is already every downloaded title, most-recently-
+    // downloaded first, resolved against the catalog OR (when the catalog's
+    // scraped page range doesn't currently include it - e.g. an
+    // already-aired series that's scrolled off the source site's listing,
+    // see the "House of the Dragon missing from Recently Downloaded"
+    // report) a TMDB-by-id lookup instead. Reusing it here means this row
+    // can't silently drop a title just because the catalog page range
+    // doesn't happen to have it right now, which the previous
+    // matchMovieForDownload-based computation did (it returned undefined
+    // for an unmatched title and filtered it straight out).
+    const recentlyDownloadedRow: RowDef[] = libraryMovies.length
+      ? [{ title: "Recently Downloaded", movies: libraryMovies }]
       : [];
 
     return [
@@ -235,7 +234,7 @@ export function Home({ onPlay, suspended }: HomeProps) {
       { title: "Recently Added", movies: recentlyAdded, badge: "NEW" },
       ...genreRows,
     ];
-  }, [movies, downloaded, continueWatchingMovies]);
+  }, [movies, downloaded, continueWatchingMovies, libraryMovies]);
 
   const currentHeroMovie = heroMovies[heroIndex] || null;
 

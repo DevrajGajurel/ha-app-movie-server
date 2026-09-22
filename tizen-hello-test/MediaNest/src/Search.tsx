@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Movie } from "./api";
-import { getTmdbSuggestions, type TmdbSuggestion } from "./api";
+import { getTmdbSuggestions, searchCatalog, type TmdbSuggestion } from "./api";
 import { Row } from "./Row";
 
 interface SearchProps {
@@ -33,17 +33,64 @@ export function Search({ movies, active, onSelect, progressFor, downloadedFor }:
   // page to download from, so there's nothing to open yet.
   const [suggestions, setSuggestions] = useState<TmdbSuggestion[]>([]);
   const [suggestFocusIndex, setSuggestFocusIndex] = useState(0);
+  // Populated by a live source-site search (see searchCatalog) for
+  // whatever the local filter below didn't already catch - a title outside
+  // the cached catalog's page range (e.g. an older series) has no local
+  // match at all, so without this, searching for it here just silently
+  // came back empty even though it's fully downloadable.
+  const [liveResults, setLiveResults] = useState<Movie[]>([]);
+  const [liveSearching, setLiveSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null);
+  const liveSearchDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   const normalized = query.trim().toLowerCase();
-  const results = normalized
+  const localResults = normalized
     ? movies.filter((m) => (m.tmdb?.tmdbTitle || m.title).toLowerCase().includes(normalized)).slice(0, 40)
     : [];
+
+  const results = useMemo(() => {
+    if (!normalized) return [];
+    if (!liveResults.length) return localResults;
+    const seen = new Set(
+      localResults.map((m) => (m.tmdb?.tmdbId ? `tmdb:${m.tmdb.tmdbId}` : m.link))
+    );
+    const extra = liveResults.filter((m) => {
+      const key = m.tmdb?.tmdbId ? `tmdb:${m.tmdb.tmdbId}` : m.link;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...localResults, ...extra].slice(0, 40);
+    // localResults is derived fresh from movies/normalized every render, so
+    // depending on its own identity would defeat memoization - depend on
+    // the same inputs that produced it instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movies, normalized, liveResults]);
+
+  useEffect(() => {
+    if (liveSearchDebounceRef.current) window.clearTimeout(liveSearchDebounceRef.current);
+    const q = query.trim();
+    if (q.length < SUGGEST_MIN_LENGTH) {
+      setLiveResults([]);
+      setLiveSearching(false);
+      return;
+    }
+    setLiveSearching(true);
+    liveSearchDebounceRef.current = window.setTimeout(() => {
+      searchCatalog(q).then((found) => {
+        setLiveResults(found);
+        setLiveSearching(false);
+      });
+    }, SUGGEST_DEBOUNCE_MS);
+    return () => {
+      if (liveSearchDebounceRef.current) window.clearTimeout(liveSearchDebounceRef.current);
+    };
+  }, [query]);
 
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -164,7 +211,12 @@ export function Search({ movies, active, onSelect, progressFor, downloadedFor }:
           ))}
         </div>
       )}
-      {normalized && !results.length ? <p className="status" style={{ paddingLeft: 0 }}>No matches for "{query}".</p> : null}
+      {normalized && !results.length && liveSearching ? (
+        <p className="status" style={{ paddingLeft: 0 }}>Searching…</p>
+      ) : null}
+      {normalized && !results.length && !liveSearching ? (
+        <p className="status" style={{ paddingLeft: 0 }}>No matches for "{query}".</p>
+      ) : null}
       {results.length ? (
         <Row
           title={`Results for "${query}"`}

@@ -240,6 +240,25 @@ export async function getTmdbSuggestions(query: string): Promise<TmdbSuggestion[
   }
 }
 
+// Search only ever filtered the already-loaded `movies` list client-side -
+// which is capped at the same config.maxPages window getAllMovies() uses,
+// so an older-but-still-relevant title (e.g. a series a couple seasons in,
+// scrolled off the source site's own listing) could be fully downloadable
+// and yet never show up in a search here, even though the dashboard's
+// search finds it fine. This hits the same live /api/movies/search the
+// dashboard uses - the source site's own search, not limited by page range
+// - as a second pass for whatever the local filter didn't already catch.
+export async function searchCatalog(query: string): Promise<Movie[]> {
+  try {
+    const res = await fetch(apiUrl(`movies/search?q=${encodeURIComponent(query)}`));
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.movies || [];
+  } catch {
+    return [];
+  }
+}
+
 export interface SeasonInfo {
   seasonNumber: number;
   episodeCount: number;
