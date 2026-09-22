@@ -61,7 +61,7 @@ export async function getDownloadedMovies(): Promise<DownloadedMovie[]> {
 // need the actual metadata (poster/backdrop) of what's been downloaded.
 export function matchMovieForDownload(item: DownloadedMovie, movies: Movie[]): Movie | undefined {
   if (item.tmdbId) {
-    const byId = movies.find((m) => m.tmdb?.tmdbId != null && String(m.tmdb.tmdbId) === item.tmdbId);
+    const byId = movies.find((m) => sameTmdbIdentity(m, item.tmdbId, item.type));
     if (byId) return byId;
   }
   const normalized = normalizeTitle(item.title);
@@ -120,7 +120,12 @@ export function getLibraryMovies(downloaded: DownloadedMovie[], movies: Movie[])
   });
   for (const item of sorted) {
     const movie = libraryItemToMovie(item, movies);
-    const id = movie.tmdb?.tmdbId ? `tmdb:${movie.tmdb.tmdbId}` : movie.link;
+    // Type-qualified for the same reason as sameTmdbIdentity() - deduping
+    // on the bare number would drop a downloaded show whenever a
+    // downloaded movie happened to share its id.
+    const id = movie.tmdb?.tmdbId
+      ? `tmdb:${movie.tmdb.type === "tv" ? "tv" : "movie"}:${movie.tmdb.tmdbId}`
+      : movie.link;
     if (seen.has(id)) continue;
     seen.add(id);
     result.push(movie);
@@ -154,7 +159,7 @@ export async function getContinueWatching(): Promise<ProgressItem[]> {
 // backdrop, etc.) it corresponds to, same matching rule as isDownloaded().
 export function matchMovieForProgress(item: ProgressItem, movies: Movie[]): Movie | undefined {
   if (item.tmdbId) {
-    const byId = movies.find((m) => m.tmdb?.tmdbId != null && String(m.tmdb.tmdbId) === item.tmdbId);
+    const byId = movies.find((m) => sameTmdbIdentity(m, item.tmdbId, item.type));
     if (byId) return byId;
   }
   const normalized = normalizeTitle(item.title);
@@ -302,6 +307,19 @@ function normalizeTitle(value: string): string {
     .replace(/\(tmdb-\d+\)/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// TMDB numbers movies and TV shows in separate namespaces, so an id only
+// identifies a title together with its type - id 94997 is House of the
+// Dragon as a TV id and an unrelated 1982 film as a movie id. Matching on
+// the number alone pulled the wrong title's poster and name onto a
+// downloaded show. The type is only compared when the catalog entry
+// actually carries one, so an untyped entry still matches as before.
+function sameTmdbIdentity(movie: Movie, tmdbId: string | null, type?: "movie" | "tv"): boolean {
+  if (!tmdbId || movie.tmdb?.tmdbId == null) return false;
+  if (String(movie.tmdb.tmdbId) !== tmdbId) return false;
+  if (type && movie.tmdb.type) return movie.tmdb.type === type;
+  return true;
 }
 
 // Mirrors HelloTV's isAlreadyDownloaded(): match by tmdbId first (more

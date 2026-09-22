@@ -43,6 +43,14 @@ interface RowDef {
 
 const HERO_ROTATE_MS = 8000;
 
+// A TMDB id only identifies a title together with its media type - the
+// movie and TV namespaces are numbered independently.
+function tmdbCacheKey(movie: Movie): string | null {
+  const id = movie.tmdb?.tmdbId;
+  if (id == null) return null;
+  return `${movie.tmdb?.type === "tv" ? "tv" : "movie"}:${id}`;
+}
+
 export function Home({ onPlay, suspended }: HomeProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [downloaded, setDownloaded] = useState<DownloadedMovie[]>([]);
@@ -113,11 +121,17 @@ export function Home({ onPlay, suspended }: HomeProps) {
   // while ago and since rotated off those pages comes back as a posterless
   // stub instead. Fetch those directly by tmdbId (a couple at a time, not
   // all at once) and splice the result back in once it lands - shared
-  // between both lists (keyed by tmdbId) so the same title showing up in
-  // both doesn't fetch twice.
+  // between both lists so the same title showing up in both doesn't fetch
+  // twice.
+  //
+  // Keyed by type AND id, never id alone: TMDB numbers movies and TV shows
+  // in separate namespaces, so the same id means two unrelated titles
+  // (confirmed: 94997 is both House of the Dragon and a 1982 film). Keying
+  // by id alone let a movie-typed entry's result land on a TV entry with
+  // the same number and render it as the wrong title entirely.
   useEffect(() => {
     const missing = [...rawLibraryMovies, ...rawContinueWatchingMovies].filter(
-      (m) => m.tmdb?.tmdbId && !m.tmdb.poster && !tmdbById.has(String(m.tmdb.tmdbId))
+      (m) => m.tmdb?.tmdbId && !m.tmdb.poster && !tmdbById.has(tmdbCacheKey(m)!)
     );
     if (!missing.length) return;
 
@@ -130,14 +144,14 @@ export function Home({ onPlay, suspended }: HomeProps) {
         const batch = missing.slice(i, i + CONCURRENCY);
         const results = await Promise.all(
           batch.map((m) =>
-            getTmdbById(String(m.tmdb!.tmdbId), m.tmdb!.type).then((info) => [String(m.tmdb!.tmdbId), info] as const)
+            getTmdbById(String(m.tmdb!.tmdbId), m.tmdb!.type).then((info) => [tmdbCacheKey(m)!, info] as const)
           )
         );
         if (cancelled) return;
         setTmdbById((prev) => {
           const next = new Map(prev);
-          for (const [id, info] of results) {
-            if (info) next.set(id, info);
+          for (const [key, info] of results) {
+            if (info) next.set(key, info);
           }
           return next;
         });
@@ -155,8 +169,8 @@ export function Home({ onPlay, suspended }: HomeProps) {
   const libraryMovies = useMemo(() => {
     if (!tmdbById.size) return rawLibraryMovies;
     return rawLibraryMovies.map((m) => {
-      const id = m.tmdb?.tmdbId ? String(m.tmdb.tmdbId) : null;
-      const fetched = id ? tmdbById.get(id) : undefined;
+      const key = tmdbCacheKey(m);
+      const fetched = key ? tmdbById.get(key) : undefined;
       return fetched ? { ...m, tmdb: fetched } : m;
     });
   }, [rawLibraryMovies, tmdbById]);
@@ -164,8 +178,8 @@ export function Home({ onPlay, suspended }: HomeProps) {
   const continueWatchingMovies = useMemo(() => {
     if (!tmdbById.size) return rawContinueWatchingMovies;
     return rawContinueWatchingMovies.map((m) => {
-      const id = m.tmdb?.tmdbId ? String(m.tmdb.tmdbId) : null;
-      const fetched = id ? tmdbById.get(id) : undefined;
+      const key = tmdbCacheKey(m);
+      const fetched = key ? tmdbById.get(key) : undefined;
       return fetched ? { ...m, tmdb: fetched } : m;
     });
   }, [rawContinueWatchingMovies, tmdbById]);

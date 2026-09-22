@@ -1630,7 +1630,7 @@ function listProgress() {
   // seriesFolderName drives the tmdbId/title fallback parsing below - always
   // the top-level "Title (tmdb-id)" folder, even when the progress file
   // itself lives one level deeper in a season subfolder.
-  function collect(seriesFolderName, dir) {
+  function collect(seriesFolderName, dir, type) {
     const progressPath = path.join(dir, PROGRESS_FILE);
     if (!fs.existsSync(progressPath)) return;
 
@@ -1671,14 +1671,6 @@ function listProgress() {
         ? Math.min(99, Math.max(1, Math.round((position / duration) * 100)))
         : 0;
 
-    // A progress file living one level deeper than the series folder is
-    // always a season subfolder (only TV downloads create those) - same
-    // signal scanLibrary() already uses to tell movies and TV apart, needed
-    // here so a stub recovery lookup (when the title has rotated off the
-    // scraped catalog - see progressItemToMovie in api.ts) can pass the
-    // right type hint and avoid a movie/TV tmdbId collision.
-    const type = path.basename(dir) !== seriesFolderName ? "tv" : "movie";
-
     items.push({
       folder: seriesFolderName,
       tmdbId,
@@ -1694,7 +1686,6 @@ function listProgress() {
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dir = path.join(root, entry.name);
-    collect(entry.name, dir);
 
     let subEntries;
     try {
@@ -1702,9 +1693,23 @@ function listProgress() {
     } catch {
       subEntries = [];
     }
+
+    // Whether this download is a movie or a TV show is a property of the
+    // folder, not of where a given progress file happens to sit inside it -
+    // the same season-subfolder rule scanLibrary() uses. Inferring it
+    // per-file instead (progress file one level deep = TV, at the root =
+    // movie) mistyped a TV show as a movie whenever it also had a
+    // root-level progress file, e.g. from a whole-series play that resolved
+    // to the largest file rather than a specific episode. That matters
+    // because TMDB movie and TV ids share no namespace (confirmed: 94997 is
+    // both House of the Dragon and an unrelated 1982 film), so a wrong type
+    // hint here resolves the title to a completely different one.
+    const type = subEntries.some((e) => e.isDirectory() && /^S\d+$/i.test(e.name)) ? "tv" : "movie";
+
+    collect(entry.name, dir, type);
     for (const sub of subEntries) {
       if (!sub.isDirectory()) continue;
-      collect(entry.name, path.join(dir, sub.name));
+      collect(entry.name, path.join(dir, sub.name), type);
     }
   }
 
