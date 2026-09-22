@@ -146,7 +146,18 @@ export function Search({ movies, active, onSelect, progressFor, downloadedFor }:
             setSuggestFocusIndex((i) => Math.max(0, i - 1));
           }
         } else if (e.keyCode === 40) {
-          setSuggestFocusIndex((i) => Math.min(suggestions.length - 1, i + 1));
+          // Down at the last suggestion continues on into the results row
+          // below it (same visual order: input -> suggestions -> results)
+          // instead of just clamping in place with nowhere further to go.
+          if (suggestFocusIndex >= suggestions.length - 1) {
+            if (results.length) {
+              e.preventDefault();
+              setFocusRegion("results");
+              setFocusedIndex(0);
+            }
+          } else {
+            setSuggestFocusIndex((i) => Math.min(suggestions.length - 1, i + 1));
+          }
         } else if (e.keyCode === 13) {
           selectSuggestion(suggestions[suggestFocusIndex]);
         } else if (e.keyCode === 10009 || e.keyCode === 27) {
@@ -161,8 +172,16 @@ export function Search({ movies, active, onSelect, progressFor, downloadedFor }:
       if (e.keyCode === 39) setFocusedIndex((i) => Math.min(results.length - 1, i + 1));
       else if (e.keyCode === 37) setFocusedIndex((i) => Math.max(0, i - 1));
       else if (e.keyCode === 38) {
-        setFocusRegion("input");
-        inputRef.current?.focus();
+        // Mirror of the suggestions-to-results transition above: back up
+        // into the last suggestion first if any are showing, rather than
+        // skipping straight past them to the input.
+        if (suggestions.length) {
+          setFocusRegion("suggestions");
+          setSuggestFocusIndex(suggestions.length - 1);
+        } else {
+          setFocusRegion("input");
+          inputRef.current?.focus();
+        }
       } else if (e.keyCode === 13) onSelect(results[focusedIndex]);
     }
     document.addEventListener("keydown", onKeyDown);
