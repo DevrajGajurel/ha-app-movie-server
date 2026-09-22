@@ -62,6 +62,7 @@ const { initMovieCache, getMovies, getCacheStatus } = require("./movieCache");
 const { initProbeCache } = require("./mediaProbeCache");
 const { initDownloadOptionsCache, resolveOptionsCached, prefetchOptionsInBackground } = require("./downloadOptionsCache");
 const {
+  initClearanceCache,
   storeClearance: storeCfClearance,
   getClearance: getCfClearance,
   invalidateClearance: invalidateCfClearance,
@@ -786,6 +787,14 @@ const DOWNLOAD_SELECTORS = {
 // uses, falling through to FlareSolverr instead of trusting a bare 202.
 const PLAIN_FETCH_HOSTNAME_PATTERN = /(^|\.)linkmake\.in$/i;
 
+// Remembers, per hostname, the last page URL fetchPageHtml actually fetched
+// successfully for a real request - the clearance-warming sweep further
+// below reuses it to re-exercise the exact same kind of page a real request
+// hits, instead of guessing at a synthetic warm-up URL (e.g. a bare
+// homepage), which could 404 or route differently and look like "no
+// challenge here" when really it just never reached the same check.
+const lastFetchedUrlByHost = new Map();
+
 async function fetchPageHtml(pageUrl) {
   // Same resolver as GET /api/redirect — download hosts (e.g. new1.filesdl.in)
   // 302 across domains before the real page is available. Resolving first
@@ -818,6 +827,7 @@ async function fetchPageHtml(pageUrl) {
     if (response.ok && !challenge) {
       const finalUrl = response.url || targetUrl;
       console.log(`[downloads] page ok: ${response.status} ${finalUrl} (${body.length} bytes)`);
+      lastFetchedUrlByHost.set(hostname, targetUrl);
       return { html: body, url: finalUrl };
     }
     console.warn(
@@ -844,6 +854,7 @@ async function fetchPageHtml(pageUrl) {
     const { challenge } = classifyFetchFailure(response, body);
     if (response.ok && !challenge) {
       console.log(`[downloads] cf clearance ok: ${response.url || targetUrl} (${body.length} bytes)`);
+      lastFetchedUrlByHost.set(hostname, targetUrl);
       return { html: body, url: response.url || targetUrl };
     }
     console.warn(`[downloads] cached cf clearance no longer valid for ${hostname}, falling back to flaresolverr`);
@@ -858,7 +869,46 @@ async function fetchPageHtml(pageUrl) {
   const { html, url: finalUrl, cookies, userAgent } = await fetchPageViaFlareSolverr(targetUrl);
   console.log(`[downloads] flaresolverr ok: ${finalUrl} (${html.length} bytes)`);
   storeCfClearance(cookies, userAgent);
+  lastFetchedUrlByHost.set(hostname, targetUrl);
   return { html, url: finalUrl };
+}
+
+// Keeps each domain's cf_clearance (see cfClearanceCache.js) from ever going
+// cold on the site's own schedule. Without this, whichever domain's cookie
+// expires next only gets noticed - and re-solved via a slow live
+// FlareSolverr round trip - on the next real user request, which is exactly
+// the "first title is slow" cost this is meant to avoid paying live.
+//
+// Checked often (cheap: just a Map lookup) but only actually re-solves a
+// domain when its cached clearance is missing or close to expiring, so
+// domains that hand out long-lived cookies (see filesdl.top: a full year)
+// aren't re-solved for nothing. Only warms domains fetchPageHtml has
+// already fetched for real at least once since this process started -
+// there's nothing meaningful to warm before that.
+const CLEARANCE_WARM_CHECK_MS = 10 * 60 * 1000;
+const CLEARANCE_WARM_BUFFER_MS = 15 * 60 * 1000;
+
+async function warmClearanceForHost(hostname) {
+  const clearance = getCfClearance(hostname);
+  if (clearance && clearance.expiresAt - Date.now() > CLEARANCE_WARM_BUFFER_MS) return;
+
+  const targetUrl = lastFetchedUrlByHost.get(hostname);
+  if (!targetUrl) return;
+
+  try {
+    console.log(`[cf-clearance] proactively refreshing ${hostname} via ${targetUrl}`);
+    await fetchPageHtml(targetUrl);
+  } catch (err) {
+    console.warn(`[cf-clearance] proactive refresh failed for ${hostname}: ${err.message}`);
+  }
+}
+
+function runClearanceWarmSweep() {
+  for (const hostname of lastFetchedUrlByHost.keys()) {
+    warmClearanceForHost(hostname).catch((err) =>
+      console.warn(`[cf-clearance] warm sweep failed for ${hostname}: ${err.message}`)
+    );
+  }
 }
 
 // The source site periodically rotates domains (filmyfly.luxe -> .faith ->
@@ -2372,6 +2422,13 @@ async function startServer() {
     console.warn("Samsung TV Redis init failed, continuing without it:", err.message);
   }
 
+  let cfClearancePersists = false;
+  try {
+    cfClearancePersists = await initClearanceCache(process.env.REDIS_URL);
+  } catch (err) {
+    console.warn("CF clearance Redis init failed, continuing without it:", err.message);
+  }
+
   server.listen(PORT, () => {
     console.log(`Movie server listening on http://localhost:${PORT}`);
     console.log(`Dashboard: http://localhost:${PORT}/`);
@@ -2390,6 +2447,7 @@ async function startServer() {
     console.log(`Probe cache: ${probeCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`TMDB cache:  ${tmdbCacheEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
     console.log(`Job history: ${jobHistoryEnabled ? "enabled" : "disabled (no REDIS_URL)"}`);
+    console.log(`CF clearance: ${cfClearancePersists ? "persists across restarts" : "in-memory only, no REDIS_URL"}`);
     console.log(
       `Play on TV: ${TV_IP ? `${TV_IP} (pairing token ${tvTokenPersists ? "persists" : "in-memory only, no REDIS_URL"})` : "launch disabled (set tv_ip) - push-only still works if MediaNest is already open"}`
     );
@@ -2400,6 +2458,8 @@ async function startServer() {
 
   runSubtitlePrefetchSweep();
   setInterval(runSubtitlePrefetchSweep, SUBTITLE_PREFETCH_MS);
+
+  setInterval(runClearanceWarmSweep, CLEARANCE_WARM_CHECK_MS);
 }
 
 startServer();

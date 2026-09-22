@@ -860,6 +860,12 @@
       min-height: 1.2rem;
     }
 
+    .tv-series-note {
+      font-size: 0.8rem;
+      color: var(--muted, #9aa0b4);
+      font-style: italic;
+    }
+
     @media (max-width: 768px) {
       .app-shell {
         flex-direction: column;
@@ -1609,15 +1615,16 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
 
-        // TV shows have no single "the file" to play (which episode?) -
-        // scoped to movies for now, same as the request that asked for this.
+        // TV shows have no single "the file" to play (which episode?), so
+        // Play on TV only applies to movies - but that's a reason to hide
+        // the button, not the whole title, so downloaded series still show
+        // up here instead of silently disappearing from the library.
         const items = (data.items || [])
-          .filter((item) => item.type === "movie")
           .sort((a, b) => new Date(b.downloadedAt || 0).getTime() - new Date(a.downloadedAt || 0).getTime());
 
         if (!items.length) {
           downloadedLibraryContentEl.className = "state empty";
-          downloadedLibraryContentEl.textContent = "No downloaded movies yet.";
+          downloadedLibraryContentEl.textContent = "No downloaded titles yet.";
           return;
         }
 
@@ -1629,6 +1636,7 @@
           const poster = t?.poster
             ? `<img src="${escapeAttr(t.poster)}" alt="${escapeAttr(displayTitle)}" loading="lazy" />`
             : "No poster";
+          const isMovie = item.type === "movie";
 
           return `
           <article class="card">
@@ -1643,7 +1651,9 @@
                 ${t.overview ? `<p class="overview">${escapeHtml(t.overview)}</p>` : ""}
               ` : ""}
               <div class="links">
-                <button type="button" class="card-action-btn play-on-tv-btn" data-index="${i}">▶ Play on TV</button>
+                ${isMovie
+                  ? `<button type="button" class="card-action-btn play-on-tv-btn" data-index="${i}">▶ Play on TV</button>`
+                  : `<span class="tv-series-note">TV series — open MediaNest on the TV to pick an episode</span>`}
               </div>
               <div class="play-on-tv-status" id="play-on-tv-status-${i}"></div>
             </div>
